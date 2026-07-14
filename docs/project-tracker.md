@@ -192,10 +192,10 @@ V1 采用以下结构，详细后端基线见 `docs/backend-design.md`：
 #### B0：工程骨架
 
 - [x] 编写后端技术设计与开发基线文档。
-- [ ] 创建 `backend/` Python 包与 FastAPI 应用工厂。
-- [ ] 实现配置、会话令牌鉴权和统一错误处理。
-- [ ] 实现 `/health`、`/capabilities`、`/state` 和 `/events` 骨架。
-- [ ] 配置 pytest、`httpx.AsyncClient`、静态检查和类型检查。
+- [x] 创建 `backend/` Python 包与 FastAPI 应用工厂。
+- [x] 实现配置、会话令牌鉴权和统一错误处理。
+- [x] 实现 `/health`、`/capabilities`、`/state` 和 `/events` 骨架。
+- [x] 配置 pytest、`httpx.AsyncClient`、静态检查和类型检查。
 
 #### B1：领域契约
 
