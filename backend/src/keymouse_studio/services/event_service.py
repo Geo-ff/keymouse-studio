@@ -7,10 +7,12 @@ from keymouse_studio.api.schemas.operations import EventPayload
 
 
 class EventService:
-    def __init__(self, protocol_version: int) -> None:
+    def __init__(self, protocol_version: int, subscriber_capacity: int = 256) -> None:
         self._protocol_version = protocol_version
+        self._subscriber_capacity = subscriber_capacity
         self._sequence = 0
         self._lock = asyncio.Lock()
+        self._subscribers: set[asyncio.Queue[EventEnvelope]] = set()
 
     @property
     def sequence(self) -> int:
@@ -24,7 +26,7 @@ class EventService:
     ) -> EventEnvelope:
         async with self._lock:
             self._sequence += 1
-            return EventEnvelope(
+            event = EventEnvelope(
                 protocol_version=self._protocol_version,
                 event_id=uuid4(),
                 sequence=self._sequence,
@@ -33,3 +35,16 @@ class EventService:
                 type=event_type,
                 payload=payload,
             )
+            for queue in self._subscribers:
+                if queue.full():
+                    queue.get_nowait()
+                queue.put_nowait(event)
+            return event
+
+    def subscribe(self) -> asyncio.Queue[EventEnvelope]:
+        queue: asyncio.Queue[EventEnvelope] = asyncio.Queue(self._subscriber_capacity)
+        self._subscribers.add(queue)
+        return queue
+
+    def unsubscribe(self, queue: asyncio.Queue[EventEnvelope]) -> None:
+        self._subscribers.discard(queue)

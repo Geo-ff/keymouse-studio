@@ -6,12 +6,16 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
-from keymouse_studio.api.routers import capabilities, events, health, operations, scripts
+from keymouse_studio.api.routers import capabilities, clicker, events, health, operations, scripts
 from keymouse_studio.api.schemas.common import ErrorDetail, ErrorResponse
 from keymouse_studio.config import Settings
 from keymouse_studio.dependencies import require_session_token
 from keymouse_studio.domain.errors import AppError, ErrorCode
+from keymouse_studio.infrastructure.input.adapter import InputAdapter, InputWorker
+from keymouse_studio.infrastructure.input.send_input import SendInputAdapter
 from keymouse_studio.infrastructure.persistence.json_script_repository import JsonScriptRepository
+from keymouse_studio.infrastructure.system.clock import MonotonicClock
+from keymouse_studio.services.clicker_service import ClickerService
 from keymouse_studio.services.event_service import EventService
 from keymouse_studio.services.operation_service import OperationService
 from keymouse_studio.services.script_service import ScriptService
@@ -22,6 +26,8 @@ API_PREFIX = "/api/v1"
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
+    clicker_service: ClickerService = app.state.clicker_service
+    await clicker_service.shutdown()
 
 
 def _error_response(detail: ErrorDetail, status_code: int) -> JSONResponse:
@@ -32,7 +38,10 @@ def _error_response(detail: ErrorDetail, status_code: int) -> JSONResponse:
     )
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    input_adapter: InputAdapter | None = None,
+) -> FastAPI:
     app = FastAPI(
         title="KeyMouse Studio API",
         version="0.1.0",
@@ -43,8 +52,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app_settings = settings or Settings()
     event_service = EventService(app_settings.protocol_version)
+    operation_service = OperationService(event_service)
+    adapter = input_adapter or SendInputAdapter()
     app.state.settings = app_settings
-    app.state.operation_service = OperationService(event_service)
+    app.state.event_service = event_service
+    app.state.operation_service = operation_service
+    app.state.clicker_service = ClickerService(
+        operation_service,
+        InputWorker(adapter),
+        MonotonicClock(),
+    )
     app.state.script_service = ScriptService(JsonScriptRepository(app_settings.script_directory))
 
     @app.exception_handler(AppError)
@@ -111,6 +128,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.include_router(
         operations.router,
+        prefix=API_PREFIX,
+        dependencies=protected_dependencies,
+    )
+    app.include_router(
+        clicker.router,
         prefix=API_PREFIX,
         dependencies=protected_dependencies,
     )

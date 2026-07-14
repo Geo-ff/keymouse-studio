@@ -27,3 +27,8 @@ class MouseButton(StrEnum):
 class LoopMode(StrEnum):
     COUNT = "count"
     INFINITE = "infinite"
+
+
+class PositionMode(StrEnum):
+    CURRENT = "current"
+    FIXED = "fixed"

@@ -5,6 +5,7 @@ from fastapi import Depends, Header, Request
 
 from keymouse_studio.config import Settings
 from keymouse_studio.domain.errors import UnauthorizedError
+from keymouse_studio.services.clicker_service import ClickerService
 from keymouse_studio.services.operation_service import OperationService
 from keymouse_studio.services.script_service import ScriptService
 
@@ -15,6 +16,10 @@ def get_settings(request: Request) -> Settings:
 
 def get_operation_service(request: Request) -> OperationService:
     return cast(OperationService, request.app.state.operation_service)
+
+
+def get_clicker_service(request: Request) -> ClickerService:
+    return cast(ClickerService, request.app.state.clicker_service)
 
 
 def get_script_service(request: Request) -> ScriptService:
