@@ -30,6 +30,11 @@ packages = ["src/keymouse_studio"]
 addopts = "--strict-markers --strict-config"
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+  "windows_probe: Windows-only read-only technical probe",
+  "real_input: may capture or inject real keyboard or mouse input",
+  "manual: requires an operator and a dedicated probe target",
+]
 
 [tool.ruff]
 line-length = 100
@@ -47,3 +52,7 @@ mypy_path = "src"
 [[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "pynput.*"
+ignore_missing_imports = true

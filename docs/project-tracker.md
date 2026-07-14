@@ -3,8 +3,9 @@
 > 状态：V1 开发基线
 > 更新日期：2026-07-14
 > 目标平台：Windows 10/11
-> 当前阶段：后端工程骨架与技术验证
+> 当前阶段：阶段 A 技术验证完成，桌面方案已冻结
 > 后端设计：`docs/backend-design.md`
+> 技术验证：`docs/technical-validation-a.md`
 
 ## 1. 项目定位
 
@@ -89,7 +90,7 @@
 
 V1 采用以下结构，详细后端基线见 `docs/backend-design.md`：
 
-- 桌面外壳：待技术验证后确定，候选为 Tauri 或其他可承载 React 的 Windows 桌面方案。
+- 桌面外壳：Electron 37，承载 React/Vite 渲染进程并管理独立 Python/FastAPI sidecar。
 - 前端：React + TypeScript，当前原型位于 `react-vite/`。
 - 本地应用服务：FastAPI 异步路由，REST 处理命令与资源，WebSocket 推送实时状态。
 - 本地输入引擎：Python，负责监听、执行、计时和全局急停。
@@ -99,7 +100,7 @@ V1 采用以下结构，详细后端基线见 `docs/backend-design.md`：
 - 前后端通信：使用异步 typed service interface，支持严格互斥的 `mock` 和 `real` 模式；Real 连接失败不得静默回退 Mock。
 - 服务安全：仅监听 `127.0.0.1`，REST 和 WebSocket 均校验桌面外壳生成的一次性会话令牌。
 
-桌面外壳尚未冻结。DPI、多显示器、管理员权限、计时精度和急停可靠性仍需完成 Windows 技术验证。
+阶段 A 技术路径已通过并冻结 Electron 桌面方案。100%、125%、150% DPI 和管理员目标窗口的完整发布矩阵保留到 B2/B3 正式适配器完成后复验。
 
 ## 5. 模块边界
 
@@ -179,13 +180,13 @@ V1 采用以下结构，详细后端基线见 `docs/backend-design.md`：
 - [x] 完成定时点击命令行原型。
 - [x] 明确 V1 核心功能范围。
 - [x] 输出前端设计提示词。
-- [ ] 验证 `pynput` 全局键鼠监听。
-- [ ] 验证 Windows `SendInput` 键鼠回放。
-- [ ] 验证 `F12` 全局急停。
-- [ ] 验证暂停后恢复的时间语义。
-- [ ] 验证 Windows DPI 缩放与多显示器坐标。
-- [ ] 验证普通权限与管理员权限窗口之间的输入限制。
-- [ ] 冻结桌面技术方案。
+- [x] 验证 `pynput` 全局键鼠监听。
+- [x] 验证 Windows `SendInput` 键鼠回放。
+- [x] 验证 `F12` 全局急停。
+- [x] 验证暂停后恢复的时间语义。
+- [x] 验证 Windows DPI 缩放与多显示器坐标。
+- [x] 验证普通权限与管理员权限窗口之间的输入限制。
+- [x] 冻结桌面技术方案。
 
 ### 阶段 B：后端核心与脚本格式
 
@@ -265,7 +266,7 @@ V1 采用以下结构，详细后端基线见 `docs/backend-design.md`：
 
 ## 10. 风险与待确认项
 
-- [TBD] 桌面外壳最终选择 Tauri、Electron 或其他方案。
+- [已确定] V1 桌面外壳使用 Electron 37；选择理由和验证证据见 `docs/technical-validation-a.md`。
 - [已确定] V1 使用桌面外壳启动 FastAPI 子进程；REST 处理命令与资源，WebSocket 推送状态。
 - [已确定] 后端仅监听 `127.0.0.1`，使用进程级一次性会话令牌鉴权。
 - [TBD] 是否允许录制系统保留组合键。

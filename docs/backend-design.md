@@ -36,13 +36,13 @@ V1 后端提供：
 
 ### 2.2 本地通信决策
 
-V1 使用仅绑定 `127.0.0.1` 的 FastAPI 服务，前端通过 `RealAutomationService` 访问。桌面外壳负责启动后端子进程、读取动态端口和一次性会话令牌，并在退出时关闭子进程。
+V1 使用 Electron 37 桌面外壳和仅绑定 `127.0.0.1` 的 FastAPI sidecar，前端通过 `RealAutomationService` 访问。Electron 主进程负责启动后端子进程、读取动态端口和一次性会话令牌，并在退出时关闭子进程。技术验证和选型依据见 `docs/technical-validation-a.md`。
 
 选择该方案的原因：
 
 - 与 React 前端和 Python 输入引擎边界清晰。
 - REST/WebSocket 契约易于调试和测试。
-- 后续切换 Tauri 或其他桌面外壳时，领域服务无需重写。
+- Electron 与现有 React/Vite 和 Node 工具链直接兼容，主进程可可靠管理 Python sidecar。
 - 能显式区分 `mock` 和 `real`，避免混合实现。
 
 安全约束：
@@ -536,14 +536,18 @@ V1 事件：
 
 完成定义：可录制、保存、加载并回放一段键鼠脚本，F12 可全程急停。
 
-### 里程碑 B4：前后端联调
+### 里程碑 B4：前后端与 Electron 联调
 
 - 实现前端 `RealAutomationService`。
 - 完成 mock/real 显式切换。
 - 对齐错误、状态和事件展示。
+- Electron 主进程启动打包后的 FastAPI sidecar，读取 stdout 单行 JSON 握手中的动态端口和令牌。
+- BrowserWindow 固定关闭 Node integration，并启用 context isolation 和 sandbox。
+- preload 仅暴露读取连接信息的窄接口。
+- 覆盖正常退出、sidecar 崩溃、动态端口占用、中文安装路径和令牌拒绝测试。
 - 完成端到端核心流程测试。
 
-完成定义：前端可真实执行连点、录制和回放，连接失败不会静默回退 Mock。
+完成定义：前端可真实执行连点、录制和回放；连接失败不会静默回退 Mock；Electron 退出后 sidecar 不残留；无令牌本地请求不能调用受保护接口。
 
 ## 13. 后端完成标准
 

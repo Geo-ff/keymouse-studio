@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KeyMouse Desktop PoC</title>
+  </head>
+  <body>
+    <main><h1>KeyMouse Desktop PoC</h1><output id="status">连接中</output></main>
+    <script type="module">
+      const status = document.querySelector('#status')
+      const connection = await window.desktop.getConnectionInfo()
+      const response = await fetch(`http://127.0.0.1:${connection.port}/health`, {
+        headers: { Authorization: `Bearer ${connection.token}` },
+      })
+      status.value = response.ok ? 'sidecar 已连接' : 'sidecar 连接失败'
+    </script>
+  </body>
+</html>
