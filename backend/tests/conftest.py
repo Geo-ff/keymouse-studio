@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 import httpx
 import pytest
@@ -11,8 +12,8 @@ SESSION_TOKEN = "test-session-token"
 
 
 @pytest.fixture
-def settings() -> Settings:
-    return Settings(session_token=SESSION_TOKEN)
+def settings(tmp_path: Path) -> Settings:
+    return Settings(session_token=SESSION_TOKEN, script_directory=tmp_path / "scripts")
 
 
 @pytest.fixture

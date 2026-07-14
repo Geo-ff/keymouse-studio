@@ -6,11 +6,15 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
-from keymouse_studio.api.routers import capabilities, events, health, operations
+from keymouse_studio.api.routers import capabilities, events, health, operations, scripts
 from keymouse_studio.api.schemas.common import ErrorDetail, ErrorResponse
 from keymouse_studio.config import Settings
 from keymouse_studio.dependencies import require_session_token
 from keymouse_studio.domain.errors import AppError, ErrorCode
+from keymouse_studio.infrastructure.persistence.json_script_repository import JsonScriptRepository
+from keymouse_studio.services.event_service import EventService
+from keymouse_studio.services.operation_service import OperationService
+from keymouse_studio.services.script_service import ScriptService
 
 API_PREFIX = "/api/v1"
 
@@ -37,7 +41,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url=None,
         openapi_url=None,
     )
-    app.state.settings = settings or Settings()
+    app_settings = settings or Settings()
+    event_service = EventService(app_settings.protocol_version)
+    app.state.settings = app_settings
+    app.state.operation_service = OperationService(event_service)
+    app.state.script_service = ScriptService(JsonScriptRepository(app_settings.script_directory))
 
     @app.exception_handler(AppError)
     async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
@@ -60,7 +68,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ErrorDetail(
                 code=ErrorCode.VALIDATION_ERROR,
                 message="Request validation failed",
-                details={"errors": exc.errors()},
+                details={
+                    "errors": [
+                        {
+                            "path": ".".join(str(part) for part in error["loc"]),
+                            "type": error["type"],
+                            "message": error["msg"],
+                        }
+                        for error in exc.errors()
+                    ]
+                },
             ),
             422,
         )
@@ -94,6 +111,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.include_router(
         operations.router,
+        prefix=API_PREFIX,
+        dependencies=protected_dependencies,
+    )
+    app.include_router(
+        scripts.router,
         prefix=API_PREFIX,
         dependencies=protected_dependencies,
     )

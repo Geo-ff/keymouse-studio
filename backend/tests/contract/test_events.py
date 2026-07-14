@@ -12,22 +12,25 @@ def test_events_first_frame_is_complete_state_snapshot(app: FastAPI) -> None:
             "/api/v1/events",
             headers={"Authorization": f"Bearer {SESSION_TOKEN}"},
         ) as websocket:
-            assert websocket.receive_json() == {
-                "protocolVersion": 1,
-                "type": "engine.state_snapshot",
-                "payload": {
-                    "operationId": None,
-                    "operationType": None,
-                    "state": "idle",
-                    "sequence": 0,
-                    "startedAt": None,
-                    "elapsedMs": 0,
-                    "progress": None,
-                    "currentActionIndex": None,
-                    "completedCount": 0,
-                    "countdownRemainingMs": 0,
-                    "error": None,
-                },
+            event = websocket.receive_json()
+            assert event["protocolVersion"] == 1
+            assert event["sequence"] == 1
+            assert event["eventId"]
+            assert event["timestamp"].endswith("Z")
+            assert event["operationId"] is None
+            assert event["type"] == "engine.state_snapshot"
+            assert event["payload"] == {
+                "operationId": None,
+                "operationType": None,
+                "state": "idle",
+                "sequence": 1,
+                "startedAt": None,
+                "elapsedMs": 0,
+                "progress": None,
+                "currentActionIndex": None,
+                "completedCount": 0,
+                "countdownRemainingMs": 0,
+                "error": None,
             }
 
 

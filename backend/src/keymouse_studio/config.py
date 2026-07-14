@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from ipaddress import ip_address
+from pathlib import Path
 from secrets import token_urlsafe
 
 
@@ -9,6 +10,9 @@ class Settings:
     port: int = 0
     app_version: str = "0.1.0"
     protocol_version: int = 1
+    script_directory: Path = field(
+        default_factory=lambda: Path.home() / ".keymouse-studio" / "scripts"
+    )
     session_token: str = field(default_factory=lambda: token_urlsafe(32), repr=False)
 
     def __post_init__(self) -> None:

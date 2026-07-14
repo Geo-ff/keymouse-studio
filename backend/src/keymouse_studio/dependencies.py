@@ -5,10 +5,20 @@ from fastapi import Depends, Header, Request
 
 from keymouse_studio.config import Settings
 from keymouse_studio.domain.errors import UnauthorizedError
+from keymouse_studio.services.operation_service import OperationService
+from keymouse_studio.services.script_service import ScriptService
 
 
 def get_settings(request: Request) -> Settings:
     return cast(Settings, request.app.state.settings)
+
+
+def get_operation_service(request: Request) -> OperationService:
+    return cast(OperationService, request.app.state.operation_service)
+
+
+def get_script_service(request: Request) -> ScriptService:
+    return cast(ScriptService, request.app.state.script_service)
 
 
 def require_session_token(
