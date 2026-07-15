@@ -5,6 +5,8 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { Layout, type PageId } from './components/Layout';
+import { AboutDialog } from './components/AboutDialog';
+import { UpdateProgressBar } from './components/UpdateProgressBar';
 import { Dashboard } from './pages/Dashboard';
 import { AutoClicker } from './pages/AutoClicker';
 import { TimedClick } from './pages/TimedClick';
@@ -15,7 +17,7 @@ import { Settings } from './pages/Settings';
 import { useService } from './hooks/useService';
 import { createEmptyScript, mockScripts } from './data/mockData';
 import { useToast } from './providers/ToastProvider';
-import type { Script, ScriptAction, AppSettings } from './types';
+import type { DesktopAboutInfo, DesktopUpdateState, Script, ScriptAction, AppSettings } from './types';
 
 const MOCK_SCRIPT_IDS = new Set(mockScripts.map(script => script.id));
 
@@ -27,6 +29,11 @@ export default function App() {
   const theme = settings.theme;
   const [currentScript, setCurrentScript] = useState<Script>(createEmptyScript);
   const [saved, setSaved] = useState(true);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [aboutInfo, setAboutInfo] = useState<DesktopAboutInfo | null>(null);
+  const [updateState, setUpdateState] = useState<DesktopUpdateState | null>(null);
+  const [updateBannerDismissed, setUpdateBannerDismissed] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   useEffect(() => {
     if (settings.serviceMode !== 'real') return;
@@ -42,6 +49,88 @@ export default function App() {
     document.title = 'KeyMouse Studio';
     void window.desktop?.setTheme?.(theme).catch(() => undefined);
   }, [theme]);
+
+  const refreshAbout = useCallback(async () => {
+    if (!window.desktop?.getAboutInfo) return;
+    try {
+      const info = await window.desktop.getAboutInfo();
+      setAboutInfo(info);
+      if (info.update) setUpdateState(info.update);
+    } catch {
+      // ignore when not in Electron
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshAbout();
+    void window.desktop?.getUpdateState?.().then((s) => {
+      if (s) setUpdateState(s);
+    }).catch(() => undefined);
+
+    const offState = window.desktop?.onUpdateState?.((next) => {
+      setUpdateState(next);
+      setCheckingUpdate(next.status === 'checking');
+      if (next.status === 'available' || next.status === 'downloading' || next.status === 'downloaded') {
+        setUpdateBannerDismissed(false);
+      }
+    });
+    const offAbout = window.desktop?.onOpenAbout?.(() => {
+      void refreshAbout();
+      setAboutOpen(true);
+    });
+    const offUpdate = window.desktop?.onOpenUpdatePrompt?.(() => {
+      void refreshAbout();
+      setAboutOpen(true);
+    });
+    return () => {
+      offState?.();
+      offAbout?.();
+      offUpdate?.();
+    };
+  }, [refreshAbout]);
+
+  const handleCheckUpdate = useCallback(async () => {
+    if (!window.desktop?.checkForUpdates) {
+      toast.info('仅在桌面安装包中支持检查更新');
+      return;
+    }
+    setCheckingUpdate(true);
+    try {
+      const result = await window.desktop.checkForUpdates();
+      setUpdateState((prev) => ({ ...(prev ?? { status: 'idle' }), ...result }));
+      if (result.status === 'up-to-date') toast.success(result.message || '已是最新版本');
+      else if (result.status === 'dev-mode') toast.info(result.message || '开发模式不可更新');
+      else if (result.status === 'error') toast.error(result.message || '检查更新失败');
+      else if (result.status === 'available') toast.info(`发现新版本 v${result.version ?? ''}`);
+      await refreshAbout();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '检查更新失败');
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }, [toast, refreshAbout]);
+
+  const handleDownloadUpdate = useCallback(async () => {
+    if (!window.desktop?.downloadUpdate) return;
+    setUpdateBannerDismissed(false);
+    try {
+      const result = await window.desktop.downloadUpdate();
+      setUpdateState((prev) => ({ ...(prev ?? { status: 'idle' }), ...result, status: result.status }));
+      if (result.status === 'error') toast.error(result.message || '下载更新失败');
+      else if (result.status === 'downloaded') toast.success(`v${result.version ?? ''} 已下载完成`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '下载更新失败');
+    }
+  }, [toast]);
+
+  const handleInstallUpdate = useCallback(async () => {
+    if (!window.desktop?.installUpdate) return;
+    try {
+      await window.desktop.installUpdate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '安装更新失败');
+    }
+  }, [toast]);
 
   // Handle theme toggle
   const handleToggleTheme = useCallback(() => {
@@ -143,6 +232,18 @@ export default function App() {
           <button className="btn btn-ghost btn-sm" onClick={clearError}>关闭</button>
         </div>
       )}
+      {!updateBannerDismissed && (
+        <UpdateProgressBar
+          update={updateState}
+          onDownload={() => { void handleDownloadUpdate(); }}
+          onInstall={() => { void handleInstallUpdate(); }}
+          onDismiss={() => setUpdateBannerDismissed(true)}
+          onOpenAbout={() => {
+            void refreshAbout();
+            setAboutOpen(true);
+          }}
+        />
+      )}
       <Layout
         activePage={page}
         onPageChange={setPage}
@@ -151,9 +252,23 @@ export default function App() {
         theme={theme}
         onToggleTheme={handleToggleTheme}
         onEmergencyStop={handleEmergencyStop}
+        onOpenAbout={() => {
+          void refreshAbout();
+          setAboutOpen(true);
+        }}
        data-qoder-id="qel-layout-c21360f5" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-layout-c21360f5&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;layout&quot;,&quot;loc&quot;:{&quot;line&quot;:117,&quot;column&quot;:7}}">
         {renderPage()}
       </Layout>
+      <AboutDialog
+        open={aboutOpen}
+        onClose={() => setAboutOpen(false)}
+        about={aboutInfo}
+        update={updateState}
+        checking={checkingUpdate}
+        onCheckUpdate={() => { void handleCheckUpdate(); }}
+        onDownload={() => { void handleDownloadUpdate(); }}
+        onInstall={() => { void handleInstallUpdate(); }}
+      />
       {/* Countdown overlay */}
       {state.countdownRemaining > 0 && (
         <div className="countdown-overlay" onClick={handleEmergencyStop} data-qoder-id="qel-countdown-overlay-c389bc14" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-countdown-overlay-c389bc14&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;countdown-overlay&quot;,&quot;loc&quot;:{&quot;line&quot;:130,&quot;column&quot;:9}}">

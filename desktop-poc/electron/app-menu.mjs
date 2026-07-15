@@ -1,46 +1,34 @@
-import { app, dialog, Menu, shell } from 'electron'
-import {
-  APP_DESCRIPTION,
-  APP_TITLE,
-  GITHUB_REPO_URL,
-  ALLOWED_EXTERNAL_URLS,
-  getAppTitle,
-} from './constants.mjs'
-import {
-  checkForUpdates,
-  getUpdateMenuLabel,
-  onUpdateMenuStatus,
-} from './auto-updater.mjs'
+import { Menu } from 'electron'
+import { APP_TITLE, getAppTitle } from './constants.mjs'
 
 export { getAppTitle }
 
-async function openAllowedExternal(url) {
-  if (!ALLOWED_EXTERNAL_URLS.includes(url)) {
-    throw new Error('blocked external url')
-  }
-  await shell.openExternal(url)
+/** @type {(() => void) | null} */
+let openAboutHandler = null
+
+export function setMenuUiHandlers({ onOpenAbout } = {}) {
+  openAboutHandler = typeof onOpenAbout === 'function' ? onOpenAbout : null
 }
 
-export function showAboutDialog() {
-  const version = app.getVersion()
-  return dialog.showMessageBox({
-    type: 'info',
-    title: `关于 ${APP_TITLE}`,
-    message: APP_TITLE,
-    detail: [
-      `当前版本：v${version}`,
-      APP_DESCRIPTION,
-      '',
-      `官方仓库：${GITHUB_REPO_URL}`,
-    ].join('\n'),
-  })
+function openAbout() {
+  if (openAboutHandler) openAboutHandler()
 }
 
 export function createAppMenu() {
+  // Windows/Linux 顶栏菜单项必须带 submenu，无法做成“单击无下拉”。
+  // 因此不设顶栏「关于」菜单，避免重复子菜单；关于入口放在「文件」下单层项。
+  // 应用内工具栏另有一键「关于」按钮。
   const template = [
     {
       label: '文件',
-      submenu: [{ label: '退出', role: 'quit' }],
+      submenu: [
+        {
+          label: `关于 ${APP_TITLE}`,
+          click: () => openAbout(),
+        },
+        { type: 'separator' },
+        { label: '退出', role: 'quit' },
+      ],
     },
     {
       label: '视图',
@@ -65,43 +53,7 @@ export function createAppMenu() {
         { label: '关闭', role: 'close' },
       ],
     },
-    {
-      label: `关于 ${APP_TITLE}`,
-      submenu: [
-        {
-          label: `关于 ${APP_TITLE}`,
-          click: () => {
-            void showAboutDialog()
-          },
-        },
-        {
-          label: `当前版本：v${app.getVersion()}`,
-          enabled: false,
-        },
-        {
-          id: 'check-for-updates',
-          label: getUpdateMenuLabel(),
-          click: () => {
-            void checkForUpdates({ silent: false })
-          },
-        },
-        { type: 'separator' },
-        {
-          label: 'GitHub 仓库',
-          click: () => {
-            void openAllowedExternal(GITHUB_REPO_URL)
-          },
-        },
-      ],
-    },
   ]
 
-  const menu = Menu.buildFromTemplate(template)
-
-  onUpdateMenuStatus((label) => {
-    const item = menu.getMenuItemById('check-for-updates')
-    if (item) item.label = label
-  })
-
-  return menu
+  return Menu.buildFromTemplate(template)
 }

@@ -21,6 +21,7 @@ import {
   Play,
   Pause,
   Square,
+  Info,
 } from 'lucide-react';
 import { useService } from '../hooks/useService';
 import type { OperationType, RunState } from '../types';
@@ -81,10 +82,11 @@ interface ToolbarProps {
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   onEmergencyStop: () => void;
+  onOpenAbout?: () => void;
   onQuickAction?: (action: 'run' | 'pause' | 'stop' | 'save') => void;
 }
 
-function Toolbar({ scriptName, saved, theme, onToggleTheme, onEmergencyStop, ...qoderProps }: ToolbarProps & Record<string, any>) {
+function Toolbar({ scriptName, saved, theme, onToggleTheme, onEmergencyStop, onOpenAbout, ...qoderProps }: ToolbarProps & Record<string, any>) {
   const { state, settings } = useService();
 
   const runStateMap: Record<RunState, 'idle' | 'running' | 'paused' | 'emergency'> = {
@@ -130,6 +132,18 @@ function Toolbar({ scriptName, saved, theme, onToggleTheme, onEmergencyStop, ...
       </div>
 
       <div className="toolbar-divider toolbar-hide-mobile"  data-qoder-id="qel-toolbar-divider-641b9d58" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toolbar-divider-641b9d58&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;toolbar-divider&quot;,&quot;loc&quot;:{&quot;line&quot;:122,&quot;column&quot;:7}}"/>
+
+      {onOpenAbout && (
+        <button
+          className="btn btn-ghost btn-icon"
+          type="button"
+          onClick={onOpenAbout}
+          data-tooltip="关于 KeyMouse Studio"
+          aria-label="关于 KeyMouse Studio"
+        >
+          <Info size={16} />
+        </button>
+      )}
 
       {/* 主题切换 */}
       <button
@@ -271,6 +285,7 @@ interface LayoutProps {
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   onEmergencyStop: () => void;
+  onOpenAbout?: () => void;
   children: ReactNode;
 }
 
@@ -300,6 +315,7 @@ export function Layout(props: LayoutProps & Record<string, any>) {
           theme={props.theme}
           onToggleTheme={props.onToggleTheme}
           onEmergencyStop={props.onEmergencyStop}
+          onOpenAbout={props.onOpenAbout}
          data-qoder-id="qel-toolbar-2d3b2fe7" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toolbar-2d3b2fe7&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Layout&quot;,&quot;elementRole&quot;:&quot;toolbar&quot;,&quot;loc&quot;:{&quot;line&quot;:251,&quot;column&quot;:9}}"/>
         <main className="app-content" data-component="app-content" data-qoder-id="qel-app-content-0d7793b6" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-app-content-0d7793b6&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Layout&quot;,&quot;elementRole&quot;:&quot;app-content&quot;,&quot;loc&quot;:{&quot;line&quot;:259,&quot;column&quot;:9}}">
           {props.children}

@@ -1,14 +1,25 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
-import { createAppMenu, getAppTitle } from './app-menu.mjs'
+import { createAppMenu, getAppTitle, setMenuUiHandlers } from './app-menu.mjs'
 import {
   configureAutoUpdater,
   checkForUpdates,
+  downloadUpdate,
+  getUpdateState,
+  quitAndInstallUpdate,
   scheduleSilentUpdateCheck,
+  setUpdateStateBroadcaster,
 } from './auto-updater.mjs'
-import { APP_TITLE } from './constants.mjs'
+import {
+  ALLOWED_EXTERNAL_URLS,
+  APP_DESCRIPTION,
+  APP_TITLE,
+  GITHUB_OWNER,
+  GITHUB_REPO,
+  GITHUB_REPO_URL,
+} from './constants.mjs'
 import { startSidecar, stopSidecar } from './sidecar-manager.mjs'
 
 const directory = path.dirname(fileURLToPath(import.meta.url))
@@ -22,6 +33,19 @@ let quitting = false
 let sidecarDetach = () => {}
 let mainWindow
 let ipcRegistered = false
+
+const IPC_HANDLERS = [
+  'connection:get',
+  'theme:set',
+  'notify:show',
+  'app:getVersion',
+  'app:getAboutInfo',
+  'shell:openExternal',
+  'update:check',
+  'update:getState',
+  'update:download',
+  'update:install',
+]
 
 function applyNativeTheme(theme) {
   if (theme === 'dark' || theme === 'light') {
@@ -61,6 +85,15 @@ function isTrustedRenderer(url) {
   }
 }
 
+function assertTrusted(event) {
+  if (!isTrustedRenderer(event.senderFrame.url)) throw new Error('untrusted renderer')
+}
+
+function sendToRenderer(channel, payload) {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.webContents.send(channel, payload)
+}
+
 function resolveSidecarLaunch() {
   if (app.isPackaged) {
     const sidecarExe = path.join(process.resourcesPath, 'sidecar', 'keymouse-sidecar.exe')
@@ -72,34 +105,34 @@ function resolveSidecarLaunch() {
 
   const python = process.env.KEYMOUSE_PYTHON ?? 'python'
   const script = path.join(directory, 'backend-sidecar.py')
-  return { command: python, args: ['-u', script], env: {
-    PYTHONPATH: [path.resolve(directory, '../../backend/src'), process.env.PYTHONPATH]
-      .filter(Boolean)
-      .join(path.delimiter),
-  } }
+  return {
+    command: python,
+    args: ['-u', script],
+    env: {
+      PYTHONPATH: [path.resolve(directory, '../../backend/src'), process.env.PYTHONPATH]
+        .filter(Boolean)
+        .join(path.delimiter),
+    },
+  }
 }
 
 function registerIpcHandlers() {
   if (ipcRegistered) {
-    ipcMain.removeHandler('connection:get')
-    ipcMain.removeHandler('theme:set')
-    ipcMain.removeHandler('notify:show')
-    ipcMain.removeHandler('app:getVersion')
-    ipcMain.removeHandler('update:check')
+    for (const channel of IPC_HANDLERS) ipcMain.removeHandler(channel)
   }
   ipcRegistered = true
 
   ipcMain.handle('connection:get', (event) => {
-    if (!isTrustedRenderer(event.senderFrame.url)) throw new Error('untrusted renderer')
+    assertTrusted(event)
     return sidecar.connection
   })
   ipcMain.handle('theme:set', (event, theme) => {
-    if (!isTrustedRenderer(event.senderFrame.url)) throw new Error('untrusted renderer')
+    assertTrusted(event)
     applyNativeTheme(theme === 'dark' || theme === 'light' ? theme : 'system')
     return { ok: true, dark: nativeTheme.shouldUseDarkColors }
   })
   ipcMain.handle('notify:show', async (event, options = {}) => {
-    if (!isTrustedRenderer(event.senderFrame.url)) throw new Error('untrusted renderer')
+    assertTrusted(event)
     const title = typeof options.title === 'string' && options.title.trim() ? options.title.trim() : TITLE
     const bodyParts = []
     if (typeof options.message === 'string' && options.message.trim()) bodyParts.push(options.message.trim())
@@ -118,22 +151,53 @@ function registerIpcHandlers() {
     return { ok: true }
   })
   ipcMain.handle('app:getVersion', (event) => {
-    if (!isTrustedRenderer(event.senderFrame.url)) throw new Error('untrusted renderer')
+    assertTrusted(event)
     return app.getVersion()
   })
+  ipcMain.handle('app:getAboutInfo', (event) => {
+    assertTrusted(event)
+    const update = getUpdateState()
+    return {
+      appTitle: APP_TITLE,
+      description: APP_DESCRIPTION,
+      version: app.getVersion(),
+      githubUrl: GITHUB_REPO_URL,
+      githubOwner: GITHUB_OWNER,
+      githubRepo: GITHUB_REPO,
+      isPackaged: app.isPackaged,
+      releaseDate: update.releaseDate,
+      update,
+    }
+  })
+  ipcMain.handle('shell:openExternal', async (event, url) => {
+    assertTrusted(event)
+    if (typeof url !== 'string' || !ALLOWED_EXTERNAL_URLS.includes(url)) {
+      throw new Error('blocked external url')
+    }
+    await shell.openExternal(url)
+    return { ok: true }
+  })
   ipcMain.handle('update:check', async (event) => {
-    if (!isTrustedRenderer(event.senderFrame.url)) throw new Error('untrusted renderer')
+    assertTrusted(event)
     return checkForUpdates({ silent: false })
+  })
+  ipcMain.handle('update:getState', (event) => {
+    assertTrusted(event)
+    return getUpdateState()
+  })
+  ipcMain.handle('update:download', async (event) => {
+    assertTrusted(event)
+    return downloadUpdate()
+  })
+  ipcMain.handle('update:install', (event) => {
+    assertTrusted(event)
+    return quitAndInstallUpdate()
   })
 }
 
 function removeIpcHandlers() {
   if (!ipcRegistered) return
-  ipcMain.removeHandler('connection:get')
-  ipcMain.removeHandler('theme:set')
-  ipcMain.removeHandler('notify:show')
-  ipcMain.removeHandler('app:getVersion')
-  ipcMain.removeHandler('update:check')
+  for (const channel of IPC_HANDLERS) ipcMain.removeHandler(channel)
   ipcRegistered = false
 }
 
@@ -224,6 +288,11 @@ app.whenReady().then(async () => {
     app.setName(APP_TITLE)
     applyNativeTheme('system')
     configureAutoUpdater()
+    setUpdateStateBroadcaster((state) => sendToRenderer('update:state', state))
+    setMenuUiHandlers({
+      onOpenAbout: () => sendToRenderer('ui:open-about', {}),
+
+    })
     Menu.setApplicationMenu(createAppMenu())
 
     const launch = resolveSidecarLaunch()
@@ -234,7 +303,7 @@ app.whenReady().then(async () => {
     })
     sidecarDetach = sidecar.detach ?? (() => {})
     await createWindow()
-    scheduleSilentUpdateCheck(8000)
+    scheduleSilentUpdateCheck(5000)
   } catch (error) {
     console.error(error)
     try {

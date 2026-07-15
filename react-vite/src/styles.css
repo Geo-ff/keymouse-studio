@@ -1480,6 +1480,285 @@ input, select, textarea {
   margin-top: 20px;
 }
 
+/* --- About dialog --- */
+.about-dialog {
+  position: relative;
+  width: min(440px, 100%);
+  padding: 28px 24px 20px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  will-change: transform, opacity;
+}
+
+.about-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.about-close:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.about-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding-right: 24px;
+}
+
+.about-logo {
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
+  object-fit: cover;
+  flex-shrink: 0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.about-hero-text h2 {
+  margin: 0 0 6px;
+  font-size: 1.25rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.about-desc {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+}
+
+.about-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  border-radius: 10px;
+  background: var(--color-bg-muted, var(--color-bg-hover));
+  border: 1px solid var(--color-border-subtle);
+}
+
+.about-meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.about-meta-label {
+  color: var(--color-text-secondary);
+  font-size: var(--fs-sm);
+  flex-shrink: 0;
+}
+
+.about-meta-value {
+  text-align: right;
+  font-size: var(--fs-sm);
+  color: var(--color-text-primary);
+  word-break: break-word;
+}
+
+.about-progress-block {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.about-progress-track,
+.update-banner-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-border-subtle);
+  overflow: hidden;
+}
+
+.about-progress-fill,
+.update-banner-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--color-action-primary), #5b9dff);
+  transition: width 160ms ease-out;
+}
+
+.about-progress-label {
+  font-size: var(--fs-sm);
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  min-width: 36px;
+  text-align: right;
+}
+
+.about-github {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-bottom: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-bg-surface);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.about-github:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border);
+}
+
+.about-github-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.about-github-title {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.about-github-url {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.about-github-external {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.about-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.about-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.about-spin {
+  animation: about-spin 0.9s linear infinite;
+}
+
+@keyframes about-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* --- Update progress banner --- */
+.update-banner {
+  position: fixed;
+  top: 0;
+  left: 56px;
+  right: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+  padding: 6px 14px;
+  background: color-mix(in srgb, var(--color-action-primary) 12%, var(--color-bg-toolbar));
+  border-bottom: 1px solid color-mix(in srgb, var(--color-action-primary) 28%, var(--color-border-subtle));
+  color: var(--color-text-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.update-banner-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.update-banner-icon {
+  color: var(--color-action-primary);
+  flex-shrink: 0;
+}
+
+.update-banner-text {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  padding: 0;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+  text-align: left;
+}
+
+.update-banner-text:hover {
+  color: var(--color-action-primary);
+}
+
+.update-banner-track {
+  max-width: 180px;
+  min-width: 80px;
+}
+
+.update-banner-pct {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  min-width: 2.5em;
+}
+
+.update-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.update-banner-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+@media (max-width: 900px) {
+  .update-banner {
+    left: 0;
+  }
+  .update-banner-track {
+    display: none;
+  }
+}
+
 /* --- Drag Handle Lines --- */
 .drag-handle {
   display: flex;

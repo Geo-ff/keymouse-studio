@@ -359,12 +359,59 @@ export interface DesktopNotificationOptions {
   detail?: string;
 }
 
+export type DesktopUpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'up-to-date'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'installing'
+  | 'dev-mode'
+  | 'error'
+  | 'busy';
+
+export interface DesktopUpdateState {
+  status: DesktopUpdateStatus | string;
+  currentVersion?: string;
+  version?: string | null;
+  percent?: number;
+  transferred?: number;
+  total?: number;
+  message?: string;
+  releaseDate?: string | null;
+  releaseNotes?: string | null;
+  label?: string;
+  checking?: boolean;
+  downloading?: boolean;
+}
+
+export interface DesktopAboutInfo {
+  appTitle: string;
+  description: string;
+  version: string;
+  githubUrl: string;
+  githubOwner: string;
+  githubRepo: string;
+  isPackaged: boolean;
+  releaseDate?: string | null;
+  update?: DesktopUpdateState;
+}
+
 export interface DesktopApi {
   getConnectionInfo(): Promise<DesktopConnectionInfo>;
   setTheme?(theme: 'light' | 'dark' | 'system'): Promise<{ ok: boolean; dark: boolean }>;
   showNotification?(options: DesktopNotificationOptions): Promise<{ ok: boolean; reason?: string }>;
   getAppVersion?(): Promise<string>;
-  checkForUpdates?(): Promise<{ status: string; version?: string; message?: string }>;
+  getAboutInfo?(): Promise<DesktopAboutInfo>;
+  openExternal?(url: string): Promise<{ ok: boolean }>;
+  checkForUpdates?(): Promise<DesktopUpdateState & { status: string; silent?: boolean }>;
+  getUpdateState?(): Promise<DesktopUpdateState>;
+  downloadUpdate?(): Promise<{ status: string; version?: string; message?: string }>;
+  installUpdate?(): Promise<{ status: string }>;
+  onUpdateState?(handler: (state: DesktopUpdateState) => void): () => void;
+  onOpenAbout?(handler: () => void): () => void;
+  onOpenUpdatePrompt?(handler: () => void): () => void;
 }
 
 declare global {
