@@ -391,10 +391,19 @@ input, select, textarea {
   display: flex;
   align-items: center;
   padding: 0 var(--space-lg);
-  gap: var(--space-xl);
+  gap: var(--space-md);
   font-size: var(--fs-sm);
   color: var(--color-text-secondary);
   z-index: 9;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.app-statusbar .statusbar-truncate {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* --- Sidebar Nav Items --- */

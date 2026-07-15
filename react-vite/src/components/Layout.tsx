@@ -23,8 +23,8 @@ import {
   Square,
 } from 'lucide-react';
 import { useService } from '../hooks/useService';
-import type { RunState } from '../types';
-import { matchesHotkey } from '../utils/hotkey';
+import type { OperationType, RunState } from '../types';
+import { formatHotkeyLabel, matchesHotkey } from '../utils/hotkey';
 
 export type PageId = 'dashboard' | 'clicker' | 'timed' | 'recording' | 'script' | 'manager' | 'settings';
 
@@ -171,15 +171,24 @@ function GlobalStatusBadge({ state, ...qoderProps }: { state: 'idle' | 'running'
   );
 }
 
+const OPERATION_LABELS: Record<OperationType, string> = {
+  clicker: '连点器',
+  timed_click: '定时点击',
+  recording: '录制',
+  playback: '脚本回放',
+};
+
 /* --- StatusBar --- */
-function StatusBar(qoderProps: Record<string, any>) {
-  const { state } = useService();
+function StatusBar({ scriptName, ...qoderProps }: { scriptName: string } & Record<string, any>) {
+  const { state, settings, mode } = useService();
+  const isActive = state.runState === 'running' || state.runState === 'paused';
+  const operationType = state.snapshot.operationType;
+  const showScript = operationType === 'playback' && scriptName.trim() && scriptName !== '暂未选择脚本';
 
   const runStateLabel: Record<RunState, string> = {
     idle: '空闲',
     running: '运行中',
     paused: '已暂停',
-
     emergency: '已急停',
   };
 
@@ -187,38 +196,65 @@ function StatusBar(qoderProps: Record<string, any>) {
     idle: 'var(--color-text-secondary)',
     running: 'var(--color-running)',
     paused: 'var(--color-paused)',
-
     emergency: 'var(--color-danger)',
   };
 
+  const hotkeyHint = [
+    `急停：${formatHotkeyLabel(settings.emergencyHotkey, '—')}`,
+    settings.recordStartHotkey ? `录制：${formatHotkeyLabel(settings.recordStartHotkey)}` : null,
+    settings.recordStopHotkey ? `停录：${formatHotkeyLabel(settings.recordStopHotkey)}` : null,
+    settings.playbackStartHotkey ? `回放：${formatHotkeyLabel(settings.playbackStartHotkey)}` : null,
+    settings.playbackStopHotkey ? `停放：${formatHotkeyLabel(settings.playbackStopHotkey)}` : null,
+  ].filter(Boolean).join(' · ');
+
   return (
-    <footer className={["app-statusbar", (qoderProps as any)?.className].filter(Boolean).join(" ")} role="contentinfo" data-component="statusbar" style={(qoderProps as any)?.style} data-qoder-id={(qoderProps as any)?.["data-qoder-id"]} data-qoder-source={(qoderProps as any)?.["data-qoder-source"]}>
-      <div className="flex items-center gap-xs" data-qoder-id="qel-flex-b75f12de" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-flex-b75f12de&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;StatusBar&quot;,&quot;elementRole&quot;:&quot;flex&quot;,&quot;loc&quot;:{&quot;line&quot;:186,&quot;column&quot;:7}}">
-        <MousePointer size={12}  data-qoder-id="qel-mousepointer-45132725" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-mousepointer-45132725&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;StatusBar&quot;,&quot;elementRole&quot;:&quot;mousepointer&quot;,&quot;loc&quot;:{&quot;line&quot;:187,&quot;column&quot;:9}}"/>
-        <span className="text-mono" data-qoder-id="qel-text-mono-50353abd" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-mono-50353abd&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;StatusBar&quot;,&quot;elementRole&quot;:&quot;text-mono&quot;,&quot;loc&quot;:{&quot;line&quot;:188,&quot;column&quot;:9}}">
-          {state.mousePos.x}, {state.mousePos.y}
+    <footer className={['app-statusbar', (qoderProps as any)?.className].filter(Boolean).join(' ')} role="contentinfo" data-component="statusbar" style={(qoderProps as any)?.style} data-qoder-id={(qoderProps as any)?.['data-qoder-id']} data-qoder-source={(qoderProps as any)?.['data-qoder-source']}>
+      <div className="flex items-center gap-xs">
+        <MousePointer size={12} />
+        <span className="text-mono">{state.mousePos.x}, {state.mousePos.y}</span>
+      </div>
+
+      <div className="flex items-center gap-xs" title={hotkeyHint}>
+        <Keyboard size={12} />
+        <span className="statusbar-truncate">{hotkeyHint}</span>
+      </div>
+
+      <div className="flex items-center gap-xs">
+        <span>模式：</span>
+        <span style={{ color: mode === 'real' ? 'var(--color-running)' : 'var(--color-paused)', fontWeight: 600 }}>
+          {mode === 'real' ? 'Real' : 'Mock'}
         </span>
       </div>
 
-      <div className="flex items-center gap-xs" data-qoder-id="qel-flex-b04dbeb8" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-flex-b04dbeb8&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;StatusBar&quot;,&quot;elementRole&quot;:&quot;flex&quot;,&quot;loc&quot;:{&quot;line&quot;:193,&quot;column&quot;:7}}">
-        <Keyboard size={12}  data-qoder-id="qel-keyboard-6c690cff" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-keyboard-6c690cff&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;StatusBar&quot;,&quot;elementRole&quot;:&quot;keyboard&quot;,&quot;loc&quot;:{&quot;line&quot;:194,&quot;column&quot;:9}}"/>
-        <span data-qoder-id="qel-span-4963bf64" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-span-4963bf64&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;StatusBar&quot;,&quot;elementRole&quot;:&quot;span&quot;,&quot;loc&quot;:{&quot;line&quot;:195,&quot;column&quot;:9}}">{state.keyboardListening ? '键盘监听中' : '未监听'}</span>
-      </div>
+      {isActive && operationType && (
+        <div className="flex items-center gap-xs">
+          <span>运行：</span>
+          <span style={{ color: 'var(--color-action-primary)', fontWeight: 600 }}>
+            {OPERATION_LABELS[operationType]}
+          </span>
+        </div>
+      )}
 
-      <div className="toolbar-spacer"  data-qoder-id="qel-toolbar-spacer-ed1a9586" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toolbar-spacer-ed1a9586&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;StatusBar&quot;,&quot;elementRole&quot;:&quot;toolbar-spacer&quot;,&quot;loc&quot;:{&quot;line&quot;:198,&quot;column&quot;:7}}"/>
+      {showScript && (
+        <div className="flex items-center gap-xs" title={scriptName}>
+          <FileCode2 size={12} />
+          <span>脚本：</span>
+          <span className="statusbar-truncate">{scriptName}</span>
+        </div>
+      )}
 
-      <div className="flex items-center gap-xs" data-qoder-id="qel-flex-b44dc504" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-flex-b44dc504&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;StatusBar&quot;,&quot;elementRole&quot;:&quot;flex&quot;,&quot;loc&quot;:{&quot;line&quot;:200,&quot;column&quot;:7}}">
-        {state.runState === 'running' ? <Play size={12} style={{ color: 'var(--color-running)' }}  data-qoder-id="qel-play-53870d89" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-play-53870d89&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;StatusBar&quot;,&quot;elementRole&quot;:&quot;play&quot;,&quot;loc&quot;:{&quot;line&quot;:201,&quot;column&quot;:41}}"/> :
-         state.runState === 'paused' ? <Pause size={12} style={{ color: 'var(--color-paused)' }}  data-qoder-id="qel-pause-fe214a48" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-pause-fe214a48&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;StatusBar&quot;,&quot;elementRole&quot;:&quot;pause&quot;,&quot;loc&quot;:{&quot;line&quot;:202,&quot;column&quot;:40}}"/> :
-         state.runState === 'emergency' ? <Zap size={12} style={{ color: 'var(--color-danger)' }}  data-qoder-id="qel-zap-61cf8a37" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-zap-61cf8a37&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;StatusBar&quot;,&quot;elementRole&quot;:&quot;zap&quot;,&quot;loc&quot;:{&quot;line&quot;:203,&quot;column&quot;:43}}"/> :
+      <div className="toolbar-spacer" />
+
+      <div className="flex items-center gap-xs">
+        {state.runState === 'running' ? <Play size={12} style={{ color: 'var(--color-running)' }} /> :
+         state.runState === 'paused' ? <Pause size={12} style={{ color: 'var(--color-paused)' }} /> :
+         state.runState === 'emergency' ? <Zap size={12} style={{ color: 'var(--color-danger)' }} /> :
          null}
-        <span style={{ color: runStateColor[state.runState] }} data-qoder-id="qel-span-4363b5f2" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-span-4363b5f2&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;StatusBar&quot;,&quot;elementRole&quot;:&quot;span&quot;,&quot;loc&quot;:{&quot;line&quot;:205,&quot;column&quot;:9}}">
-          {runStateLabel[state.runState]}
-        </span>
+        <span style={{ color: runStateColor[state.runState] }}>{runStateLabel[state.runState]}</span>
       </div>
 
       {state.countdownRemaining > 0 && (
-        <div className="badge" style={{ color: 'var(--color-action-primary)', background: 'var(--color-info-bg)' }} data-qoder-id="qel-badge-84ec36fd" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-badge-84ec36fd&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;StatusBar&quot;,&quot;elementRole&quot;:&quot;badge&quot;,&quot;loc&quot;:{&quot;line&quot;:211,&quot;column&quot;:9}}">
+        <div className="badge" style={{ color: 'var(--color-action-primary)', background: 'var(--color-info-bg)' }}>
           倒计时 {state.countdownRemaining}s
         </div>
       )}
@@ -268,7 +304,7 @@ export function Layout(props: LayoutProps & Record<string, any>) {
         <main className="app-content" data-component="app-content" data-qoder-id="qel-app-content-0d7793b6" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-app-content-0d7793b6&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Layout&quot;,&quot;elementRole&quot;:&quot;app-content&quot;,&quot;loc&quot;:{&quot;line&quot;:259,&quot;column&quot;:9}}">
           {props.children}
         </main>
-        <StatusBar  data-qoder-id="qel-statusbar-38d16ef9" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-statusbar-38d16ef9&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Layout&quot;,&quot;elementRole&quot;:&quot;statusbar&quot;,&quot;loc&quot;:{&quot;line&quot;:262,&quot;column&quot;:9}}"/>
+        <StatusBar scriptName={props.scriptName} data-qoder-id="qel-statusbar-38d16ef9" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-statusbar-38d16ef9&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Layout&quot;,&quot;elementRole&quot;:&quot;statusbar&quot;,&quot;loc&quot;:{&quot;line&quot;:262,&quot;column&quot;:9}}"/>
       </div>
     </div>
   );
