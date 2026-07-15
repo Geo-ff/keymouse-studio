@@ -1,9 +1,9 @@
 # 键鼠自动化工具 V1 项目跟踪
 
 > 状态：V1 开发基线
-> 更新日期：2026-07-14
+> 更新日期：2026-07-15
 > 目标平台：Windows 10/11
-> 当前阶段：阶段 A 技术验证完成，桌面方案已冻结
+> 当前阶段：阶段 C React 前端与契约迁移完成
 > 后端设计：`docs/backend-design.md`
 > 技术验证：`docs/technical-validation-a.md`
 
@@ -233,11 +233,11 @@ V1 采用以下结构，详细后端基线见 `docs/backend-design.md`：
 - [x] 实现控制台、连点器、定时点击、录制、脚本和设置页面原型。
 - [x] 实现脚本编辑器原型。
 - [x] 实现 Mock 服务和 typed service interface 原型。
-- [ ] 按 `docs/backend-design.md` 迁移 Script、Action 和状态类型。
-- [ ] 将 service 方法迁移为统一异步接口。
-- [ ] 实现 `RealAutomationService` 和 WebSocket 状态订阅。
-- [ ] 实现严格互斥且真实生效的 mock/real 模式切换。
-- [ ] 接入结构化错误、能力检测和全局热键状态。
+- [x] 按 `docs/backend-design.md` 迁移 Script、Action 和状态类型。
+- [x] 将 service 方法迁移为统一异步接口。
+- [x] 实现 `RealAutomationService` 和 WebSocket 状态订阅。
+- [x] 实现严格互斥且真实生效的 mock/real 模式切换。
+- [x] 接入结构化错误、能力检测和全局热键状态。
 - [x] 完成浅色和深色主题原型。
 - [x] 检查 1280×720、1440×900 和 1920×1080 原型布局。
 
