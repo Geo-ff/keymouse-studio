@@ -5,6 +5,7 @@ from fastapi import Depends, Header, Request
 
 from keymouse_studio.config import Settings
 from keymouse_studio.domain.errors import UnauthorizedError
+from keymouse_studio.infrastructure.input.adapter import InputWorker
 from keymouse_studio.infrastructure.system.capabilities import CapabilityDetector
 from keymouse_studio.services.automation_coordinator import AutomationCoordinator
 from keymouse_studio.services.clicker_service import ClickerService
@@ -17,6 +18,10 @@ from keymouse_studio.services.settings_service import SettingsService
 
 def get_settings(request: Request) -> Settings:
     return cast(Settings, request.app.state.settings)
+
+
+def get_input_worker(request: Request) -> InputWorker:
+    return cast(InputWorker, request.app.state.input_worker)
 
 
 def get_operation_service(request: Request) -> OperationService:

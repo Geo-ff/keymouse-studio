@@ -13,9 +13,11 @@ import {
   FileCode2,
   Clock,
   ListChecks,
+  Pencil,
 } from 'lucide-react';
 import { useService } from '../hooks/useService';
-import { Button, Input, IconButton, EmptyState } from '../components/ui';
+import { Button, ConfirmDialog, Input, IconButton, EmptyState } from '../components/ui';
+import { useToast } from '../providers/ToastProvider';
 import { formatDuration, calcScriptDuration } from '../data/mockData';
 import type { Script } from '../types';
 import type { PageId } from '../components/Layout';
@@ -26,9 +28,14 @@ interface ScriptManagerProps {
 }
 
 export function ScriptManager({ onNavigate, onLoadScript, ...qoderProps }: ScriptManagerProps & Record<string, any>) {
-  const { loadScript, deleteScript, duplicateScript, scripts: allScripts, refreshScripts } = useService();
+  const { loadScript, saveScript, deleteScript, duplicateScript, scripts: allScripts, refreshScripts } = useService();
+  const toast = useToast();
   const [search, setSearch] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<Script | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
 
 
   const filteredScripts = useMemo(() => {
@@ -53,23 +60,51 @@ export function ScriptManager({ onNavigate, onLoadScript, ...qoderProps }: Scrip
     } catch { }
   }, [loadScript, onLoadScript, onNavigate]);
 
-  const handleDelete = useCallback(async (id: string) => {
+  const handleDelete = useCallback(async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
     try {
-      await deleteScript(id);
+      await deleteScript(deleteTarget.id);
       await refreshScripts();
-      if (selectedId === id) setSelectedId(null);
-    } catch { }
-  }, [deleteScript, refreshScripts, selectedId]);
+      if (selectedId === deleteTarget.id) setSelectedId(null);
+      toast.success(`脚本“${deleteTarget.name}”已删除`);
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleteTarget, deleting, deleteScript, refreshScripts, selectedId, toast]);
 
   const handleDuplicate = useCallback(async (script: Script) => {
     try {
       await duplicateScript(script.id);
       await refreshScripts();
+      toast.success('脚本复制成功');
     } catch { }
-  }, [duplicateScript, refreshScripts]);
+  }, [duplicateScript, refreshScripts, toast]);
+
+  const handleRename = useCallback(async (script: Script) => {
+    const name = editingName.trim();
+    if (!name) return;
+    try {
+      await saveScript({ ...script, name, updatedAt: new Date().toISOString() });
+      await refreshScripts();
+      setEditingId(null);
+      setEditingName('');
+      toast.success('重命名成功');
+    } catch { }
+  }, [editingName, saveScript, refreshScripts, toast]);
 
   return (
     <div style={{ ...({ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)', height: '100%' }), ...((qoderProps as any)?.style) }} className={(qoderProps as any)?.className} data-qoder-id={(qoderProps as any)?.["data-qoder-id"]} data-qoder-source={(qoderProps as any)?.["data-qoder-source"]}>
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="删除脚本？"
+        description={deleteTarget ? `脚本“${deleteTarget.name}”将被永久删除，此操作无法撤销。` : ''}
+        confirmLabel="确认删除"
+        pending={deleting}
+        onConfirm={() => void handleDelete()}
+        onCancel={() => setDeleteTarget(null)}
+      />
       {/* 最近使用快捷区 */}
       {recentScripts.length > 0 && (
         <div className="panel" data-qoder-id="qel-panel-b34cb596" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-panel-b34cb596&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;panel&quot;,&quot;loc&quot;:{&quot;line&quot;:79,&quot;column&quot;:9}}">
@@ -160,9 +195,30 @@ export function ScriptManager({ onNavigate, onLoadScript, ...qoderProps }: Scrip
                   <td data-label="" onClick={e => e.stopPropagation()} data-qoder-id="qel-td-d2ccbedf" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-td-d2ccbedf&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;td&quot;,&quot;loc&quot;:{&quot;line&quot;:164,&quot;column&quot;:19}}">
                     <input type="checkbox" style={{ cursor: 'pointer' }}  data-qoder-id="qel-input-9a5a21aa" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-9a5a21aa&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:165,&quot;column&quot;:21}}"/>
                   </td>
-                  <td data-label="名称" style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }} data-qoder-id="qel-td-d4ccc205" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-td-d4ccc205&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;td&quot;,&quot;loc&quot;:{&quot;line&quot;:167,&quot;column&quot;:19}}">
-                    <FileCode2 size={13} style={{ color: 'var(--color-action-primary)' }}  data-qoder-id="qel-filecode2-4b9a3914" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-filecode2-4b9a3914&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;filecode2&quot;,&quot;loc&quot;:{&quot;line&quot;:168,&quot;column&quot;:21}}"/>
-                    {script.name}
+                  <td data-label="名称" style={{ fontWeight: 500 }} data-qoder-id="qel-td-d4ccc205" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-td-d4ccc205&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;td&quot;,&quot;loc&quot;:{&quot;line&quot;:167,&quot;column&quot;:19}}">
+                    {editingId === script.id ? (
+                      <Input
+                        value={editingName}
+                        onChange={event => setEditingName(event.target.value.slice(0, 200))}
+                        onKeyDown={event => {
+                          if (event.key === 'Enter') void handleRename(script);
+                          if (event.key === 'Escape') {
+                            setEditingId(null);
+                            setEditingName('');
+                          }
+                        }}
+                        onBlur={() => { setEditingId(null); setEditingName(''); }}
+                        maxLength={200}
+                        autoFocus
+                        onClick={event => event.stopPropagation()}
+                        style={{ width: 180 }}
+                      />
+                    ) : (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+                        <FileCode2 size={13} style={{ color: 'var(--color-action-primary)' }} />
+                        {script.name}
+                      </span>
+                    )}
                   </td>
                   <td data-label="说明" className="text-sm text-secondary" data-qoder-id="qel-text-sm-4653f5df" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-4653f5df&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:171,&quot;column&quot;:19}}">{script.description}</td>
                   <td data-label="动作数" className="text-mono" data-qoder-id="qel-text-mono-0a397f7a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-mono-0a397f7a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;text-mono&quot;,&quot;loc&quot;:{&quot;line&quot;:172,&quot;column&quot;:19}}">{script.actions.length}</td>
@@ -176,10 +232,13 @@ export function ScriptManager({ onNavigate, onLoadScript, ...qoderProps }: Scrip
                       <IconButton tooltip="打开" onClick={() => handleOpen(script)} data-qoder-id="qel-iconbutton-c9584d53" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-iconbutton-c9584d53&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;iconbutton&quot;,&quot;loc&quot;:{&quot;line&quot;:180,&quot;column&quot;:23}}">
                         <FolderOpen size={14}  data-qoder-id="qel-folderopen-47d57c4a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-folderopen-47d57c4a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;folderopen&quot;,&quot;loc&quot;:{&quot;line&quot;:181,&quot;column&quot;:25}}"/>
                       </IconButton>
+                      <IconButton tooltip="重命名" onClick={() => { setEditingId(script.id); setEditingName(script.name); }}>
+                        <Pencil size={14} />
+                      </IconButton>
                       <IconButton tooltip="复制" onClick={() => handleDuplicate(script)} data-qoder-id="qel-iconbutton-d758635d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-iconbutton-d758635d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;iconbutton&quot;,&quot;loc&quot;:{&quot;line&quot;:183,&quot;column&quot;:23}}">
                         <Copy size={14}  data-qoder-id="qel-copy-7ca5c09a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-copy-7ca5c09a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;copy&quot;,&quot;loc&quot;:{&quot;line&quot;:184,&quot;column&quot;:25}}"/>
                       </IconButton>
-                      <IconButton tooltip="删除" onClick={() => handleDelete(script.id)} data-qoder-id="qel-iconbutton-c9560ebc" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-iconbutton-c9560ebc&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;iconbutton&quot;,&quot;loc&quot;:{&quot;line&quot;:186,&quot;column&quot;:23}}">
+                      <IconButton tooltip="删除" onClick={() => setDeleteTarget(script)} data-qoder-id="qel-iconbutton-c9560ebc" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-iconbutton-c9560ebc&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;iconbutton&quot;,&quot;loc&quot;:{&quot;line&quot;:186,&quot;column&quot;:23}}">
                         <Trash2 size={14}  data-qoder-id="qel-trash2-27547afd" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-trash2-27547afd&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;trash2&quot;,&quot;loc&quot;:{&quot;line&quot;:187,&quot;column&quot;:25}}"/>
                       </IconButton>
                     </div>

@@ -4,6 +4,7 @@
    ========================================================================= */
 
 import React from 'react';
+import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 
 /* --- Button --- */
@@ -47,6 +48,124 @@ interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, '
 export function Input({ size = 'md', variant = 'text', className = '', ...props }: InputProps & Record<string, any>) {
   const cls = `input ${size === 'sm' ? 'input-sm' : ''} ${variant === 'number' ? 'input-number' : ''} ${className}`;
   return <input className={[(cls), className].filter(Boolean).join(" ")} {...props}  style={(props as any)?.style} data-qoder-id={(props as any)?.["data-qoder-id"]} data-qoder-source={(props as any)?.["data-qoder-source"]}/>;
+}
+
+interface NumericInputProps extends Omit<InputProps, 'value' | 'onChange' | 'type'> {
+  value: number;
+  onValueChange(value: number): void;
+  min?: number;
+  max?: number;
+}
+
+export function NumericInput({ value, onValueChange, min, max, onFocus, onBlur, onKeyDown, ...props }: NumericInputProps) {
+  const [draft, setDraft] = React.useState(String(value));
+  const focused = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!focused.current) setDraft(String(value));
+  }, [value]);
+
+  const commit = React.useCallback((raw: string) => {
+    const parsed = Number.parseInt(raw || '0', 10);
+    const finite = Number.isFinite(parsed) ? parsed : (min ?? 0);
+    const normalized = Math.min(max ?? Number.MAX_SAFE_INTEGER, Math.max(min ?? Number.MIN_SAFE_INTEGER, finite));
+    setDraft(String(normalized));
+    onValueChange(normalized);
+  }, [max, min, onValueChange]);
+
+  return (
+    <Input
+      {...props}
+      type="number"
+      variant="number"
+      value={draft}
+      min={min}
+      max={max}
+      onFocus={event => {
+        focused.current = true;
+        event.currentTarget.select();
+        onFocus?.(event);
+      }}
+      onChange={event => {
+        const raw = event.target.value;
+        setDraft(raw);
+        if (raw !== '') commit(raw);
+      }}
+      onBlur={event => {
+        focused.current = false;
+        commit(event.currentTarget.value);
+        onBlur?.(event);
+      }}
+      onKeyDown={event => {
+        if (event.key === 'Enter') {
+          commit(event.currentTarget.value);
+          event.currentTarget.blur();
+        }
+        if (event.key === 'Escape') {
+          setDraft(String(value));
+          event.currentTarget.blur();
+        }
+        onKeyDown?.(event);
+      }}
+    />
+  );
+}
+
+interface ConfirmDialogProps {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel?: string;
+  pending?: boolean;
+  onConfirm(): void;
+  onCancel(): void;
+}
+
+export function ConfirmDialog({ open, title, description, confirmLabel = '确认', pending = false, onConfirm, onCancel }: ConfirmDialogProps) {
+  const [visible, setVisible] = React.useState(open);
+  const [leaving, setLeaving] = React.useState(false);
+
+  React.useEffect(() => {
+    if (open) {
+      setVisible(true);
+      setLeaving(false);
+      return;
+    }
+    if (!visible) return;
+    setLeaving(true);
+    const timer = window.setTimeout(() => {
+      setVisible(false);
+      setLeaving(false);
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [open, visible]);
+
+  React.useEffect(() => {
+    if (!open || leaving) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !pending) onCancel();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, leaving, pending, onCancel]);
+
+  if (!visible) return null;
+  return createPortal(
+    <div
+      className={`dialog-backdrop${leaving ? ' dialog-leave' : ' dialog-enter'}`}
+      onMouseDown={event => { if (event.target === event.currentTarget && !pending && !leaving) onCancel(); }}
+    >
+      <div className={`confirm-dialog${leaving ? ' dialog-panel-leave' : ' dialog-panel-enter'}`} role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-description">
+        <h2 id="confirm-title">{title}</h2>
+        <p id="confirm-description">{description}</p>
+        <div className="confirm-dialog-actions">
+          <Button onClick={onCancel} disabled={pending || leaving}>取消</Button>
+          <Button variant="danger" onClick={onConfirm} disabled={pending || leaving} autoFocus>{pending ? '处理中…' : confirmLabel}</Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
 }
 
 /* --- Select --- */

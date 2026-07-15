@@ -75,6 +75,7 @@ const KEYS = ['Enter', 'Tab', 'Escape', 'Space', 'Backspace', 'Delete', 'Ctrl+C'
 interface ScriptEditorProps {
   script: Script;
   onScriptChange: (script: Script) => void;
+  onScriptSave: (script: Script) => Promise<void>;
   onNavigate: (page: PageId) => void;
 
 }
@@ -92,8 +93,8 @@ function summarizeAction(a: ScriptAction): string {
   }
 }
 
-export function ScriptEditor({ script, onScriptChange, onNavigate, ...qoderProps }: ScriptEditorProps & Record<string, any>) {
-  const { playback, pausePlayback, resumePlayback, stopPlayback, saveScript, state } = useService();
+export function ScriptEditor({ script, onScriptChange, onScriptSave, onNavigate, ...qoderProps }: ScriptEditorProps & Record<string, any>) {
+  const { playback, pausePlayback, resumePlayback, stopPlayback, state } = useService();
   const [actions, setActions] = useState<ScriptAction[]>(script.actions);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -249,9 +250,14 @@ export function ScriptEditor({ script, onScriptChange, onNavigate, ...qoderProps
     void stopPlayback().catch(() => undefined);
   }, [stopPlayback]);
 
+  const handleNameChange = useCallback((name: string) => {
+    onScriptChange({ ...script, name: name.slice(0, 200), updatedAt: new Date().toISOString() });
+  }, [script, onScriptChange]);
+
   const handleSave = useCallback(() => {
-    void saveScript({ ...script, actions }).then(onScriptChange).catch(() => undefined);
-  }, [saveScript, script, actions, onScriptChange]);
+    if (!script.name.trim()) return;
+    void onScriptSave({ ...script, name: script.name.trim(), actions });
+  }, [onScriptSave, script, actions]);
 
   return (
     <div style={{ ...({ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }), ...((qoderProps as any)?.style) }} className={(qoderProps as any)?.className} data-qoder-id={(qoderProps as any)?.["data-qoder-id"]} data-qoder-source={(qoderProps as any)?.["data-qoder-source"]}>
@@ -263,6 +269,14 @@ export function ScriptEditor({ script, onScriptChange, onNavigate, ...qoderProps
         <Button variant="secondary" size="sm" icon={<FolderOpen size={13}  data-qoder-id="qel-folderopen-48c1b1f5" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-folderopen-48c1b1f5&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;folderopen&quot;,&quot;loc&quot;:{&quot;line&quot;:279,&quot;column&quot;:53}}"/>} onClick={() => onNavigate('manager')} data-qoder-id="qel-button-894a4694" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-894a4694&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:279,&quot;column&quot;:9}}">
           打开
         </Button>
+        <Input
+          value={script.name}
+          onChange={event => handleNameChange(event.target.value)}
+          placeholder="脚本名称"
+          maxLength={200}
+          disabled={isPlaying}
+          style={{ width: 180 }}
+        />
         <Button variant="secondary" size="sm" icon={<SaveIcon size={13}  data-qoder-id="qel-saveicon-7eb7f443" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-saveicon-7eb7f443&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;saveicon&quot;,&quot;loc&quot;:{&quot;line&quot;:282,&quot;column&quot;:53}}"/>} onClick={handleSave} data-qoder-id="qel-button-8b4a49ba" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-8b4a49ba&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:282,&quot;column&quot;:9}}">
           保存
         </Button>
@@ -304,7 +318,7 @@ export function ScriptEditor({ script, onScriptChange, onNavigate, ...qoderProps
                     type="number"
                     variant="number"
                     value={loopDurationMin}
-                    onChange={e => setLoopDurationMin(Math.max(0, +e.target.value))}
+                     onChange={e => setLoopDurationMin(Math.min(59, Math.max(0, Number.parseInt(e.target.value || '0', 10))))}
                     min={0}
                     style={{ width: 50 }}
                    data-qoder-id="qel-input-de6e8e3a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-de6e8e3a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:319,&quot;column&quot;:19}}"/>

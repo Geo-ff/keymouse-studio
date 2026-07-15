@@ -14,11 +14,13 @@ import { ScriptManager } from './pages/ScriptManager';
 import { Settings } from './pages/Settings';
 import { useService } from './hooks/useService';
 import { mockScripts } from './data/mockData';
+import { useToast } from './providers/ToastProvider';
 import type { Script, ScriptAction, AppSettings } from './types';
 
 
 export default function App() {
-  const { emergencyStop, state, settings, error, clearError, updateSettings } = useService();
+  const { emergencyStop, state, settings, error, clearError, updateSettings, saveScript, refreshScripts } = useService();
+  const toast = useToast();
 
   const [page, setPage] = useState<PageId>('dashboard');
   const theme = settings.theme;
@@ -60,6 +62,14 @@ export default function App() {
     setSaved(false);
   }, []);
 
+  const handleScriptSave = useCallback(async (draft: Script) => {
+    const persisted = await saveScript(draft);
+    await refreshScripts();
+    setCurrentScript(persisted);
+    setSaved(true);
+    toast.success('脚本保存成功');
+  }, [saveScript, refreshScripts, toast]);
+
   // Handle script load
   const handleLoadScript = useCallback((script: Script) => {
     setCurrentScript(script);
@@ -67,21 +77,24 @@ export default function App() {
   }, []);
 
   // Handle recorded actions
-  const handleRecordedActions = useCallback((actions: ScriptAction[]) => {
-
+  const handleRecordedActions = useCallback(async (actions: ScriptAction[], name: string) => {
+    const now = new Date().toISOString();
     const newScript: Script = {
       ...currentScript,
       id: '',
-      name: `录制脚本 ${new Date().toLocaleString('zh-CN')}`,
+      name: name.trim(),
       description: `由录制生成的脚本，共 ${actions.length} 个动作`,
       actions,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
       settings: currentScript.settings,
     };
-    setCurrentScript(newScript);
-    setSaved(false);
-  }, [currentScript]);
+    const savedScript = await saveScript(newScript);
+    await refreshScripts();
+    setCurrentScript(savedScript);
+    setSaved(true);
+    toast.success('录制脚本保存成功');
+  }, [currentScript, saveScript, refreshScripts, toast]);
 
   // Render current page
   const renderPage = () => {
@@ -99,6 +112,7 @@ export default function App() {
           <ScriptEditor
             script={currentScript}
             onScriptChange={handleScriptChange}
+            onScriptSave={handleScriptSave}
             onNavigate={setPage}
 
            data-qoder-id="qel-scripteditor-9f5415e1" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-scripteditor-9f5415e1&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;scripteditor&quot;,&quot;loc&quot;:{&quot;line&quot;:99,&quot;column&quot;:11}}"/>

@@ -1,10 +1,7 @@
-"""阶段 D 闭环：连点 / 录制 / 脚本保存加载 / 回放 / 急停（Fake 输入）。"""
-
 from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-
 
 import httpx
 import pytest
@@ -62,7 +59,9 @@ async def test_clicker_pause_resume_stop_and_state(tmp_path: Path) -> None:
             assert paused.status_code == 200
             assert paused.json()["state"] == "paused"
 
-            resumed = await client.post(f"/api/v1/operations/{operation_id}/resume", headers=HEADERS)
+            resumed = await client.post(
+                f"/api/v1/operations/{operation_id}/resume", headers=HEADERS
+            )
             assert resumed.status_code == 200
             assert resumed.json()["state"] == "running"
 
@@ -287,6 +286,25 @@ async def test_structured_validation_error_and_conflict(tmp_path: Path) -> None:
             assert conflict.json()["error"]["code"] == "OPERATION_CONFLICT"
             op = first.json()["operationId"]
             await client.post(f"/api/v1/operations/{op}/stop", headers=HEADERS)
+
+
+@pytest.mark.asyncio
+async def test_mouse_position_uses_fake_input_and_requires_authentication(tmp_path: Path) -> None:
+    adapter = FakeInputAdapter(position=(-320, 1440))
+    app = _app(tmp_path, adapter)
+    async with app.router.lifespan_context(app):
+        transport = asgi_transport(app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            unauthorized = await client.get("/api/v1/mouse-position")
+            assert unauthorized.status_code == 401
+
+            first = await client.get("/api/v1/mouse-position", headers=HEADERS)
+            assert first.status_code == 200
+            assert first.json() == {"x": -320, "y": 1440}
+
+            adapter.position = (1920, 0)
+            second = await client.get("/api/v1/mouse-position", headers=HEADERS)
+            assert second.json() == {"x": 1920, "y": 0}
 
 
 @pytest.mark.asyncio

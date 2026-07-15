@@ -75,6 +75,12 @@ class SendInputAdapter:
         self._pressed: set[MouseButton] = set()
         self._pressed_keys: set[tuple[str, int | None, bool]] = set()
 
+    def get_position(self) -> tuple[int, int]:
+        point = wintypes.POINT()
+        if not ctypes.windll.user32.GetCursorPos(ctypes.byref(point)):
+            raise ctypes.WinError()
+        return int(point.x), int(point.y)
+
     def move(self, x: int, y: int) -> None:
         user32 = ctypes.windll.user32
         left = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
@@ -141,11 +147,13 @@ class SendInputAdapter:
         self, key_code: str, scan_code: int | None, extended: bool, released: bool
     ) -> None:
         flags = KEYEVENTF_KEYUP if released else 0
-        virtual_key = _virtual_key(key_code)
-        scan = scan_code or 0
-        if scan:
-            flags |= KEYEVENTF_SCANCODE
+        if scan_code is not None:
             virtual_key = 0
+            scan = scan_code
+            flags |= KEYEVENTF_SCANCODE
+        else:
+            virtual_key = _virtual_key(key_code)
+            scan = 0
         if extended:
             flags |= KEYEVENTF_EXTENDEDKEY
         self._send(
@@ -204,7 +212,7 @@ def _virtual_key(key_code: str) -> int:
     if normalized.startswith("vk_"):
         return int(normalized[3:])
     if len(key_code) == 1:
-        result = int(ctypes.windll.user32.VkKeyScanW(ord(key_code)))
+        result = int(ctypes.windll.user32.VkKeyScanW(key_code))
         if result != -1:
             return result & 0xFF
     raise ValueError(f"Unsupported key code: {key_code}")

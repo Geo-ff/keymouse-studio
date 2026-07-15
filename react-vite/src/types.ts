@@ -324,6 +324,7 @@ export interface IAutomationService {
   pauseRecording(): Promise<OperationTransition>;
   resumeRecording(): Promise<OperationTransition>;
   stopRecording(): Promise<RecordingStopResponse>;
+  discardRecording(): Promise<void>;
   getRecordingResult(recordingResultId: string): Promise<RecordingResult>;
   playback(script: Script, options: PlaybackOptions): Promise<OperationTransition>;
   pausePlayback(): Promise<OperationTransition>;

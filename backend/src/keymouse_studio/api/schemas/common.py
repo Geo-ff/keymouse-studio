@@ -37,6 +37,11 @@ class HealthResponse(ApiModel):
     engine_state: EngineState = EngineState.IDLE
 
 
+class MousePositionResponse(ApiModel):
+    x: int
+    y: int
+
+
 class CapabilityStatus(ApiModel):
     status: Literal["available", "unavailable"]
     reason: str | None = None

@@ -82,9 +82,16 @@ abstract class AutomationServiceBase implements IAutomationService {
   }
   protected clearError(): void { this.currentError = null; this.errorListeners.forEach(listener => listener(null)); }
   protected applySnapshot(snapshot: StateSnapshot): void {
-    const actions = this.currentState.recordingActions;
-    const mousePos = this.currentState.mousePos;
-    this.currentState = { ...createState(snapshot), recordingActions: actions, mousePos };
+    const previous = this.currentState;
+    const actions = previous.recordingActions;
+    const mousePos = previous.mousePos;
+    const next = { ...createState(snapshot), recordingActions: actions, mousePos };
+    if (snapshot.state === 'idle' && previous.recordingState === 'stopped') {
+      next.recordingState = 'stopped';
+      next.recordingTime = previous.recordingTime;
+      next.recordingActionCount = previous.recordingActionCount;
+    }
+    this.currentState = next;
     this.notify();
   }
 
@@ -101,6 +108,7 @@ abstract class AutomationServiceBase implements IAutomationService {
   abstract pauseRecording(): Promise<OperationTransition>;
   abstract resumeRecording(): Promise<OperationTransition>;
   abstract stopRecording(): Promise<RecordingStopResponse>;
+  abstract discardRecording(): Promise<void>;
   abstract getRecordingResult(id: string): Promise<RecordingResult>;
   abstract playback(script: Script, options: PlaybackOptions): Promise<OperationTransition>;
   abstract pausePlayback(): Promise<OperationTransition>;
@@ -241,6 +249,18 @@ export class MockAutomationService extends AutomationServiceBase {
     this.lastRecordingStop = response;
     return clone(response);
   }
+  async discardRecording(): Promise<void> {
+    if (this.lastRecordingStop) this.recordingResults.delete(this.lastRecordingStop.recordingResultId);
+    this.lastRecordingStop = null;
+    this.currentState = {
+      ...this.currentState,
+      recordingState: 'idle',
+      recordingTime: 0,
+      recordingActionCount: 0,
+      recordingActions: [],
+    };
+    this.notify();
+  }
   async getRecordingResult(id: string): Promise<RecordingResult> {
     const result = this.recordingResults.get(id);
     if (!result) throw new ApiError({ code: 'SCRIPT_NOT_FOUND', message: '录制结果不存在', details: { id }, retryable: false, operationId: null });
@@ -316,6 +336,8 @@ export class RealAutomationService extends AutomationServiceBase {
   private settings = { ...DEFAULT_SETTINGS, serviceMode: 'real' as const };
   private capabilities: Capabilities | null = null;
   private lastRecordingStop: RecordingStopResponse | null = null;
+  private mousePositionTimer: ReturnType<typeof setInterval> | null = null;
+  private mousePositionPending = false;
 
   private api(): ApiClient { if (!this.client) throw new Error('服务尚未初始化'); return this.client; }
   private async call<T>(request: () => Promise<T>): Promise<T> { try { const value = await request(); this.clearError(); return value; } catch (error) { return this.report(error); } }
@@ -341,6 +363,8 @@ export class RealAutomationService extends AutomationServiceBase {
       this.client = new ApiClient(baseUrl, this.connection.token);
       this.capabilities = await this.api().get<Capabilities>('/api/v1/capabilities');
       await this.alignState();
+      await this.refreshMousePosition();
+      this.startMousePositionPolling();
       this.connectEvents();
       this.clearError();
     } catch (error) { this.report(error); }
@@ -427,14 +451,26 @@ export class RealAutomationService extends AutomationServiceBase {
     return `/api/v1/operations/${id}/${action}`;
   }
 
+  private async refreshMousePosition(): Promise<MousePosition> {
+    const mousePos = await this.api().get<MousePosition>('/api/v1/mouse-position');
+    this.currentState = { ...this.currentState, mousePos };
+    this.notify();
+    return mousePos;
+  }
+
+  private startMousePositionPolling(): void {
+    if (this.mousePositionTimer) clearInterval(this.mousePositionTimer);
+    this.mousePositionTimer = setInterval(() => {
+      if (this.disposed || this.mousePositionPending) return;
+      this.mousePositionPending = true;
+      void this.refreshMousePosition()
+        .catch(() => undefined)
+        .finally(() => { this.mousePositionPending = false; });
+    }, 250);
+  }
+
   async getMousePosition(): Promise<MousePosition> {
-    return this.report(new ApiError({
-      code: 'CAPABILITY_UNAVAILABLE',
-      message: '真实模式尚未提供鼠标当前位置接口',
-      details: {},
-      retryable: false,
-      operationId: this.currentState.snapshot.operationId,
-    }));
+    return this.call(() => this.refreshMousePosition());
   }
   async startClicker(config: ClickerConfig): Promise<OperationTransition> { return this.call(async () => this.applyTransition(await this.api().post('/api/v1/clicker/start', config))); }
   async pauseClicker(): Promise<OperationTransition> { return this.pauseOperation(); }
@@ -464,6 +500,17 @@ export class RealAutomationService extends AutomationServiceBase {
       this.notify();
       return result;
     });
+  }
+  async discardRecording(): Promise<void> {
+    this.lastRecordingStop = null;
+    this.currentState = {
+      ...this.currentState,
+      recordingState: 'idle',
+      recordingTime: 0,
+      recordingActionCount: 0,
+      recordingActions: [],
+    };
+    this.notify();
   }
   async getRecordingResult(id: string): Promise<RecordingResult> { return this.call(() => this.api().get(`/api/v1/recordings/${id}`)); }
   async playback(script: Script, options: PlaybackOptions): Promise<OperationTransition> {
@@ -548,7 +595,7 @@ export class RealAutomationService extends AutomationServiceBase {
     const validation = await this.call(() => this.api().post<HotkeyValidationResponse>('/api/v1/hotkeys/validate', { hotkey: this.settings.emergencyHotkey }));
     return { key: validation.normalizedHotkey.toUpperCase(), available: validation.availability === 'available', registered: true, reason: validation.reason };
   }
-  async dispose(): Promise<void> { this.disposed = true; if (this.reconnectTimer) clearTimeout(this.reconnectTimer); this.reconnectTimer = null; if (this.socket) { this.socket.onclose = null; this.socket.close(); } this.socket = null; this.listeners.clear(); this.errorListeners.clear(); }
+  async dispose(): Promise<void> { this.disposed = true; if (this.reconnectTimer) clearTimeout(this.reconnectTimer); this.reconnectTimer = null; if (this.mousePositionTimer) clearInterval(this.mousePositionTimer); this.mousePositionTimer = null; if (this.socket) { this.socket.onclose = null; this.socket.close(); } this.socket = null; this.listeners.clear(); this.errorListeners.clear(); }
 }
 
 export function createService(mode: ServiceMode): IAutomationService {

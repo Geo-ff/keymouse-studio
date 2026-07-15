@@ -41,7 +41,7 @@ async function createWindow() {
     width: 1200,
     height: 800,
     webPreferences: {
-      preload: path.join(directory, 'preload.mjs'),
+      preload: path.join(directory, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
@@ -54,6 +54,11 @@ async function createWindow() {
 
   if (developmentEntry) await window.loadURL(developmentEntry.href)
   else await window.loadFile(productionEntry)
+
+  const bridgeReady = await window.webContents.executeJavaScript(
+    'typeof window.desktop?.getConnectionInfo === "function"',
+  )
+  if (!bridgeReady) throw new Error('desktop preload bridge unavailable')
 }
 
 async function handleSidecarCrash(error) {

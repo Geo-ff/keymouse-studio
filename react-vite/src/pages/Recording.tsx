@@ -3,7 +3,7 @@
    录制状态、时长、动作数量、实时动作流
    ========================================================================= */
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Circle,
   Play,
@@ -18,7 +18,8 @@ import {
   Clock,
 } from 'lucide-react';
 import { useService } from '../hooks/useService';
-import { Button, EmptyState } from '../components/ui';
+import { Button, ConfirmDialog, EmptyState, Input } from '../components/ui';
+import { useToast } from '../providers/ToastProvider';
 import { formatTime, formatDuration } from '../data/mockData';
 import type { ScriptAction, ActionType } from '../types';
 import type { PageId } from '../components/Layout';
@@ -71,41 +72,100 @@ function summarizeAction(a: ScriptAction): string {
 
 interface RecordingProps {
   onNavigate: (page: PageId) => void;
-  onActionsSaved: (actions: ScriptAction[]) => void;
+  onActionsSaved: (actions: ScriptAction[], name: string) => Promise<void>;
 }
 
 export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: RecordingProps & Record<string, any>) {
-  const { startRecording, pauseRecording, resumeRecording, stopRecording, getRecordingResult, state, settings } = useService();
+  const { startRecording, pauseRecording, resumeRecording, stopRecording, discardRecording, getRecordingResult, state, settings } = useService();
+  const toast = useToast();
+  const [pending, setPending] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const [scriptName, setScriptName] = useState('');
+  const [displayTime, setDisplayTime] = useState(0);
+  const displayTimeRef = useRef(0);
 
   const isRecording = state.snapshot.operationType === 'recording' && state.recordingState === 'recording';
   const isPaused = state.snapshot.operationType === 'recording' && state.recordingState === 'paused';
   const hasActions = state.recordingActions.length > 0;
 
-  const handleStart = useCallback(() => {
-    void startRecording({ recordMouseMove: settings.recordMouseMove, minMoveSampleMs: settings.minRecordInterval, moveErrorPx: 2, recordWheel: true, recordMouse: true, recordKeyboard: true }).catch(() => undefined);
-  }, [startRecording, settings.recordMouseMove, settings.minRecordInterval]);
+  useEffect(() => {
+    if (state.recordingState === 'stopped') {
+      displayTimeRef.current = state.recordingTime;
+      setDisplayTime(state.recordingTime);
+      return;
+    }
+    if (!isRecording) return;
+    const baseTime = displayTimeRef.current;
+    const startedAt = performance.now();
+    const timer = window.setInterval(() => {
+      const next = baseTime + performance.now() - startedAt;
+      displayTimeRef.current = next;
+      setDisplayTime(next);
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [isRecording, state.recordingState, state.recordingTime]);
 
-  const handlePause = useCallback(() => {
-    if (isPaused) void resumeRecording().catch(() => undefined);
-    else void pauseRecording().catch(() => undefined);
-  }, [pauseRecording, resumeRecording, isPaused]);
+  const handleStart = useCallback(async () => {
+    if (pending) return;
+    setPending(true);
+    setScriptName(`录制脚本 ${new Date().toLocaleString('zh-CN')}`);
+    displayTimeRef.current = 0;
+    setDisplayTime(0);
+    try {
+      await startRecording({ recordMouseMove: settings.recordMouseMove, minMoveSampleMs: settings.minRecordInterval, moveErrorPx: 2, recordWheel: true, recordMouse: true, recordKeyboard: true });
+    } finally {
+      setPending(false);
+    }
+  }, [pending, startRecording, settings.recordMouseMove, settings.minRecordInterval]);
 
-  const handleStop = useCallback(() => {
-    void stopRecording().catch(() => undefined);
-  }, [stopRecording]);
+  const handlePause = useCallback(async () => {
+    if (pending) return;
+    setPending(true);
+    try {
+      if (isPaused) await resumeRecording();
+      else await pauseRecording();
+    } finally {
+      setPending(false);
+    }
+  }, [pending, pauseRecording, resumeRecording, isPaused]);
+
+  const handleStop = useCallback(async () => {
+    if (pending) return;
+    setPending(true);
+    try {
+      await stopRecording();
+    } finally {
+      setPending(false);
+    }
+  }, [pending, stopRecording]);
 
   const handleSave = useCallback(async () => {
+    if (pending || !scriptName.trim()) return;
+    setPending(true);
     try {
       const stopped = await stopRecording();
       const result = await getRecordingResult(stopped.recordingResultId);
-      onActionsSaved(result.actions);
+      await onActionsSaved(result.actions, scriptName.trim());
       onNavigate('script');
-    } catch { }
-  }, [stopRecording, getRecordingResult, onActionsSaved, onNavigate]);
+    } finally {
+      setPending(false);
+    }
+  }, [pending, scriptName, stopRecording, getRecordingResult, onActionsSaved, onNavigate]);
 
-  const handleDiscard = useCallback(() => {
-    void stopRecording().catch(() => undefined);
-  }, [stopRecording]);
+  const handleDiscard = useCallback(async () => {
+    if (pending) return;
+    setPending(true);
+    try {
+      await discardRecording();
+      setShowDiscardConfirm(false);
+      setScriptName('');
+      displayTimeRef.current = 0;
+      setDisplayTime(0);
+      toast.success('录制结果已丢弃');
+    } finally {
+      setPending(false);
+    }
+  }, [pending, discardRecording, toast]);
 
   // Type distribution
   const typeCounts: Partial<Record<ActionType, number>> = {};
@@ -115,6 +175,15 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
 
   return (
     <div style={{ ...({ display: 'flex', gap: 'var(--space-lg)', height: '100%' }), ...((qoderProps as any)?.style) }} className={(qoderProps as any)?.className} data-qoder-id={(qoderProps as any)?.["data-qoder-id"]} data-qoder-source={(qoderProps as any)?.["data-qoder-source"]}>
+      <ConfirmDialog
+        open={showDiscardConfirm}
+        title="丢弃本次录制？"
+        description="录制动作将从当前工作区清空，此操作无法撤销。"
+        confirmLabel="确认丢弃"
+        pending={pending}
+        onConfirm={() => void handleDiscard()}
+        onCancel={() => setShowDiscardConfirm(false)}
+      />
       {/* 左侧主区域 */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)', minWidth: 0 }} data-qoder-id="qel-div-3dfdb5df" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-3dfdb5df&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:108,&quot;column&quot;:7}}">
         {/* 录制状态 */}
@@ -124,7 +193,7 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
             <div data-qoder-id="qel-div-39fdaf93" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-39fdaf93&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:113,&quot;column&quot;:13}}">
               <div className="text-sm text-secondary" data-qoder-id="qel-text-sm-2428002d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-2428002d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:114,&quot;column&quot;:15}}">录制状态</div>
               <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 600, color: isRecording ? 'var(--color-danger)' : isPaused ? 'var(--color-paused)' : 'var(--color-text-primary)' }} data-qoder-id="qel-div-47fdc59d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-47fdc59d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:115,&quot;column&quot;:15}}">
-                {isRecording ? '录制中' : isPaused ? '已暂停' : state.recordingState === 'stopped' && hasActions ? '已停止' : '未开始'}
+                {isRecording ? '录制中' : isPaused ? '已暂停' : state.recordingState === 'stopped' ? '已停止' : '未开始'}
               </div>
             </div>
           </div>
@@ -132,7 +201,7 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
           <div data-qoder-id="qel-div-6b677ce6" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-6b677ce6&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:121,&quot;column&quot;:11}}">
             <div className="text-sm text-secondary" data-qoder-id="qel-text-sm-02e91b3e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-02e91b3e&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:122,&quot;column&quot;:13}}">录制时长</div>
             <div className="text-mono" style={{ fontSize: 'var(--fs-lg)', fontWeight: 600 }} data-qoder-id="qel-text-mono-4ee8aa6e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-mono-4ee8aa6e&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;text-mono&quot;,&quot;loc&quot;:{&quot;line&quot;:123,&quot;column&quot;:13}}">
-              {formatTime(state.recordingTime)}
+               {formatTime(displayTime)}
             </div>
           </div>
           <div className="toolbar-divider"  data-qoder-id="qel-toolbar-divider-b566001b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toolbar-divider-b566001b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;toolbar-divider&quot;,&quot;loc&quot;:{&quot;line&quot;:127,&quot;column&quot;:11}}"/>
@@ -166,9 +235,20 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
         )}
 
         {/* 控制按钮 */}
-        <div className="panel" style={{ display: 'flex', gap: 'var(--space-sm)' }} data-qoder-id="qel-panel-00641ad1" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-panel-00641ad1&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;panel&quot;,&quot;loc&quot;:{&quot;line&quot;:158,&quot;column&quot;:9}}">
+        <div className="panel" style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'flex-end', flexWrap: 'wrap' }} data-qoder-id="qel-panel-00641ad1" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-panel-00641ad1&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;panel&quot;,&quot;loc&quot;:{&quot;line&quot;:158,&quot;column&quot;:9}}">
+          {state.recordingState === 'stopped' && (
+            <div className="field-group" style={{ width: 240 }}>
+              <label className="field-label">脚本名称</label>
+              <Input
+                value={scriptName}
+                onChange={event => setScriptName(event.target.value.slice(0, 200))}
+                maxLength={200}
+                disabled={pending}
+              />
+            </div>
+          )}
           {state.recordingState === 'idle' && (
-            <Button variant="danger" icon={<Circle size={14} fill="currentColor"  data-qoder-id="qel-circle-bf61af68" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-circle-bf61af68&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;circle&quot;,&quot;loc&quot;:{&quot;line&quot;:160,&quot;column&quot;:44}}"/>} onClick={handleStart} data-qoder-id="qel-button-7c641c03" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-7c641c03&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:160,&quot;column&quot;:13}}">
+            <Button variant="danger" icon={<Circle size={14} fill="currentColor"  data-qoder-id="qel-circle-bf61af68" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-circle-bf61af68&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;circle&quot;,&quot;loc&quot;:{&quot;line&quot;:160,&quot;column&quot;:44}}"/>} onClick={handleStart} disabled={pending} data-qoder-id="qel-button-7c641c03" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-7c641c03&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:160,&quot;column&quot;:13}}">
               开始录制
             </Button>
           )}
@@ -178,23 +258,24 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
                 variant={isPaused ? 'running' : 'paused'}
                 icon={isPaused ? <Play size={14}  data-qoder-id="qel-play-cd258f66" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-play-cd258f66&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;play&quot;,&quot;loc&quot;:{&quot;line&quot;:168,&quot;column&quot;:34}}"/> : <Pause size={14}  data-qoder-id="qel-pause-e7fa9e18" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-pause-e7fa9e18&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;pause&quot;,&quot;loc&quot;:{&quot;line&quot;:168,&quot;column&quot;:55}}"/>}
                 onClick={handlePause}
+                disabled={pending}
                data-qoder-id="qel-button-8a64320d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-8a64320d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:166,&quot;column&quot;:15}}">
                 {isPaused ? '继续录制' : '暂停'}
               </Button>
-              <Button variant="secondary" icon={<Square size={14} fill="currentColor"  data-qoder-id="qel-square-a7353bfc" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-square-a7353bfc&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;square&quot;,&quot;loc&quot;:{&quot;line&quot;:173,&quot;column&quot;:49}}"/>} onClick={handleStop} data-qoder-id="qel-button-7d61deff" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-7d61deff&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:173,&quot;column&quot;:15}}">
+              <Button variant="secondary" icon={<Square size={14} fill="currentColor"  data-qoder-id="qel-square-a7353bfc" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-square-a7353bfc&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;square&quot;,&quot;loc&quot;:{&quot;line&quot;:173,&quot;column&quot;:49}}"/>} onClick={handleStop} disabled={pending} data-qoder-id="qel-button-7d61deff" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-7d61deff&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:173,&quot;column&quot;:15}}">
                 停止录制
               </Button>
             </>
           )}
-          {state.recordingState === 'stopped' && hasActions && (
+          {state.recordingState === 'stopped' && (
             <>
-              <Button variant="primary" icon={<Save size={14}  data-qoder-id="qel-save-8bfa1432" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-save-8bfa1432&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;save&quot;,&quot;loc&quot;:{&quot;line&quot;:180,&quot;column&quot;:47}}"/>} onClick={handleSave} data-qoder-id="qel-button-7f61e225" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-7f61e225&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:180,&quot;column&quot;:15}}">
+              <Button variant="primary" icon={<Save size={14}  data-qoder-id="qel-save-8bfa1432" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-save-8bfa1432&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;save&quot;,&quot;loc&quot;:{&quot;line&quot;:180,&quot;column&quot;:47}}"/>} onClick={handleSave} disabled={pending || !hasActions || !scriptName.trim()} data-qoder-id="qel-button-7f61e225" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-7f61e225&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:180,&quot;column&quot;:15}}">
                 保存为脚本
               </Button>
               <Button variant="secondary" icon={<Circle size={14}  data-qoder-id="qel-circle-3e5ea5be" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-circle-3e5ea5be&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;circle&quot;,&quot;loc&quot;:{&quot;line&quot;:183,&quot;column&quot;:49}}"/>} onClick={handleStart} data-qoder-id="qel-button-7961d8b3" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-7961d8b3&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:183,&quot;column&quot;:15}}">
                 重新录制
               </Button>
-              <Button variant="ghost" icon={<Trash2 size={14}  data-qoder-id="qel-trash2-545431ec" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-trash2-545431ec&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;trash2&quot;,&quot;loc&quot;:{&quot;line&quot;:186,&quot;column&quot;:45}}"/>} onClick={handleDiscard} data-qoder-id="qel-button-7b61dbd9" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-7b61dbd9&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:186,&quot;column&quot;:15}}">
+              <Button variant="ghost" icon={<Trash2 size={14}  data-qoder-id="qel-trash2-545431ec" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-trash2-545431ec&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;trash2&quot;,&quot;loc&quot;:{&quot;line&quot;:186,&quot;column&quot;:45}}"/>} onClick={() => setShowDiscardConfirm(true)} disabled={pending} data-qoder-id="qel-button-7b61dbd9" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-7b61dbd9&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:186,&quot;column&quot;:15}}">
                 丢弃
               </Button>
             </>

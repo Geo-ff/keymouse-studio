@@ -54,10 +54,7 @@ class SystemCapabilityDetector:
         return self._detect_windows()
 
     def _detect_windows(self) -> CapabilitySnapshot:
-        input_check = CapabilityCheck(
-            "unavailable",
-            "Input permission cannot be reliably verified without injecting real input",
-        )
+        input_check = self._input_check()
         hotkey_check = self._hotkey_check()
         display_check, display_count = self._display_check()
         dpi_check = self._dpi_check()
@@ -70,6 +67,17 @@ class SystemCapabilityDetector:
             display_count=display_count,
             dpi_awareness=dpi_check,
         )
+
+    def _input_check(self) -> CapabilityCheck:
+        try:
+            point = wintypes.POINT()
+            if not ctypes.windll.user32.GetCursorPos(ctypes.byref(point)):
+                return CapabilityCheck("unavailable", "Windows cursor position is unavailable")
+            if not hasattr(ctypes.windll.user32, "SendInput"):
+                return CapabilityCheck("unavailable", "Windows SendInput is unavailable")
+        except (AttributeError, OSError):
+            return CapabilityCheck("unavailable", "Windows input APIs are unavailable")
+        return CapabilityCheck("available")
 
     def _hotkey_check(self) -> CapabilityCheck:
         identifier = 0x4B4D

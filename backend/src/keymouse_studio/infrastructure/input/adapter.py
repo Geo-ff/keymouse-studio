@@ -18,6 +18,8 @@ class ReleaseResult:
 
 
 class InputAdapter(Protocol):
+    def get_position(self) -> tuple[int, int]: ...
+
     def move(self, x: int, y: int) -> None: ...
 
     def button_down(self, button: MouseButton) -> None: ...
@@ -39,8 +41,13 @@ class FakeInputAdapter:
     pressed: set[MouseButton] = field(default_factory=set)
     pressed_keys: set[tuple[str, int | None, bool]] = field(default_factory=set)
     action_recorded: Event = field(default_factory=Event)
+    position: tuple[int, int] = (0, 0)
+
+    def get_position(self) -> tuple[int, int]:
+        return self.position
 
     def move(self, x: int, y: int) -> None:
+        self.position = (x, y)
         self.actions.append(("move", (x, y)))
         self.action_recorded.set()
 
@@ -84,6 +91,9 @@ class InputWorker:
         self._adapter = adapter
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="keymouse-input")
         self._closed = False
+
+    async def get_position(self) -> tuple[int, int]:
+        return await self._run(self._adapter.get_position)
 
     async def move(self, x: int, y: int) -> None:
         await self._run(self._adapter.move, x, y)

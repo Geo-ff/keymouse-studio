@@ -20,6 +20,7 @@ export function useService() {
     pauseRecording: () => service.pauseRecording(),
     resumeRecording: () => service.resumeRecording(),
     stopRecording: () => service.stopRecording(),
+    discardRecording: () => service.discardRecording(),
     getRecordingResult: (...args: Parameters<typeof service.getRecordingResult>) => service.getRecordingResult(...args),
     playback: (...args: Parameters<typeof service.playback>) => service.playback(...args),
     pausePlayback: () => service.pausePlayback(),
