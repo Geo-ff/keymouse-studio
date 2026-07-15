@@ -4,7 +4,7 @@
    支持新增、编辑、删除、拖拽排序、启用/禁用、多选、运行高亮
    ========================================================================= */
 
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { DragEvent } from 'react';
 import {
   FilePlus2,
@@ -37,6 +37,7 @@ import { formatDuration, formatTime, createAction, createEmptyScript } from '../
 import type { ScriptAction, ActionType, MouseButton, Script, PlaybackOptions, EditorLoopMode } from '../types';
 import { genId } from '../services/AutomationService';
 import type { PageId } from '../components/Layout';
+import { showSystemAlert } from '../utils/systemAlert';
 
 const ACTION_ICONS: Record<ActionType, typeof MousePointer> = {
   mouse_move: MousePointer,
@@ -112,6 +113,23 @@ export function ScriptEditor({ script, onScriptChange, onScriptSave, onNavigate,
   const isPlaying = state.snapshot.operationType === 'playback' && (state.runState === 'running' || state.runState === 'paused');
   const isPaused = state.snapshot.operationType === 'playback' && state.runState === 'paused';
   const isEmpty = actions.length === 0;
+  const wasPlayingRef = useRef(false);
+  const stopAlertedRef = useRef(false);
+
+  useEffect(() => {
+    if (isPlaying) {
+      wasPlayingRef.current = true;
+      stopAlertedRef.current = false;
+      return;
+    }
+    if (wasPlayingRef.current && !stopAlertedRef.current && state.runState !== 'emergency') {
+      stopAlertedRef.current = true;
+      wasPlayingRef.current = false;
+      void showSystemAlert('回放', '回放已结束', script.name.trim() ? `脚本：${script.name.trim()}` : undefined);
+      return;
+    }
+    if (!isPlaying) wasPlayingRef.current = false;
+  }, [isPlaying, state.runState, script.name]);
 
   const editingAction = useMemo(() => actions.find(a => a.id === editingId) || null, [actions, editingId]);
   const currentPlaybackIndex = state.playbackCurrentIndex;
@@ -239,7 +257,11 @@ export function ScriptEditor({ script, onScriptChange, onScriptSave, onNavigate,
       loopMode,
       loopDurationMs: loopMode === 'duration' ? (loopDurationMin * 60 + loopDurationSec) * 1000 : undefined,
     };
-    void playback({ ...script, actions: enabledActions }, options).catch(() => undefined);
+    void playback({ ...script, actions: enabledActions }, options)
+      .then(() => {
+        void showSystemAlert('回放', '回放已开始', script.name.trim() ? `脚本：${script.name.trim()}` : undefined);
+      })
+      .catch(() => undefined);
   }, [actions, script, playback, loopMode, loopCount, loopDurationMin, loopDurationSec, speedMultiplier]);
 
   const handlePause = useCallback(() => {
@@ -248,8 +270,14 @@ export function ScriptEditor({ script, onScriptChange, onScriptSave, onNavigate,
   }, [pausePlayback, resumePlayback, isPaused]);
 
   const handleStop = useCallback(() => {
-    void stopPlayback().catch(() => undefined);
-  }, [stopPlayback]);
+    if (!isPlaying && !isPaused) return;
+    stopAlertedRef.current = true;
+    void stopPlayback()
+      .then(() => {
+        void showSystemAlert('回放', '回放已结束', script.name.trim() ? `脚本：${script.name.trim()}` : undefined);
+      })
+      .catch(() => undefined);
+  }, [stopPlayback, isPlaying, isPaused, script.name]);
 
   const handleNameChange = useCallback((name: string) => {
     onScriptChange({ ...script, name: name.slice(0, 200), updatedAt: new Date().toISOString() });

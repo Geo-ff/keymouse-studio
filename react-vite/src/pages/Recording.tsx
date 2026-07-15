@@ -19,12 +19,13 @@ import {
 } from 'lucide-react';
 import { useService } from '../hooks/useService';
 import { usePageHotkeys } from '../hooks/usePageHotkeys';
-import { Button, ConfirmDialog, EmptyState, Input } from '../components/ui';
-import { useToast } from '../providers/ToastProvider';
+import { Button, IconButton, Toggle, Input, EmptyState, ConfirmDialog } from '../components/ui';
 import { formatTime, formatDuration } from '../data/mockData';
-import { formatHotkeyLabel } from '../utils/hotkey';
 import type { ScriptAction, ActionType } from '../types';
 import type { PageId } from '../components/Layout';
+import { useToast } from '../providers/ToastProvider';
+import { showSystemAlert } from '../utils/systemAlert';
+import { formatHotkeyLabel } from '../utils/hotkey';
 
 const ACTION_ICONS: Record<ActionType, typeof MousePointer> = {
   mouse_move: MousePointer,
@@ -110,11 +111,12 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
   const handleStart = useCallback(async () => {
     if (pending) return;
     setPending(true);
-    setScriptName(`录制脚本 ${new Date().toLocaleString('zh-CN')}`);
-    displayTimeRef.current = 0;
-    setDisplayTime(0);
     try {
+      setScriptName(`录制脚本 ${new Date().toLocaleString('zh-CN')}`);
+      displayTimeRef.current = 0;
+      setDisplayTime(0);
       await startRecording({ recordMouseMove: settings.recordMouseMove, minMoveSampleMs: settings.minRecordInterval, moveErrorPx: 2, recordWheel: true, recordMouse: true, recordKeyboard: true });
+      void showSystemAlert('录制', '录制已开始', '正在记录键鼠操作');
     } finally {
       setPending(false);
     }
@@ -135,24 +137,32 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
     if (pending) return;
     setPending(true);
     try {
+      const wasActive = state.recordingState === 'recording' || state.recordingState === 'paused';
       await stopRecording();
+      if (wasActive) {
+        void showSystemAlert('录制', '录制已结束', '可保存为脚本，或丢弃本次录制结果');
+      }
     } finally {
       setPending(false);
     }
-  }, [pending, stopRecording]);
+  }, [pending, stopRecording, state.recordingState]);
 
   const handleSave = useCallback(async () => {
     if (pending || !scriptName.trim()) return;
     setPending(true);
     try {
+      const wasActive = state.recordingState === 'recording' || state.recordingState === 'paused';
       const stopped = await stopRecording();
+      if (wasActive) {
+        void showSystemAlert('录制', '录制已结束', '正在保存脚本');
+      }
       const result = await getRecordingResult(stopped.recordingResultId);
       await onActionsSaved(result.actions, scriptName.trim());
       onNavigate('script');
     } finally {
       setPending(false);
     }
-  }, [pending, scriptName, stopRecording, getRecordingResult, onActionsSaved, onNavigate]);
+  }, [pending, scriptName, stopRecording, getRecordingResult, onActionsSaved, onNavigate, state.recordingState]);
 
   const handleDiscard = useCallback(async () => {
     if (pending) return;

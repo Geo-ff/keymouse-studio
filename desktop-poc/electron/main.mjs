@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification } from 'electron'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
 import { createAppMenu, getAppTitle } from './app-menu.mjs'
@@ -49,6 +49,7 @@ async function createWindow() {
   rendererOrigin = developmentEntry?.origin ?? pathToFileURL(productionEntry).href
   ipcMain.removeHandler('connection:get')
   ipcMain.removeHandler('theme:set')
+  ipcMain.removeHandler('notify:show')
   ipcMain.handle('connection:get', (event) => {
     if (!isTrustedRenderer(event.senderFrame.url)) throw new Error('untrusted renderer')
     return sidecar.connection
@@ -57,6 +58,25 @@ async function createWindow() {
     if (!isTrustedRenderer(event.senderFrame.url)) throw new Error('untrusted renderer')
     applyNativeTheme(theme === 'dark' || theme === 'light' ? theme : 'system')
     return { ok: true, dark: nativeTheme.shouldUseDarkColors }
+  })
+  ipcMain.handle('notify:show', async (event, options = {}) => {
+    if (!isTrustedRenderer(event.senderFrame.url)) throw new Error('untrusted renderer')
+    const title = typeof options.title === 'string' && options.title.trim() ? options.title.trim() : APP_TITLE
+    const bodyParts = []
+    if (typeof options.message === 'string' && options.message.trim()) bodyParts.push(options.message.trim())
+    if (typeof options.detail === 'string' && options.detail.trim()) bodyParts.push(options.detail.trim())
+    const body = bodyParts.join('\n')
+    if (!body) throw new Error('message is required')
+    if (!Notification.isSupported()) return { ok: false, reason: 'unsupported' }
+    const notification = new Notification({
+      title,
+      body,
+      icon: taskbarIcon,
+      silent: false,
+      timeoutType: 'default',
+    })
+    notification.show()
+    return { ok: true }
   })
   const window = new BrowserWindow({
     width: 1200,
@@ -108,6 +128,7 @@ async function handleSidecarCrash(error) {
   quitting = true
   ipcMain.removeHandler('connection:get')
   ipcMain.removeHandler('theme:set')
+  ipcMain.removeHandler('notify:show')
 
   sidecarDetach()
   sidecarDetach = () => {}
@@ -160,6 +181,7 @@ app.on('before-quit', async (event) => {
   quitting = true
   ipcMain.removeHandler('connection:get')
   ipcMain.removeHandler('theme:set')
+  ipcMain.removeHandler('notify:show')
 
   sidecarDetach()
   sidecarDetach = () => {}

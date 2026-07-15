@@ -353,10 +353,16 @@ export interface IAutomationService {
 }
 
 export interface DesktopConnectionInfo { host: string; port: number; token: string; }
+export interface DesktopNotificationOptions {
+  title: string;
+  message: string;
+  detail?: string;
+}
+
 export interface DesktopApi {
   getConnectionInfo(): Promise<DesktopConnectionInfo>;
   setTheme?(theme: 'light' | 'dark' | 'system'): Promise<{ ok: boolean; dark: boolean }>;
-
+  showNotification?(options: DesktopNotificationOptions): Promise<{ ok: boolean; reason?: string }>;
 }
 
 declare global {
