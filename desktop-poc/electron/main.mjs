@@ -1,14 +1,28 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from 'electron'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
+import { createAppMenu, getAppTitle } from './app-menu.mjs'
 import { startSidecar, stopSidecar } from './sidecar-manager.mjs'
 
 const directory = path.dirname(fileURLToPath(import.meta.url))
 const productionEntry = path.resolve(directory, '../../react-vite/dist/index.html')
+const APP_TITLE = getAppTitle()
 let sidecar
 let rendererOrigin
 let quitting = false
 let sidecarDetach = () => {}
+let mainWindow
+
+function applyNativeTheme(theme) {
+  if (theme === 'dark' || theme === 'light') {
+    nativeTheme.themeSource = theme
+  } else {
+    nativeTheme.themeSource = 'system'
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#1a1b1e' : '#f5f5f5')
+  }
+}
 
 function getDevelopmentEntry() {
   const value = process.env.KEYMOUSE_VITE_URL
@@ -32,14 +46,24 @@ function isTrustedRenderer(url) {
 async function createWindow() {
   const developmentEntry = getDevelopmentEntry()
   rendererOrigin = developmentEntry?.origin ?? pathToFileURL(productionEntry).href
+  ipcMain.removeHandler('connection:get')
+  ipcMain.removeHandler('theme:set')
   ipcMain.handle('connection:get', (event) => {
     if (!isTrustedRenderer(event.senderFrame.url)) throw new Error('untrusted renderer')
     return sidecar.connection
+  })
+  ipcMain.handle('theme:set', (event, theme) => {
+    if (!isTrustedRenderer(event.senderFrame.url)) throw new Error('untrusted renderer')
+    applyNativeTheme(theme === 'dark' || theme === 'light' ? theme : 'system')
+    return { ok: true, dark: nativeTheme.shouldUseDarkColors }
   })
 
   const window = new BrowserWindow({
     width: 1200,
     height: 800,
+    title: APP_TITLE,
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1a1b1e' : '#f5f5f5',
+    show: false,
     webPreferences: {
       preload: path.join(directory, 'preload.cjs'),
       nodeIntegration: false,
@@ -47,9 +71,15 @@ async function createWindow() {
       sandbox: true,
     },
   })
+  mainWindow = window
+  window.setTitle(APP_TITLE)
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event, url) => {
     if (!isTrustedRenderer(url)) event.preventDefault()
+  })
+  window.webContents.on('page-title-updated', (event) => {
+    event.preventDefault()
+    window.setTitle(APP_TITLE)
   })
 
   if (developmentEntry) await window.loadURL(developmentEntry.href)
@@ -59,6 +89,7 @@ async function createWindow() {
     'typeof window.desktop?.getConnectionInfo === "function"',
   )
   if (!bridgeReady) throw new Error('desktop preload bridge unavailable')
+  window.show()
 }
 
 async function handleSidecarCrash(error) {
@@ -74,6 +105,7 @@ async function handleSidecarCrash(error) {
   }
   quitting = true
   ipcMain.removeHandler('connection:get')
+  ipcMain.removeHandler('theme:set')
   sidecarDetach()
   sidecarDetach = () => {}
   if (sidecar) {
@@ -89,6 +121,9 @@ async function handleSidecarCrash(error) {
 
 app.whenReady().then(async () => {
   try {
+    app.setName(APP_TITLE)
+    applyNativeTheme('system')
+    Menu.setApplicationMenu(createAppMenu())
     sidecar = await startSidecar(
       process.env.KEYMOUSE_PYTHON ?? 'python',
       path.join(directory, 'backend-sidecar.py'),
@@ -121,6 +156,7 @@ app.on('before-quit', async (event) => {
   event.preventDefault()
   quitting = true
   ipcMain.removeHandler('connection:get')
+  ipcMain.removeHandler('theme:set')
   sidecarDetach()
   sidecarDetach = () => {}
   await stopSidecar(sidecar.child)

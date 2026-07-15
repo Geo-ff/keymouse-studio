@@ -36,9 +36,11 @@ export default function App() {
   }, [settings.serviceMode, currentScript.id]);
 
 
-  // Apply theme to document
+  // Apply theme to document and native window chrome
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
+    document.title = 'KeyBoard Studio';
+    void window.desktop?.setTheme?.(theme).catch(() => undefined);
   }, [theme]);
 
   // Handle theme toggle

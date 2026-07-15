@@ -353,7 +353,10 @@ export interface IAutomationService {
 }
 
 export interface DesktopConnectionInfo { host: string; port: number; token: string; }
-export interface DesktopApi { getConnectionInfo(): Promise<DesktopConnectionInfo>; }
+export interface DesktopApi {
+  getConnectionInfo(): Promise<DesktopConnectionInfo>;
+  setTheme?(theme: 'light' | 'dark' | 'system'): Promise<{ ok: boolean; dark: boolean }>;
+}
 
 declare global {
   interface Window { desktop?: DesktopApi; }
