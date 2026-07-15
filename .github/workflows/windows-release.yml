@@ -91,6 +91,13 @@ jobs:
           # CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: npx electron-builder --win nsis --config electron-builder.yml --publish never
 
+      - name: List dist artifacts
+        working-directory: desktop-poc/electron
+        shell: bash
+        run: |
+          ls -la dist || true
+          ls -la dist/*.yml dist/*.exe dist/*.blockmap 2>/dev/null || true
+
       - name: Upload Release assets
         uses: softprops/action-gh-release@v2
         with:
@@ -100,10 +107,11 @@ jobs:
           prerelease: false
           generate_release_notes: true
           fail_on_unmatched_files: true
+          # Do not list both *.blockmap and *.exe.blockmap — they match the same file
+          # and softprops then fails on duplicate asset update (REST Not Found).
           files: |
             desktop-poc/electron/dist/KeyMouse-Studio-Setup-*.exe
             desktop-poc/electron/dist/latest.yml
-            desktop-poc/electron/dist/*.blockmap
-            desktop-poc/electron/dist/*.exe.blockmap
+            desktop-poc/electron/dist/KeyMouse-Studio-Setup-*.exe.blockmap
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
