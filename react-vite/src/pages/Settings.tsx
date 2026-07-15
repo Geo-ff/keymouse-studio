@@ -85,7 +85,7 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
       <label className="field-label" style={{ width: 140 }}>{label}</label>
       <input
         className="input"
-        style={{ width: 160, textAlign: 'center', fontFamily: 'var(--font-mono)' }}
+        style={{ width: 160, textAlign: 'center', fontFamily: 'var(--font-sans)', fontVariantNumeric: 'tabular-nums' }}
         value={formatHotkeyLabel(hotkeyDrafts[field], allowEmpty ? '点击后按键' : '')}
         onKeyDown={e => captureHotkey(field, e)}
         onChange={() => {}}

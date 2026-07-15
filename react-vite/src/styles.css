@@ -3,6 +3,51 @@
    基于 Fluent 设计系统：中性灰背景 + 蓝色主操作 + 语义状态色
    ========================================================================= */
 
+/* 思源宋体：仅覆盖中日韩与全角标点，数字/西文仍走 --font-sans 后备字体 */
+@font-face {
+  font-family: 'Source Han Serif CN';
+  src: url('/fonts/SourceHanSerifCN-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+3000-303F, U+3040-309F, U+30A0-30FF, U+3400-4DBF, U+4E00-9FFF,
+    U+F900-FAFF, U+FF00-FFEF, U+20000-2A6DF, U+2A700-2B73F, U+2B740-2B81F,
+    U+2B820-2CEAF, U+2F800-2FA1F;
+}
+
+@font-face {
+  font-family: 'Source Han Serif CN';
+  src: url('/fonts/SourceHanSerifCN-Medium.otf') format('opentype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+3000-303F, U+3040-309F, U+30A0-30FF, U+3400-4DBF, U+4E00-9FFF,
+    U+F900-FAFF, U+FF00-FFEF, U+20000-2A6DF, U+2A700-2B73F, U+2B740-2B81F,
+    U+2B820-2CEAF, U+2F800-2FA1F;
+}
+
+@font-face {
+  font-family: 'Source Han Serif CN';
+  src: url('/fonts/SourceHanSerifCN-Medium.otf') format('opentype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+3000-303F, U+3040-309F, U+30A0-30FF, U+3400-4DBF, U+4E00-9FFF,
+    U+F900-FAFF, U+FF00-FFEF, U+20000-2A6DF, U+2A700-2B73F, U+2B740-2B81F,
+    U+2B820-2CEAF, U+2F800-2FA1F;
+}
+
+@font-face {
+  font-family: 'Source Han Serif CN';
+  src: url('/fonts/SourceHanSerifCN-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+3000-303F, U+3040-309F, U+30A0-30FF, U+3400-4DBF, U+4E00-9FFF,
+    U+F900-FAFF, U+FF00-FFEF, U+20000-2A6DF, U+2A700-2B73F, U+2B740-2B81F,
+    U+2B820-2CEAF, U+2F800-2FA1F;
+}
+
 /* --- Seed Tokens (Light) --- */
 :root {
   --seed-bg: #fafafa;
@@ -70,9 +115,10 @@
   --radius-large: 8px;
   --radius-pill: 999px;
 
-  /* Typography */
-  --font-sans: 'Segoe UI', 'system-ui', '-apple-system', sans-serif;
-  --font-mono: 'Cascadia Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', monospace;
+  /* Typography：中文走思源宋体（unicode-range），数字/西文走系统无体 */
+  --font-cjk: 'Source Han Serif CN', 'Noto Serif CJK SC', 'Source Han Serif SC', serif;
+  --font-sans: var(--font-cjk), 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-cjk), 'Cascadia Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
   --fs-xs: 11px;
   --fs-sm: 12px;
   --fs-base: 13px;
