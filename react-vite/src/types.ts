@@ -363,6 +363,8 @@ export interface DesktopApi {
   getConnectionInfo(): Promise<DesktopConnectionInfo>;
   setTheme?(theme: 'light' | 'dark' | 'system'): Promise<{ ok: boolean; dark: boolean }>;
   showNotification?(options: DesktopNotificationOptions): Promise<{ ok: boolean; reason?: string }>;
+  getAppVersion?(): Promise<string>;
+  checkForUpdates?(): Promise<{ status: string; version?: string; message?: string }>;
 }
 
 declare global {

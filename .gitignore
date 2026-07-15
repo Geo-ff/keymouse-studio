@@ -19,6 +19,10 @@ env/
 node_modules/
 dist/
 build/
+desktop-poc/electron/resources/sidecar/*
+!desktop-poc/electron/resources/sidecar/.gitkeep
+desktop-poc/electron/build/
+desktop-poc/electron/dist/
 
 .playwright-cli/
 output/

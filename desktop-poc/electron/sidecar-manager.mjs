@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 const directory = path.dirname(fileURLToPath(import.meta.url))
 const backendSource = path.resolve(directory, '../../backend/src')
-const HANDSHAKE_TIMEOUT_MS = 5000
+const HANDSHAKE_TIMEOUT_MS = 15000
 const STOP_TIMEOUT_MS = 2000
 const FORCE_STOP_TIMEOUT_MS = 2000
 
@@ -60,10 +60,34 @@ export function attachSidecarWatchers(child, { onCrash, onStderr } = {}) {
   }
 }
 
-export async function startSidecar(python, script, options = {}) {
-  const pythonPath = [backendSource, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter)
-  const child = spawn(python, ['-u', script], {
-    env: { ...process.env, PYTHONPATH: pythonPath },
+/**
+ * @param {string | { command: string, args?: string[], env?: Record<string, string>, cwd?: string }} launch
+ * @param {string} [script] legacy python script path when launch is python executable
+ * @param {object} [options]
+ */
+export async function startSidecar(launch, script, options = {}) {
+  let command
+  let args
+  let env = { ...process.env }
+  let cwd
+
+  if (typeof launch === 'object' && launch !== null && launch.command) {
+    command = launch.command
+    args = launch.args ?? []
+    env = { ...env, ...(launch.env ?? {}) }
+    cwd = launch.cwd
+    options = script && typeof script === 'object' ? script : options
+  } else {
+    const python = launch
+    const pythonPath = [backendSource, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter)
+    command = python
+    args = ['-u', script]
+    env = { ...env, PYTHONPATH: pythonPath }
+  }
+
+  const child = spawn(command, args, {
+    env,
+    cwd,
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
   })

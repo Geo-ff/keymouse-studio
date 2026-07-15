@@ -1,15 +1,37 @@
 {
-  "name": "keymouse-desktop-poc",
-  "productName": "KeyBoard Studio",
+  "name": "keymouse-studio",
+  "productName": "KeyMouse Studio",
   "private": true,
   "version": "0.1.0",
+  "description": "KeyMouse Studio — Windows 键鼠自动化工具",
+  "author": "Geo-ff",
+  "homepage": "https://github.com/Geo-ff/keymouse-studio",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Geo-ff/keymouse-studio.git"
+  },
   "type": "module",
   "main": "main.mjs",
   "scripts": {
     "start": "electron .",
-    "test": "node --test lifecycle.test.mjs"
+    "test": "node --test lifecycle.test.mjs",
+    "check:main": "node --check main.mjs && node --check app-menu.mjs && node --check auto-updater.mjs && node --check sidecar-manager.mjs && node --check constants.mjs",
+    "build:renderer": "npm --prefix ../../react-vite run build",
+    "build:sidecar": "python scripts/build_sidecar.py",
+    "dist:dir": "electron-builder --win dir --config electron-builder.yml",
+    "dist:win": "npm run build:renderer && npm run build:sidecar && electron-builder --win nsis --config electron-builder.yml",
+    "dist:win:unsigned": "npm run dist:win"
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.2"
   },
   "devDependencies": {
-    "electron": "37.2.0"
+    "electron": "37.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.geoff.keymouse-studio",
+    "productName": "KeyMouse Studio",
+    "copyright": "Copyright © 2026 Geo-ff"
   }
 }

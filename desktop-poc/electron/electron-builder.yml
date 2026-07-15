@@ -1,0 +1,59 @@
+appId: com.geoff.keymouse-studio
+productName: KeyMouse Studio
+copyright: Copyright © 2026 Geo-ff
+artifactName: KeyMouse-Studio-Setup-${version}.${ext}
+directories:
+  output: dist
+  buildResources: build
+files:
+  - main.mjs
+  - preload.cjs
+  - app-menu.mjs
+  - auto-updater.mjs
+  - constants.mjs
+  - sidecar-manager.mjs
+  - package.json
+  - assets/**
+  - "!**/*.map"
+  - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
+  - "!**/node_modules/*/{test,tests,__tests__,example,examples}"
+  - "!**/node_modules/.bin"
+extraResources:
+  - from: ../../react-vite/dist
+    to: renderer
+    filter:
+      - "**/*"
+  - from: resources/sidecar
+    to: sidecar
+    filter:
+      - "**/*"
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: assets/app-icon.png
+  # Future code signing:
+  # certificateFile: ${env.CSC_LINK}
+  # certificatePassword: ${env.CSC_KEY_PASSWORD}
+  # signingHashAlgorithms: [sha256]
+  # publisherName: Your Publisher Name
+  verifyUpdateCodeSignature: false
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: KeyMouse Studio
+  uninstallDisplayName: KeyMouse Studio
+  installerLanguages:
+    - zh_CN
+    - en_US
+  language: "2052"
+publish:
+  provider: github
+  owner: Geo-ff
+  repo: keymouse-studio
+  releaseType: release
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/

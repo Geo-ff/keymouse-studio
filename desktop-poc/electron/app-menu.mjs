@@ -1,21 +1,48 @@
-import { dialog, Menu, shell } from 'electron'
+import { app, dialog, Menu, shell } from 'electron'
+import {
+  APP_DESCRIPTION,
+  APP_TITLE,
+  GITHUB_REPO_URL,
+  ALLOWED_EXTERNAL_URLS,
+  getAppTitle,
+} from './constants.mjs'
+import {
+  checkForUpdates,
+  getUpdateMenuLabel,
+  onUpdateMenuStatus,
+} from './auto-updater.mjs'
 
-const APP_TITLE = 'KeyBoard Studio'
+export { getAppTitle }
 
-export function getAppTitle() {
-  return APP_TITLE
+async function openAllowedExternal(url) {
+  if (!ALLOWED_EXTERNAL_URLS.includes(url)) {
+    throw new Error('blocked external url')
+  }
+  await shell.openExternal(url)
+}
+
+export function showAboutDialog() {
+  const version = app.getVersion()
+  return dialog.showMessageBox({
+    type: 'info',
+    title: `关于 ${APP_TITLE}`,
+    message: APP_TITLE,
+    detail: [
+      `当前版本：v${version}`,
+      APP_DESCRIPTION,
+      '',
+      `官方仓库：${GITHUB_REPO_URL}`,
+    ].join('\n'),
+  })
 }
 
 export function createAppMenu() {
-  return Menu.buildFromTemplate([
+  const template = [
     {
       label: '文件',
-      submenu: [
-        { label: '退出', role: 'quit' },
-      ],
+      submenu: [{ label: '退出', role: 'quit' }],
     },
     {
-
       label: '视图',
       submenu: [
         { label: '重新加载', role: 'reload' },
@@ -39,26 +66,42 @@ export function createAppMenu() {
       ],
     },
     {
-      label: '帮助',
+      label: `关于 ${APP_TITLE}`,
       submenu: [
         {
           label: `关于 ${APP_TITLE}`,
-          click: async () => {
-            await dialog.showMessageBox({
-              type: 'info',
-              title: '关于',
-              message: APP_TITLE,
-              detail: '键鼠自动化工具 — 连点、录制、脚本编辑与回放',
-            })
+          click: () => {
+            void showAboutDialog()
           },
         },
         {
-          label: '学习更多',
-          click: async () => {
-            await shell.openExternal('https://www.electronjs.org')
+          label: `当前版本：v${app.getVersion()}`,
+          enabled: false,
+        },
+        {
+          id: 'check-for-updates',
+          label: getUpdateMenuLabel(),
+          click: () => {
+            void checkForUpdates({ silent: false })
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'GitHub 仓库',
+          click: () => {
+            void openAllowedExternal(GITHUB_REPO_URL)
           },
         },
       ],
     },
-  ])
+  ]
+
+  const menu = Menu.buildFromTemplate(template)
+
+  onUpdateMenuStatus((label) => {
+    const item = menu.getMenuItemById('check-for-updates')
+    if (item) item.label = label
+  })
+
+  return menu
 }

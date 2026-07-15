@@ -1,0 +1,109 @@
+name: Windows Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            react-vite/package-lock.json
+            desktop-poc/electron/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install React dependencies
+        working-directory: react-vite
+        run: npm ci
+
+      - name: React lint / typecheck
+        working-directory: react-vite
+        run: npm run lint
+
+      - name: React production build
+        working-directory: react-vite
+        run: npm run build
+
+      - name: Install Python backend (dev)
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install pyinstaller
+
+      - name: Python tests
+        working-directory: backend
+        run: python -m pytest -q
+
+      - name: Install Electron dependencies
+        working-directory: desktop-poc/electron
+        run: npm ci
+
+      - name: Electron tests
+        working-directory: desktop-poc/electron
+        run: npm test
+
+      - name: Electron main process syntax check
+        working-directory: desktop-poc/electron
+        run: npm run check:main
+
+      - name: Build Windows sidecar
+        working-directory: desktop-poc/electron
+        run: npm run build:sidecar
+
+      - name: Resolve version from tag
+        id: version
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          PKG_VERSION=$(node -p "require('./desktop-poc/electron/package.json').version")
+          if [ "$VERSION" != "$PKG_VERSION" ]; then
+            echo "Tag version ($VERSION) must match package.json ($PKG_VERSION)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build unsigned NSIS installer
+        working-directory: desktop-poc/electron
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Future code signing (do not commit secrets):
+          # CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          # CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: npx electron-builder --win nsis --config electron-builder.yml --publish never
+
+      - name: Upload Release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: KeyMouse Studio ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            desktop-poc/electron/dist/KeyMouse-Studio-Setup-*.exe
+            desktop-poc/electron/dist/latest.yml
+            desktop-poc/electron/dist/*.blockmap
+            desktop-poc/electron/dist/*.exe.blockmap
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

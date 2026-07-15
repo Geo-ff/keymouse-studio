@@ -51,7 +51,7 @@ function Sidebar({ activePage, onNavigate, ...qoderProps }: { activePage: PageId
         className="sidebar-brand"
         type="button"
         onClick={() => onNavigate('dashboard')}
-        aria-label="KeyBoard Studio 首页"
+        aria-label="KeyMouse Studio 首页"
       >
         <img src="./keyboard-studio-logo.png" alt="" className="sidebar-brand-logo" draggable={false} />
       </button>
