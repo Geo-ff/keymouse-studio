@@ -26,7 +26,9 @@ import type { PageId } from '../components/Layout';
 const ACTION_ICONS: Record<ActionType, typeof MousePointer> = {
   mouse_move: MousePointer,
   mouse_click: MousePointerClick,
-  mouse_scroll: Scroll,
+  mouse_button_down: MousePointerClick,
+  mouse_button_up: MousePointerClick,
+  mouse_wheel: Scroll,
   key_down: Keyboard,
   key_up: Keyboard,
   wait: Clock,
@@ -35,7 +37,9 @@ const ACTION_ICONS: Record<ActionType, typeof MousePointer> = {
 const ACTION_COLORS: Record<ActionType, string> = {
   mouse_move: 'var(--color-action-primary)',
   mouse_click: 'var(--color-action-primary)',
-  mouse_scroll: 'var(--color-paused)',
+  mouse_button_down: 'var(--color-action-primary)',
+  mouse_button_up: 'var(--color-action-primary)',
+  mouse_wheel: 'var(--color-paused)',
   key_down: 'var(--color-running)',
   key_up: 'var(--color-running)',
   wait: 'var(--color-text-tertiary)',
@@ -44,7 +48,9 @@ const ACTION_COLORS: Record<ActionType, string> = {
 const ACTION_LABELS: Record<ActionType, string> = {
   mouse_move: '鼠标移动',
   mouse_click: '鼠标点击',
-  mouse_scroll: '滚轮滚动',
+  mouse_button_down: '鼠标按下',
+  mouse_button_up: '鼠标释放',
+  mouse_wheel: '滚轮滚动',
   key_down: '键盘按下',
   key_up: '键盘释放',
   wait: '等待',
@@ -52,12 +58,14 @@ const ACTION_LABELS: Record<ActionType, string> = {
 
 function summarizeAction(a: ScriptAction): string {
   switch (a.type) {
-    case 'mouse_move': return `(${a.x}, ${a.y})`;
-    case 'mouse_click': return `${a.button}键 ${a.clickMode === 'double' ? '双击' : '单击'} (${a.x}, ${a.y})`;
-    case 'mouse_scroll': return `滚动 ${a.scrollDelta} (${a.x}, ${a.y})`;
-    case 'key_down': return `按下 ${a.key}`;
-    case 'key_up': return `释放 ${a.key}`;
-    case 'wait': return formatDuration(a.delay);
+    case 'mouse_move': return `(${a.payload.x}, ${a.payload.y})`;
+    case 'mouse_button_down': return `${a.payload.button}键按下`;
+    case 'mouse_button_up': return `${a.payload.button}键释放`;
+    case 'mouse_click': return `${a.payload.button}键 ${a.payload.clickCount === 2 ? '双击' : '单击'} (${a.payload.x ?? '当前'}, ${a.payload.y ?? '当前'})`;
+    case 'mouse_wheel': return `滚动 ${a.payload.deltaY}`;
+    case 'key_down': return `按下 ${a.payload.keyCode}`;
+    case 'key_up': return `释放 ${a.payload.keyCode}`;
+    case 'wait': return formatDuration(a.payload.durationMs);
   }
 }
 
@@ -67,34 +75,37 @@ interface RecordingProps {
 }
 
 export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: RecordingProps & Record<string, any>) {
-  const { service, state } = useService();
+  const { startRecording, pauseRecording, resumeRecording, stopRecording, getRecordingResult, state, settings } = useService();
 
-  const isRecording = state.recordingState === 'recording';
-  const isPaused = state.recordingState === 'paused';
+  const isRecording = state.snapshot.operationType === 'recording' && state.recordingState === 'recording';
+  const isPaused = state.snapshot.operationType === 'recording' && state.recordingState === 'paused';
   const hasActions = state.recordingActions.length > 0;
 
   const handleStart = useCallback(() => {
-    service.startRecording();
-  }, [service]);
+    void startRecording({ recordMouseMove: settings.recordMouseMove, minMoveSampleMs: settings.minRecordInterval, moveErrorPx: 2, recordWheel: true, recordMouse: true, recordKeyboard: true }).catch(() => undefined);
+  }, [startRecording, settings.recordMouseMove, settings.minRecordInterval]);
 
   const handlePause = useCallback(() => {
-    if (isPaused) service.resumeRecording();
-    else service.pauseRecording();
-  }, [service, isPaused]);
+    if (isPaused) void resumeRecording().catch(() => undefined);
+    else void pauseRecording().catch(() => undefined);
+  }, [pauseRecording, resumeRecording, isPaused]);
 
   const handleStop = useCallback(() => {
-    service.stopRecording();
-  }, [service]);
+    void stopRecording().catch(() => undefined);
+  }, [stopRecording]);
 
-  const handleSave = useCallback(() => {
-    const actions = service.stopRecording();
-    onActionsSaved(actions);
-    onNavigate('script');
-  }, [service, onActionsSaved, onNavigate]);
+  const handleSave = useCallback(async () => {
+    try {
+      const stopped = await stopRecording();
+      const result = await getRecordingResult(stopped.recordingResultId);
+      onActionsSaved(result.actions);
+      onNavigate('script');
+    } catch { }
+  }, [stopRecording, getRecordingResult, onActionsSaved, onNavigate]);
 
   const handleDiscard = useCallback(() => {
-    service.stopRecording();
-  }, [service]);
+    void stopRecording().catch(() => undefined);
+  }, [stopRecording]);
 
   // Type distribution
   const typeCounts: Partial<Record<ActionType, number>> = {};
@@ -227,7 +238,7 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
                           </span>
                         </td>
                         <td className="text-sm text-mono" data-qoder-id="qel-text-sm-a9a9c0b5" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-a9a9c0b5&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:229,&quot;column&quot;:25}}">{summarizeAction(action)}</td>
-                        <td className="text-mono text-sm text-tertiary" data-qoder-id="qel-text-mono-66268c00" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-mono-66268c00&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;text-mono&quot;,&quot;loc&quot;:{&quot;line&quot;:230,&quot;column&quot;:25}}">{formatDuration(action.delay)}</td>
+                        <td className="text-mono text-sm text-tertiary" data-qoder-id="qel-text-mono-66268c00" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-mono-66268c00&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;text-mono&quot;,&quot;loc&quot;:{&quot;line&quot;:230,&quot;column&quot;:25}}">{formatDuration(action.delayBeforeMs)}</td>
                       </tr>
                     );
                   })}

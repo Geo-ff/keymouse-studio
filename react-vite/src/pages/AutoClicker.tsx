@@ -11,7 +11,7 @@ import type { ClickerConfig, MouseButton, ClickMode } from '../types';
 import { formatTime } from '../data/mockData';
 
 export function AutoClicker(qoderProps: Record<string, any>) {
-  const { service, state } = useService();
+  const { startClicker, pauseClicker, resumeClicker, stopClicker, getMousePosition, state } = useService();
 
   const [button, setButton] = useState<MouseButton>('left');
   const [clickMode, setClickMode] = useState<ClickMode>('single');
@@ -25,32 +25,34 @@ export function AutoClicker(qoderProps: Record<string, any>) {
   const [posX, setPosX] = useState(960);
   const [posY, setPosY] = useState(540);
 
-  const isRunning = state.runState === 'running' || state.runState === 'paused';
-  const isPaused = state.runState === 'paused';
+  const isRunning = state.snapshot.operationType === 'clicker' && (state.runState === 'running' || state.runState === 'paused');
+  const isPaused = state.snapshot.operationType === 'clicker' && state.runState === 'paused';
 
   const intervalMs = hours * 3600000 + minutes * 60000 + seconds * 1000 + millis;
 
   const handleStart = useCallback(() => {
     const config: ClickerConfig = {
       button,
-      clickMode,
+      clickCount: clickMode === 'double' ? 2 : 1,
       intervalMs: Math.max(50, intervalMs),
-      times: timesMode === 'continuous' ? 0 : times,
-      useCurrentPos,
-      x: useCurrentPos ? undefined : posX,
-      y: useCurrentPos ? undefined : posY,
+      repeatMode: timesMode === 'continuous' ? 'infinite' : 'count',
+      repeatCount: timesMode === 'continuous' ? 1 : times,
+      positionMode: useCurrentPos ? 'current' : 'fixed',
+      x: useCurrentPos ? null : posX,
+      y: useCurrentPos ? null : posY,
+      countdownMs: 0,
     };
-    service.startClicker(config);
-  }, [service, button, clickMode, intervalMs, timesMode, times, useCurrentPos, posX, posY]);
+    void startClicker(config).catch(() => undefined);
+  }, [startClicker, button, clickMode, intervalMs, timesMode, times, useCurrentPos, posX, posY]);
 
   const handlePause = useCallback(() => {
-    if (isPaused) service.resumeClicker();
-    else service.pauseClicker();
-  }, [service, isPaused]);
+    if (isPaused) void resumeClicker().catch(() => undefined);
+    else void pauseClicker().catch(() => undefined);
+  }, [pauseClicker, resumeClicker, isPaused]);
 
   const handleStop = useCallback(() => {
-    service.stopClicker();
-  }, [service]);
+    void stopClicker().catch(() => undefined);
+  }, [stopClicker]);
 
   return (
     <div className={["responsive-split", (qoderProps as any)?.className].filter(Boolean).join(" ")} style={{ ...({ display: 'flex', gap: 'var(--space-lg)', height: '100%' }), ...((qoderProps as any)?.style) }} data-qoder-id={(qoderProps as any)?.["data-qoder-id"]} data-qoder-source={(qoderProps as any)?.["data-qoder-source"]}>
@@ -159,7 +161,7 @@ export function AutoClicker(qoderProps: Record<string, any>) {
                   <span className="text-sm text-secondary" data-qoder-id="qel-text-sm-2bb24f0d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-2bb24f0d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:159,&quot;column&quot;:19}}">Y</span>
                   <Input type="number" variant="number" value={posY} onChange={e => setPosY(+e.target.value)} disabled={isRunning} style={{ width: 80 }}  data-qoder-id="qel-input-f88569a4" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-f88569a4&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:160,&quot;column&quot;:19}}"/>
                 </div>
-                <IconButton tooltip="拾取当前鼠标坐标" onClick={() => { const p = service.getMousePosition(); setPosX(p.x); setPosY(p.y); }} data-qoder-id="qel-iconbutton-ee43b539" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-iconbutton-ee43b539&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;iconbutton&quot;,&quot;loc&quot;:{&quot;line&quot;:162,&quot;column&quot;:17}}">
+                <IconButton tooltip="拾取当前鼠标坐标" onClick={() => { void getMousePosition().then(p => { setPosX(p.x); setPosY(p.y); }).catch(() => undefined); }} data-qoder-id="qel-iconbutton-ee43b539" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-iconbutton-ee43b539&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;iconbutton&quot;,&quot;loc&quot;:{&quot;line&quot;:162,&quot;column&quot;:17}}">
                   <MousePointer size={14}  data-qoder-id="qel-mousepointer-d86c1bda" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-mousepointer-d86c1bda&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;mousepointer&quot;,&quot;loc&quot;:{&quot;line&quot;:163,&quot;column&quot;:19}}"/>
                 </IconButton>
               </div>

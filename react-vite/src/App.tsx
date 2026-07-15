@@ -15,17 +15,24 @@ import { Settings } from './pages/Settings';
 import { useService } from './hooks/useService';
 import { mockScripts } from './data/mockData';
 import type { Script, ScriptAction, AppSettings } from './types';
-import { DEFAULT_SETTINGS } from './types';
+
 
 export default function App() {
-  const { service, state, updateSettings } = useService();
+  const { emergencyStop, state, settings, error, clearError, updateSettings } = useService();
 
   const [page, setPage] = useState<PageId>('dashboard');
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const theme = settings.theme;
   const [currentScript, setCurrentScript] = useState<Script>(mockScripts[0]);
   const [saved, setSaved] = useState(true);
-  const [recordedActions, setRecordedActions] = useState<ScriptAction[]>([]);
+
+  useEffect(() => {
+    if (settings.serviceMode === 'real' && mockScripts.some(script => script.id === currentScript.id)) {
+      const now = new Date().toISOString();
+      setCurrentScript(previous => ({ ...previous, id: '', createdAt: now, updatedAt: now }));
+      setSaved(false);
+    }
+  }, [settings.serviceMode, currentScript.id]);
+
 
   // Apply theme to document
   useEffect(() => {
@@ -35,24 +42,17 @@ export default function App() {
   // Handle theme toggle
   const handleToggleTheme = useCallback(() => {
     const newTheme = theme === 'light' ? 'dark' : 'light';
-    setTheme(newTheme);
-    setSettings(prev => ({ ...prev, theme: newTheme }));
-    updateSettings({ theme: newTheme });
+    void updateSettings({ theme: newTheme });
   }, [theme, updateSettings]);
 
-  // Handle settings update
   const handleUpdateSettings = useCallback((updates: Partial<AppSettings>) => {
-    setSettings(prev => ({ ...prev, ...updates }));
-    updateSettings(updates);
-    if (updates.theme) {
-      setTheme(updates.theme);
-    }
+    void updateSettings(updates);
   }, [updateSettings]);
 
   // Handle emergency stop
   const handleEmergencyStop = useCallback(() => {
-    service.emergencyStop();
-  }, [service]);
+    void emergencyStop().catch(() => undefined);
+  }, [emergencyStop]);
 
   // Handle script change
   const handleScriptChange = useCallback((script: Script) => {
@@ -68,16 +68,16 @@ export default function App() {
 
   // Handle recorded actions
   const handleRecordedActions = useCallback((actions: ScriptAction[]) => {
-    setRecordedActions(actions);
+
     const newScript: Script = {
       ...currentScript,
-      id: Math.random().toString(36).slice(2, 11),
+      id: '',
       name: `录制脚本 ${new Date().toLocaleString('zh-CN')}`,
       description: `由录制生成的脚本，共 ${actions.length} 个动作`,
       actions,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      lastUsedAt: Date.now(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      settings: currentScript.settings,
     };
     setCurrentScript(newScript);
     setSaved(false);
@@ -87,7 +87,7 @@ export default function App() {
   const renderPage = () => {
     switch (page) {
       case 'dashboard':
-        return <Dashboard onNavigate={setPage}  data-qoder-id="qel-dashboard-84159909" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-dashboard-84159909&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;dashboard&quot;,&quot;loc&quot;:{&quot;line&quot;:90,&quot;column&quot;:16}}"/>;
+        return <Dashboard onNavigate={setPage} onLoadScript={handleLoadScript}  data-qoder-id="qel-dashboard-84159909" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-dashboard-84159909&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;dashboard&quot;,&quot;loc&quot;:{&quot;line&quot;:90,&quot;column&quot;:16}}"/>;
       case 'clicker':
         return <AutoClicker  data-qoder-id="qel-autoclicker-73789248" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-autoclicker-73789248&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;autoclicker&quot;,&quot;loc&quot;:{&quot;line&quot;:92,&quot;column&quot;:16}}"/>;
       case 'timed':
@@ -100,7 +100,7 @@ export default function App() {
             script={currentScript}
             onScriptChange={handleScriptChange}
             onNavigate={setPage}
-            onRecordedActions={setRecordedActions}
+
            data-qoder-id="qel-scripteditor-9f5415e1" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-scripteditor-9f5415e1&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;scripteditor&quot;,&quot;loc&quot;:{&quot;line&quot;:99,&quot;column&quot;:11}}"/>
         );
       case 'manager':
@@ -108,12 +108,18 @@ export default function App() {
       case 'settings':
         return <Settings settings={settings} onUpdate={handleUpdateSettings}  data-qoder-id="qel-settings-0722e165" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-settings-0722e165&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;settings&quot;,&quot;loc&quot;:{&quot;line&quot;:109,&quot;column&quot;:16}}"/>;
       default:
-        return <Dashboard onNavigate={setPage}  data-qoder-id="qel-dashboard-8b15a40e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-dashboard-8b15a40e&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;dashboard&quot;,&quot;loc&quot;:{&quot;line&quot;:111,&quot;column&quot;:16}}"/>;
+        return <Dashboard onNavigate={setPage} onLoadScript={handleLoadScript}  data-qoder-id="qel-dashboard-8b15a40e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-dashboard-8b15a40e&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;dashboard&quot;,&quot;loc&quot;:{&quot;line&quot;:111,&quot;column&quot;:16}}"/>;
     }
   };
 
   return (
     <>
+      {error && (
+        <div role="alert" style={{ position: 'fixed', top: 48, left: 64, right: 0, zIndex: 1001, padding: '8px 16px', background: 'var(--color-danger-bg)', color: 'var(--color-danger)', borderBottom: '1px solid var(--color-danger)', display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+          <span><strong>{error.code}</strong> · {error.message}{error.operationId ? ` · ${error.operationId}` : ''}</span>
+          <button className="btn btn-ghost btn-sm" onClick={clearError}>关闭</button>
+        </div>
+      )}
       <Layout
         activePage={page}
         onPageChange={setPage}
@@ -130,7 +136,7 @@ export default function App() {
         <div className="countdown-overlay" onClick={handleEmergencyStop} data-qoder-id="qel-countdown-overlay-c389bc14" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-countdown-overlay-c389bc14&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;countdown-overlay&quot;,&quot;loc&quot;:{&quot;line&quot;:130,&quot;column&quot;:9}}">
           <div className="countdown-number" data-qoder-id="qel-countdown-number-5e575752" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-countdown-number-5e575752&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;countdown-number&quot;,&quot;loc&quot;:{&quot;line&quot;:131,&quot;column&quot;:11}}">{state.countdownRemaining}</div>
           <div style={{ color: 'white', fontSize: '16px', marginTop: '16px' }} data-qoder-id="qel-div-d0a9d045" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-d0a9d045&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:132,&quot;column&quot;:11}}">
-            即将开始执行，按 F12 或点击空白处取消
+            即将开始执行，按 {settings.emergencyHotkey} 或点击空白处取消
           </div>
         </div>
       )}

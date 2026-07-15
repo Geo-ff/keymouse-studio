@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { useService } from '../hooks/useService';
 import { Button, Input, IconButton, EmptyState } from '../components/ui';
-import { formatDuration } from '../data/mockData';
+import { formatDuration, calcScriptDuration } from '../data/mockData';
 import type { Script } from '../types';
 import type { PageId } from '../components/Layout';
 
@@ -26,13 +26,10 @@ interface ScriptManagerProps {
 }
 
 export function ScriptManager({ onNavigate, onLoadScript, ...qoderProps }: ScriptManagerProps & Record<string, any>) {
-  const { service } = useService();
+  const { loadScript, deleteScript, duplicateScript, scripts: allScripts, refreshScripts } = useService();
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const allScripts = useMemo(() => {
-    return service.listRecentScripts();
-  }, [service]);
 
   const filteredScripts = useMemo(() => {
     if (!search.trim()) return allScripts;
@@ -44,33 +41,32 @@ export function ScriptManager({ onNavigate, onLoadScript, ...qoderProps }: Scrip
 
   const recentScripts = useMemo(() => {
     return [...allScripts]
-      .sort((a, b) => (b.lastUsedAt || 0) - (a.lastUsedAt || 0))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, 3);
   }, [allScripts]);
 
-  const handleOpen = useCallback((script: Script) => {
-    const loaded = service.loadScript(script.id);
-    if (loaded) {
+  const handleOpen = useCallback(async (script: Script) => {
+    try {
+      const loaded = await loadScript(script.id);
       onLoadScript(loaded);
       onNavigate('script');
-    }
-  }, [service, onLoadScript, onNavigate]);
+    } catch { }
+  }, [loadScript, onLoadScript, onNavigate]);
 
-  const handleDelete = useCallback((id: string) => {
-    service.deleteScript(id);
-    if (selectedId === id) setSelectedId(null);
-  }, [service, selectedId]);
+  const handleDelete = useCallback(async (id: string) => {
+    try {
+      await deleteScript(id);
+      await refreshScripts();
+      if (selectedId === id) setSelectedId(null);
+    } catch { }
+  }, [deleteScript, refreshScripts, selectedId]);
 
-  const handleDuplicate = useCallback((script: Script) => {
-    const copy: Script = {
-      ...script,
-      id: Math.random().toString(36).slice(2, 11),
-      name: `${script.name} (副本)`,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    service.saveScript(copy);
-  }, [service]);
+  const handleDuplicate = useCallback(async (script: Script) => {
+    try {
+      await duplicateScript(script.id);
+      await refreshScripts();
+    } catch { }
+  }, [duplicateScript, refreshScripts]);
 
   return (
     <div style={{ ...({ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)', height: '100%' }), ...((qoderProps as any)?.style) }} className={(qoderProps as any)?.className} data-qoder-id={(qoderProps as any)?.["data-qoder-id"]} data-qoder-source={(qoderProps as any)?.["data-qoder-source"]}>
@@ -97,7 +93,7 @@ export function ScriptManager({ onNavigate, onLoadScript, ...qoderProps }: Scrip
                   </span>
                 </div>
                 <div className="text-sm text-tertiary" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} data-qoder-id="qel-text-sm-c4f57a56" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-c4f57a56&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:99,&quot;column&quot;:17}}">
-                  {script.actions.length} 个动作 · {formatDuration(script.actions.reduce((s, a) => s + a.delay, 0))}
+                  {script.actions.length} 个动作 · {formatDuration(calcScriptDuration(script))}
                 </div>
               </button>
             ))}
@@ -170,10 +166,10 @@ export function ScriptManager({ onNavigate, onLoadScript, ...qoderProps }: Scrip
                   </td>
                   <td data-label="说明" className="text-sm text-secondary" data-qoder-id="qel-text-sm-4653f5df" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-4653f5df&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:171,&quot;column&quot;:19}}">{script.description}</td>
                   <td data-label="动作数" className="text-mono" data-qoder-id="qel-text-mono-0a397f7a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-mono-0a397f7a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;text-mono&quot;,&quot;loc&quot;:{&quot;line&quot;:172,&quot;column&quot;:19}}">{script.actions.length}</td>
-                  <td data-label="总时长" className="text-mono" data-qoder-id="qel-text-mono-0b39810d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-mono-0b39810d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;text-mono&quot;,&quot;loc&quot;:{&quot;line&quot;:173,&quot;column&quot;:19}}">{formatDuration(script.actions.reduce((s, a) => s + a.delay, 0))}</td>
+                  <td data-label="总时长" className="text-mono" data-qoder-id="qel-text-mono-0b39810d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-mono-0b39810d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;text-mono&quot;,&quot;loc&quot;:{&quot;line&quot;:173,&quot;column&quot;:19}}">{formatDuration(calcScriptDuration(script))}</td>
                   <td data-label="创建时间" className="text-sm text-tertiary" data-qoder-id="qel-text-sm-4951bc01" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-4951bc01&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:174,&quot;column&quot;:19}}">{new Date(script.createdAt).toLocaleDateString('zh-CN')}</td>
                   <td data-label="最后使用" className="text-sm text-tertiary" data-qoder-id="qel-text-sm-4851ba6e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-4851ba6e&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:175,&quot;column&quot;:19}}">
-                    {script.lastUsedAt ? new Date(script.lastUsedAt).toLocaleDateString('zh-CN') : '—'}
+                    {new Date(script.updatedAt).toLocaleDateString('zh-CN')}
                   </td>
                   <td data-label="操作" onClick={e => e.stopPropagation()} data-qoder-id="qel-td-d3de0993" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-td-d3de0993&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;td&quot;,&quot;loc&quot;:{&quot;line&quot;:178,&quot;column&quot;:19}}">
                     <div style={{ display: 'flex', gap: 'var(--space-xs)' }} data-qoder-id="qel-div-ac64253c" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-ac64253c&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:179,&quot;column&quot;:21}}">

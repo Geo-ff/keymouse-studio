@@ -75,13 +75,13 @@ interface ToolbarProps {
 }
 
 function Toolbar({ scriptName, saved, theme, onToggleTheme, onEmergencyStop, ...qoderProps }: ToolbarProps & Record<string, any>) {
-  const { state } = useService();
+  const { state, settings } = useService();
 
   const runStateMap: Record<RunState, 'idle' | 'running' | 'paused' | 'emergency'> = {
     idle: 'idle',
     running: 'running',
     paused: 'paused',
-    stopped: 'idle',
+
     emergency: 'emergency',
   };
 
@@ -115,7 +115,7 @@ function Toolbar({ scriptName, saved, theme, onToggleTheme, onEmergencyStop, ...
         <span className="estop-hint" data-qoder-id="qel-estop-hint-2d29d525" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-estop-hint-2d29d525&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;estop-hint&quot;,&quot;loc&quot;:{&quot;line&quot;:115,&quot;column&quot;:9}}">
           <Zap size={13}  data-qoder-id="qel-zap-fe1c9c77" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-zap-fe1c9c77&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;zap&quot;,&quot;loc&quot;:{&quot;line&quot;:116,&quot;column&quot;:11}}"/>
           <span data-qoder-id="qel-span-28e8d206" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-span-28e8d206&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;span&quot;,&quot;loc&quot;:{&quot;line&quot;:117,&quot;column&quot;:11}}">急停</span>
-          <kbd className="kbd" data-qoder-id="qel-kbd-67c91175" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-kbd-67c91175&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;kbd&quot;,&quot;loc&quot;:{&quot;line&quot;:118,&quot;column&quot;:11}}">F12</kbd>
+          <kbd className="kbd" data-qoder-id="qel-kbd-67c91175" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-kbd-67c91175&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;kbd&quot;,&quot;loc&quot;:{&quot;line&quot;:118,&quot;column&quot;:11}}">{settings.emergencyHotkey}</kbd>
         </span>
       </div>
 
@@ -169,7 +169,7 @@ function StatusBar(qoderProps: Record<string, any>) {
     idle: '空闲',
     running: '运行中',
     paused: '已暂停',
-    stopped: '已停止',
+
     emergency: '已急停',
   };
 
@@ -177,7 +177,7 @@ function StatusBar(qoderProps: Record<string, any>) {
     idle: 'var(--color-text-secondary)',
     running: 'var(--color-running)',
     paused: 'var(--color-paused)',
-    stopped: 'var(--color-danger)',
+
     emergency: 'var(--color-danger)',
   };
 
@@ -229,15 +229,14 @@ interface LayoutProps {
 }
 
 export function Layout(props: LayoutProps & Record<string, any>) {
-  // Global F12 emergency stop handler
-  const { service } = useService();
+  const { emergencyStop, settings } = useService();
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'F12') {
+    if (e.key.toUpperCase() === settings.emergencyHotkey.toUpperCase()) {
       e.preventDefault();
-      service.emergencyStop();
+      void emergencyStop().catch(() => undefined);
     }
-  }, [service]);
+  }, [emergencyStop, settings.emergencyHotkey]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);

@@ -17,11 +17,12 @@ import type { ReactNode } from 'react';
 import { useService } from '../hooks/useService';
 import { Button, StatusBadge, EmptyState } from '../components/ui';
 import type { PageId } from '../components/Layout';
-import { formatDuration } from '../data/mockData';
-import type { RunState } from '../types';
+import { formatDuration, calcScriptDuration } from '../data/mockData';
+import type { RunState, Script } from '../types';
 
 interface DashboardProps {
   onNavigate: (page: PageId) => void;
+  onLoadScript: (script: Script) => void;
 }
 
 function QuickCard({ icon, title, desc, onClick, ...qoderProps }: { icon: ReactNode; title: string; desc: string; onClick: () => void } & Record<string, any>) {
@@ -40,15 +41,15 @@ function QuickCard({ icon, title, desc, onClick, ...qoderProps }: { icon: ReactN
   );
 }
 
-export function Dashboard({ onNavigate, ...qoderProps }: DashboardProps & Record<string, any>) {
-  const { service, state } = useService();
-  const recentScripts = service.listRecentScripts();
+export function Dashboard({ onNavigate, onLoadScript, ...qoderProps }: DashboardProps & Record<string, any>) {
+  const { emergencyStop, loadScript, state, scripts } = useService();
+  const recentScripts = scripts;
 
   const runStateMap: Record<RunState, 'idle' | 'running' | 'paused' | 'emergency'> = {
     idle: 'idle',
     running: 'running',
     paused: 'paused',
-    stopped: 'idle',
+
     emergency: 'emergency',
   };
 
@@ -63,7 +64,7 @@ export function Dashboard({ onNavigate, ...qoderProps }: DashboardProps & Record
             <StatusBadge state={runStateMap[state.runState]}  data-qoder-id="qel-statusbadge-d2097e65" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-statusbadge-d2097e65&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;statusbadge&quot;,&quot;loc&quot;:{&quot;line&quot;:63,&quot;column&quot;:13}}"/>
           </div>
         </div>
-        <Button variant="danger" size="sm" icon={<Zap size={13}  data-qoder-id="qel-zap-2036b04b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-zap-2036b04b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;zap&quot;,&quot;loc&quot;:{&quot;line&quot;:66,&quot;column&quot;:50}}"/>} onClick={() => service.emergencyStop()} data-qoder-id="qel-button-3fe68a28" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-3fe68a28&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:66,&quot;column&quot;:9}}">
+        <Button variant="danger" size="sm" icon={<Zap size={13}  data-qoder-id="qel-zap-2036b04b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-zap-2036b04b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;zap&quot;,&quot;loc&quot;:{&quot;line&quot;:66,&quot;column&quot;:50}}"/>} onClick={() => { void emergencyStop().catch(() => undefined); }} data-qoder-id="qel-button-3fe68a28" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-3fe68a28&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:66,&quot;column&quot;:9}}">
           紧急停止
         </Button>
       </div>
@@ -130,13 +131,13 @@ export function Dashboard({ onNavigate, ...qoderProps }: DashboardProps & Record
             </thead>
             <tbody data-qoder-id="qel-tbody-247aa8dc" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-tbody-247aa8dc&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;tbody&quot;,&quot;loc&quot;:{&quot;line&quot;:131,&quot;column&quot;:13}}">
               {recentScripts.slice(0, 5).map(script => (
-                <tr key={script.id} onClick={() => { service.loadScript(script.id); onNavigate('script'); }} style={{ cursor: 'pointer' }} data-qoder-id="qel-tr-81ec1c6f" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-tr-81ec1c6f&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;tr&quot;,&quot;loc&quot;:{&quot;line&quot;:133,&quot;column&quot;:17}}">
+                <tr key={script.id} onClick={() => { void loadScript(script.id).then(loaded => { onLoadScript(loaded); onNavigate('script'); }).catch(() => undefined); }} style={{ cursor: 'pointer' }} data-qoder-id="qel-tr-81ec1c6f" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-tr-81ec1c6f&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;tr&quot;,&quot;loc&quot;:{&quot;line&quot;:133,&quot;column&quot;:17}}">
                   <td data-label="名称" style={{ fontWeight: 500 }} data-qoder-id="qel-td-f3710f4b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-td-f3710f4b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;td&quot;,&quot;loc&quot;:{&quot;line&quot;:134,&quot;column&quot;:19}}">{script.name}</td>
                   <td data-label="说明" className="text-secondary text-sm" data-qoder-id="qel-text-secondary-da34f020" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-secondary-da34f020&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;text-secondary&quot;,&quot;loc&quot;:{&quot;line&quot;:135,&quot;column&quot;:19}}">{script.description}</td>
                   <td data-label="动作数" className="text-mono" data-qoder-id="qel-text-mono-aab46098" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-mono-aab46098&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;text-mono&quot;,&quot;loc&quot;:{&quot;line&quot;:136,&quot;column&quot;:19}}">{script.actions.length}</td>
-                  <td data-label="总时长" className="text-mono" data-qoder-id="qel-text-mono-abb4622b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-mono-abb4622b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;text-mono&quot;,&quot;loc&quot;:{&quot;line&quot;:137,&quot;column&quot;:19}}">{formatDuration(script.actions.reduce((s, a) => s + a.delay, 0))}</td>
+                  <td data-label="总时长" className="text-mono" data-qoder-id="qel-text-mono-abb4622b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-mono-abb4622b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;text-mono&quot;,&quot;loc&quot;:{&quot;line&quot;:137,&quot;column&quot;:19}}">{formatDuration(calcScriptDuration(script))}</td>
                   <td data-label="最后使用" className="text-sm text-tertiary" data-qoder-id="qel-text-sm-25c6ae5b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-25c6ae5b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:138,&quot;column&quot;:19}}">
-                    {script.lastUsedAt ? new Date(script.lastUsedAt).toLocaleDateString('zh-CN') : '—'}
+                    {new Date(script.updatedAt).toLocaleDateString('zh-CN')}
                   </td>
                   <td data-label="" data-qoder-id="qel-td-f6711404" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-td-f6711404&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;td&quot;,&quot;loc&quot;:{&quot;line&quot;:141,&quot;column&quot;:19}}">
                     <ArrowRight size={14} className="text-tertiary"  data-qoder-id="qel-text-tertiary-94c0c19c" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-tertiary-94c0c19c&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;text-tertiary&quot;,&quot;loc&quot;:{&quot;line&quot;:142,&quot;column&quot;:21}}"/>

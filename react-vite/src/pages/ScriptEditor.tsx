@@ -32,15 +32,17 @@ import {
 } from 'lucide-react';
 import { useService } from '../hooks/useService';
 import { Button, IconButton, Toggle, Input, Select, RadioGroup, EmptyState, ProgressBar } from '../components/ui';
-import { formatDuration, formatTime } from '../data/mockData';
-import type { ScriptAction, ActionType, MouseButton, ClickMode, Script, PlaybackOptions, LoopMode } from '../types';
+import { formatDuration, formatTime, createAction } from '../data/mockData';
+import type { ScriptAction, ActionType, MouseButton, Script, PlaybackOptions, EditorLoopMode } from '../types';
 import { genId } from '../services/AutomationService';
 import type { PageId } from '../components/Layout';
 
 const ACTION_ICONS: Record<ActionType, typeof MousePointer> = {
   mouse_move: MousePointer,
   mouse_click: MousePointerClick,
-  mouse_scroll: Scroll,
+  mouse_button_down: MousePointerClick,
+  mouse_button_up: MousePointerClick,
+  mouse_wheel: Scroll,
   key_down: Keyboard,
   key_up: Keyboard,
   wait: Clock,
@@ -49,7 +51,9 @@ const ACTION_ICONS: Record<ActionType, typeof MousePointer> = {
 const ACTION_COLORS: Record<ActionType, string> = {
   mouse_move: 'var(--color-action-primary)',
   mouse_click: 'var(--color-action-primary)',
-  mouse_scroll: 'var(--color-paused)',
+  mouse_button_down: 'var(--color-action-primary)',
+  mouse_button_up: 'var(--color-action-primary)',
+  mouse_wheel: 'var(--color-paused)',
   key_down: 'var(--color-running)',
   key_up: 'var(--color-running)',
   wait: 'var(--color-text-tertiary)',
@@ -58,7 +62,9 @@ const ACTION_COLORS: Record<ActionType, string> = {
 const ACTION_LABELS: Record<ActionType, string> = {
   mouse_move: '鼠标移动',
   mouse_click: '鼠标点击',
-  mouse_scroll: '滚轮滚动',
+  mouse_button_down: '鼠标按下',
+  mouse_button_up: '鼠标释放',
+  mouse_wheel: '滚轮滚动',
   key_down: '键盘按下',
   key_up: '键盘释放',
   wait: '等待',
@@ -70,37 +76,39 @@ interface ScriptEditorProps {
   script: Script;
   onScriptChange: (script: Script) => void;
   onNavigate: (page: PageId) => void;
-  onRecordedActions: (actions: ScriptAction[]) => void;
+
 }
 
 function summarizeAction(a: ScriptAction): string {
   switch (a.type) {
-    case 'mouse_move': return `移动到 (${a.x}, ${a.y})`;
-    case 'mouse_click': return `${a.button === 'left' ? '左' : a.button === 'right' ? '右' : '中'}键${a.clickMode === 'double' ? '双击' : '单击'} (${a.x}, ${a.y})`;
-    case 'mouse_scroll': return `滚动 ${a.scrollDelta && a.scrollDelta > 0 ? '↓' : '↑'} ${Math.abs(a.scrollDelta || 0)} (${a.x}, ${a.y})`;
-    case 'key_down': return `按下 ${a.key}`;
-    case 'key_up': return `释放 ${a.key}`;
-    case 'wait': return formatDuration(a.delay);
+    case 'mouse_move': return `移动到 (${a.payload.x}, ${a.payload.y})`;
+    case 'mouse_button_down': return `${a.payload.button === 'left' ? '左' : a.payload.button === 'right' ? '右' : '中'}键按下`;
+    case 'mouse_button_up': return `${a.payload.button === 'left' ? '左' : a.payload.button === 'right' ? '右' : '中'}键释放`;
+    case 'mouse_click': return `${a.payload.button === 'left' ? '左' : a.payload.button === 'right' ? '右' : '中'}键${a.payload.clickCount === 2 ? '双击' : '单击'} (${a.payload.x ?? '当前'}, ${a.payload.y ?? '当前'})`;
+    case 'mouse_wheel': return `滚动 ${a.payload.deltaY > 0 ? '↓' : '↑'} ${Math.abs(a.payload.deltaY)}`;
+    case 'key_down': return `按下 ${a.payload.keyCode}`;
+    case 'key_up': return `释放 ${a.payload.keyCode}`;
+    case 'wait': return formatDuration(a.payload.durationMs);
   }
 }
 
 export function ScriptEditor({ script, onScriptChange, onNavigate, ...qoderProps }: ScriptEditorProps & Record<string, any>) {
-  const { service, state } = useService();
+  const { playback, pausePlayback, resumePlayback, stopPlayback, saveScript, state } = useService();
   const [actions, setActions] = useState<ScriptAction[]>(script.actions);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
-  const [loopMode, setLoopMode] = useState<LoopMode>('count');
+  const [loopMode, setLoopMode] = useState<EditorLoopMode>('count');
   const [loopCount, setLoopCount] = useState(1);
   const [loopDurationMin, setLoopDurationMin] = useState(1);
   const [loopDurationSec, setLoopDurationSec] = useState(0);
   const [speedMultiplier, setSpeedMultiplier] = useState(1.0);
   const dragCounter = useRef(0);
 
-  const isPlaying = state.runState === 'running' || state.runState === 'paused';
-  const isPaused = state.runState === 'paused';
+  const isPlaying = state.snapshot.operationType === 'playback' && (state.runState === 'running' || state.runState === 'paused');
+  const isPaused = state.snapshot.operationType === 'playback' && state.runState === 'paused';
   const isEmpty = actions.length === 0;
 
   const editingAction = useMemo(() => actions.find(a => a.id === editingId) || null, [actions, editingId]);
@@ -117,7 +125,7 @@ export function ScriptEditor({ script, onScriptChange, onNavigate, ...qoderProps
 
   const updateActions = useCallback((newActions: ScriptAction[]) => {
     setActions(newActions);
-    onScriptChange({ ...script, actions: newActions, updatedAt: Date.now() });
+    onScriptChange({ ...script, actions: newActions, updatedAt: new Date().toISOString() });
   }, [script, onScriptChange]);
 
   /* --- Selection --- */
@@ -145,38 +153,14 @@ export function ScriptEditor({ script, onScriptChange, onNavigate, ...qoderProps
 
   /* --- Add Actions --- */
   const addAction = useCallback((type: ActionType) => {
-    const newAction: ScriptAction = {
-      id: genId(),
-      type,
-      enabled: true,
-      delay: 200,
-    };
-    switch (type) {
-      case 'mouse_move':
-        newAction.x = 0; newAction.y = 0;
-        break;
-      case 'mouse_click':
-        newAction.x = 0; newAction.y = 0; newAction.button = 'left'; newAction.clickMode = 'single';
-        break;
-      case 'mouse_scroll':
-        newAction.x = 0; newAction.y = 0; newAction.scrollDelta = -100;
-        break;
-      case 'key_down':
-      case 'key_up':
-        newAction.key = 'Enter';
-        break;
-      case 'wait':
-        newAction.delay = 1000;
-        break;
-    }
+    const newAction = createAction(type);
     updateActions([...actions, newAction]);
     setEditingId(newAction.id);
     setShowAddMenu(false);
   }, [actions, updateActions]);
 
-  /* --- Edit Action --- */
-  const updateAction = useCallback((id: string, updates: Partial<ScriptAction>) => {
-    updateActions(actions.map(a => a.id === id ? { ...a, ...updates } : a));
+  const updateAction = useCallback((id: string, updated: ScriptAction) => {
+    updateActions(actions.map(action => action.id === id ? updated : action));
   }, [actions, updateActions]);
 
   /* --- Delete --- */
@@ -253,21 +237,21 @@ export function ScriptEditor({ script, onScriptChange, onNavigate, ...qoderProps
       loopMode,
       loopDurationMs: loopMode === 'duration' ? (loopDurationMin * 60 + loopDurationSec) * 1000 : undefined,
     };
-    service.playback({ ...script, actions: enabledActions }, options);
-  }, [actions, script, service, loopMode, loopCount, loopDurationMin, loopDurationSec, speedMultiplier]);
+    void playback({ ...script, actions: enabledActions }, options).catch(() => undefined);
+  }, [actions, script, playback, loopMode, loopCount, loopDurationMin, loopDurationSec, speedMultiplier]);
 
   const handlePause = useCallback(() => {
-    if (isPaused) service.resumePlayback();
-    else service.pausePlayback();
-  }, [service, isPaused]);
+    if (isPaused) void resumePlayback().catch(() => undefined);
+    else void pausePlayback().catch(() => undefined);
+  }, [pausePlayback, resumePlayback, isPaused]);
 
   const handleStop = useCallback(() => {
-    service.stopPlayback();
-  }, [service]);
+    void stopPlayback().catch(() => undefined);
+  }, [stopPlayback]);
 
   const handleSave = useCallback(() => {
-    service.saveScript({ ...script, actions });
-  }, [service, script, actions]);
+    void saveScript({ ...script, actions }).then(onScriptChange).catch(() => undefined);
+  }, [saveScript, script, actions, onScriptChange]);
 
   return (
     <div style={{ ...({ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }), ...((qoderProps as any)?.style) }} className={(qoderProps as any)?.className} data-qoder-id={(qoderProps as any)?.["data-qoder-id"]} data-qoder-source={(qoderProps as any)?.["data-qoder-source"]}>
@@ -294,7 +278,7 @@ export function ScriptEditor({ script, onScriptChange, onNavigate, ...qoderProps
               <Repeat size={14} className="text-tertiary"  data-qoder-id="qel-text-tertiary-dcdc6573" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-tertiary-dcdc6573&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;text-tertiary&quot;,&quot;loc&quot;:{&quot;line&quot;:294,&quot;column&quot;:15}}"/>
               <Select
                 value={loopMode}
-                onChange={e => setLoopMode(e.target.value as LoopMode)}
+                onChange={e => setLoopMode(e.target.value as EditorLoopMode)}
                 style={{ width: 'auto', minWidth: 72, fontSize: 'var(--fs-sm)' }}
                data-qoder-id="qel-select-6d504e6b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-select-6d504e6b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;select&quot;,&quot;loc&quot;:{&quot;line&quot;:295,&quot;column&quot;:15}}">
                 <option value="count" data-qoder-id="qel-option-da3671b4" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-option-da3671b4&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;option&quot;,&quot;loc&quot;:{&quot;line&quot;:300,&quot;column&quot;:17}}">按次数</option>
@@ -407,7 +391,7 @@ export function ScriptEditor({ script, onScriptChange, onNavigate, ...qoderProps
               zIndex: 100,
               minWidth: 160,
             }} data-qoder-id="qel-div-af6f457d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-af6f457d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:398,&quot;column&quot;:13}}">
-              {(['mouse_move', 'mouse_click', 'mouse_scroll', 'key_down', 'key_up', 'wait'] as ActionType[]).map(type => {
+              {(['mouse_move', 'mouse_button_down', 'mouse_button_up', 'mouse_click', 'mouse_wheel', 'key_down', 'key_up', 'wait'] as ActionType[]).map(type => {
                 const Icon = ACTION_ICONS[type];
                 return (
                   <button
@@ -538,7 +522,7 @@ export function ScriptEditor({ script, onScriptChange, onNavigate, ...qoderProps
                     {summarizeAction(action)}
                   </span>
                   <span className="text-mono text-sm text-tertiary" style={{ width: 70, textAlign: 'right' }} data-qoder-id="qel-text-mono-b89ba996" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-mono-b89ba996&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;text-mono&quot;,&quot;loc&quot;:{&quot;line&quot;:540,&quot;column&quot;:19}}">
-                    {formatDuration(action.delay)}
+                    {formatDuration(action.delayBeforeMs)}
                   </span>
                   <span style={{ width: 44, display: 'flex', justifyContent: 'center' }} onClick={e => e.stopPropagation()} data-qoder-id="qel-span-2cc01620" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-span-2cc01620&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;span&quot;,&quot;loc&quot;:{&quot;line&quot;:543,&quot;column&quot;:19}}">
                     <Toggle checked={action.enabled} onChange={() => toggleEnabled(action.id)}  data-qoder-id="qel-toggle-6e9bf519" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toggle-6e9bf519&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;toggle&quot;,&quot;loc&quot;:{&quot;line&quot;:544,&quot;column&quot;:21}}"/>
@@ -579,7 +563,7 @@ export function ScriptEditor({ script, onScriptChange, onNavigate, ...qoderProps
 }
 
 /* --- Property Editor --- */
-function PropertyEditor({ action, onUpdate, ...qoderProps }: { action: ScriptAction; onUpdate: (updates: Partial<ScriptAction>) => void } & Record<string, any>) {
+function PropertyEditor({ action, onUpdate, ...qoderProps }: { action: ScriptAction; onUpdate: (updated: ScriptAction) => void } & Record<string, any>) {
   return (
     <div style={{ ...({ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }), ...((qoderProps as any)?.style) }} className={(qoderProps as any)?.className} data-qoder-id={(qoderProps as any)?.["data-qoder-id"]} data-qoder-source={(qoderProps as any)?.["data-qoder-source"]}>
       {/* 类型显示 */}
@@ -592,17 +576,17 @@ function PropertyEditor({ action, onUpdate, ...qoderProps }: { action: ScriptAct
       </div>
 
       {/* 鼠标坐标 */}
-      {(action.type === 'mouse_move' || action.type === 'mouse_click' || action.type === 'mouse_scroll') && (
+      {(action.type === 'mouse_move' || action.type === 'mouse_click') && (
         <div className="prop-group" data-qoder-id="qel-prop-group-6131356d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-prop-group-6131356d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;prop-group&quot;,&quot;loc&quot;:{&quot;line&quot;:596,&quot;column&quot;:9}}">
           <span className="prop-label" data-qoder-id="qel-prop-label-423ccd82" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-prop-label-423ccd82&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;prop-label&quot;,&quot;loc&quot;:{&quot;line&quot;:597,&quot;column&quot;:11}}">坐标</span>
           <div style={{ display: 'flex', gap: 'var(--space-sm)' }} data-qoder-id="qel-div-11075c17" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-11075c17&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:598,&quot;column&quot;:11}}">
             <div className="field-inline" style={{ flex: 1 }} data-qoder-id="qel-field-inline-374bae7f" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-inline-374bae7f&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;field-inline&quot;,&quot;loc&quot;:{&quot;line&quot;:599,&quot;column&quot;:13}}">
               <span className="text-sm text-secondary" data-qoder-id="qel-text-sm-3f6bca25" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-3f6bca25&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:600,&quot;column&quot;:15}}">X</span>
-              <Input type="number" variant="number" value={action.x ?? 0} onChange={e => onUpdate({ x: +e.target.value })}  data-qoder-id="qel-input-4ef60d3b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-4ef60d3b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:601,&quot;column&quot;:15}}"/>
+              <Input type="number" variant="number" value={action.payload.x ?? 0} onChange={e => onUpdate(action.type === 'mouse_move' ? { ...action, payload: { ...action.payload, x: +e.target.value } } : { ...action, payload: { ...action.payload, x: +e.target.value } })}  data-qoder-id="qel-input-4ef60d3b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-4ef60d3b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:601,&quot;column&quot;:15}}"/>
             </div>
             <div className="field-inline" style={{ flex: 1 }} data-qoder-id="qel-field-inline-3a4974a1" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-inline-3a4974a1&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;field-inline&quot;,&quot;loc&quot;:{&quot;line&quot;:603,&quot;column&quot;:13}}">
               <span className="text-sm text-secondary" data-qoder-id="qel-text-sm-2e6dedf9" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-2e6dedf9&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:604,&quot;column&quot;:15}}">Y</span>
-              <Input type="number" variant="number" value={action.y ?? 0} onChange={e => onUpdate({ y: +e.target.value })}  data-qoder-id="qel-input-4ff60ece" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-4ff60ece&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:605,&quot;column&quot;:15}}"/>
+              <Input type="number" variant="number" value={action.payload.y ?? 0} onChange={e => onUpdate(action.type === 'mouse_move' ? { ...action, payload: { ...action.payload, y: +e.target.value } } : { ...action, payload: { ...action.payload, y: +e.target.value } })}  data-qoder-id="qel-input-4ff60ece" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-4ff60ece&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:605,&quot;column&quot;:15}}"/>
             </div>
           </div>
         </div>
@@ -613,7 +597,7 @@ function PropertyEditor({ action, onUpdate, ...qoderProps }: { action: ScriptAct
         <>
           <div className="prop-group" data-qoder-id="qel-prop-group-5e336f4b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-prop-group-5e336f4b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;prop-group&quot;,&quot;loc&quot;:{&quot;line&quot;:614,&quot;column&quot;:11}}">
             <span className="prop-label" data-qoder-id="qel-prop-label-453f10d2" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-prop-label-453f10d2&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;prop-label&quot;,&quot;loc&quot;:{&quot;line&quot;:615,&quot;column&quot;:13}}">鼠标按键</span>
-            <Select value={action.button} onChange={e => onUpdate({ button: e.target.value as MouseButton })} data-qoder-id="qel-select-b615aa9d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-select-b615aa9d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;select&quot;,&quot;loc&quot;:{&quot;line&quot;:616,&quot;column&quot;:13}}">
+            <Select value={action.payload.button} onChange={e => onUpdate({ ...action, payload: { ...action.payload, button: e.target.value as MouseButton } })} data-qoder-id="qel-select-b615aa9d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-select-b615aa9d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;select&quot;,&quot;loc&quot;:{&quot;line&quot;:616,&quot;column&quot;:13}}">
               <option value="left" data-qoder-id="qel-option-9b2dfb9c" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-option-9b2dfb9c&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;option&quot;,&quot;loc&quot;:{&quot;line&quot;:617,&quot;column&quot;:15}}">左键</option>
               <option value="right" data-qoder-id="qel-option-a22e06a1" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-option-a22e06a1&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;option&quot;,&quot;loc&quot;:{&quot;line&quot;:618,&quot;column&quot;:15}}">右键</option>
               <option value="middle" data-qoder-id="qel-option-a12e050e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-option-a12e050e&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;option&quot;,&quot;loc&quot;:{&quot;line&quot;:619,&quot;column&quot;:15}}">中键</option>
@@ -622,8 +606,8 @@ function PropertyEditor({ action, onUpdate, ...qoderProps }: { action: ScriptAct
           <div className="prop-group" data-qoder-id="qel-prop-group-d02bd3fc" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-prop-group-d02bd3fc&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;prop-group&quot;,&quot;loc&quot;:{&quot;line&quot;:622,&quot;column&quot;:11}}">
             <span className="prop-label" data-qoder-id="qel-prop-label-494155b5" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-prop-label-494155b5&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;prop-label&quot;,&quot;loc&quot;:{&quot;line&quot;:623,&quot;column&quot;:13}}">点击模式</span>
             <RadioGroup
-              value={action.clickMode || 'single'}
-              onChange={(v) => onUpdate({ clickMode: v as ClickMode })}
+              value={action.payload.clickCount === 2 ? 'double' : 'single'}
+              onChange={(v) => onUpdate({ ...action, payload: { ...action.payload, clickCount: v === 'double' ? 2 : 1 } })}
               options={[
                 { value: 'single', label: '单击' },
                 { value: 'double', label: '双击' },
@@ -634,10 +618,10 @@ function PropertyEditor({ action, onUpdate, ...qoderProps }: { action: ScriptAct
       )}
 
       {/* 滚轮 */}
-      {action.type === 'mouse_scroll' && (
+      {action.type === 'mouse_wheel' && (
         <div className="prop-group" data-qoder-id="qel-prop-group-d32bd8b5" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-prop-group-d32bd8b5&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;prop-group&quot;,&quot;loc&quot;:{&quot;line&quot;:638,&quot;column&quot;:9}}">
           <span className="prop-label" data-qoder-id="qel-prop-label-44414dd6" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-prop-label-44414dd6&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;prop-label&quot;,&quot;loc&quot;:{&quot;line&quot;:639,&quot;column&quot;:11}}">滚动距离</span>
-          <Input type="number" variant="number" value={action.scrollDelta ?? 0} onChange={e => onUpdate({ scrollDelta: +e.target.value })}  data-qoder-id="qel-input-c1ee737f" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-c1ee737f&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:640,&quot;column&quot;:11}}"/>
+          <Input type="number" variant="number" value={action.payload.deltaY} onChange={e => onUpdate({ ...action, payload: { ...action.payload, deltaY: +e.target.value } })}  data-qoder-id="qel-input-c1ee737f" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-c1ee737f&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:640,&quot;column&quot;:11}}"/>
           <span className="text-sm text-tertiary" data-qoder-id="qel-text-sm-c066850a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-c066850a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:641,&quot;column&quot;:11}}">负值向下，正值向上</span>
         </div>
       )}
@@ -646,7 +630,7 @@ function PropertyEditor({ action, onUpdate, ...qoderProps }: { action: ScriptAct
       {(action.type === 'key_down' || action.type === 'key_up') && (
         <div className="prop-group" data-qoder-id="qel-prop-group-cf2bd269" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-prop-group-cf2bd269&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;prop-group&quot;,&quot;loc&quot;:{&quot;line&quot;:647,&quot;column&quot;:9}}">
           <span className="prop-label" data-qoder-id="qel-prop-label-504160ba" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-prop-label-504160ba&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;prop-label&quot;,&quot;loc&quot;:{&quot;line&quot;:648,&quot;column&quot;:11}}">按键</span>
-          <Select value={action.key || ''} onChange={e => onUpdate({ key: e.target.value })} data-qoder-id="qel-select-a70ed73b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-select-a70ed73b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;select&quot;,&quot;loc&quot;:{&quot;line&quot;:649,&quot;column&quot;:11}}">
+          <Select value={action.payload.keyCode} onChange={e => onUpdate({ ...action, payload: { ...action.payload, keyCode: e.target.value } })} data-qoder-id="qel-select-a70ed73b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-select-a70ed73b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;select&quot;,&quot;loc&quot;:{&quot;line&quot;:649,&quot;column&quot;:11}}">
             {KEYS.map(k => <option key={k} value={k} data-qoder-id="qel-option-a6328a1b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-option-a6328a1b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;option&quot;,&quot;loc&quot;:{&quot;line&quot;:650,&quot;column&quot;:28}}">{k}</option>)}
           </Select>
         </div>
@@ -655,15 +639,11 @@ function PropertyEditor({ action, onUpdate, ...qoderProps }: { action: ScriptAct
       {/* 延迟 */}
       <div className="prop-group" data-qoder-id="qel-prop-group-d52e1a72" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-prop-group-d52e1a72&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;prop-group&quot;,&quot;loc&quot;:{&quot;line&quot;:656,&quot;column&quot;:7}}">
         <span className="prop-label" data-qoder-id="qel-prop-label-50439f51" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-prop-label-50439f51&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;prop-label&quot;,&quot;loc&quot;:{&quot;line&quot;:657,&quot;column&quot;:9}}">{action.type === 'wait' ? '等待时间（毫秒）' : '执行前延迟（毫秒）'}</span>
-        <Input type="number" variant="number" value={action.delay} onChange={e => onUpdate({ delay: Math.max(0, +e.target.value) })} min={0}  data-qoder-id="qel-input-bff0aef0" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-bff0aef0&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:658,&quot;column&quot;:9}}"/>
-        <span className="text-sm text-tertiary" data-qoder-id="qel-text-sm-4469936d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-4469936d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:659,&quot;column&quot;:9}}">= {formatDuration(action.delay)}</span>
+        <Input type="number" variant="number" value={action.type === 'wait' ? action.payload.durationMs : action.delayBeforeMs} onChange={e => onUpdate(action.type === 'wait' ? { ...action, payload: { durationMs: Math.max(0, +e.target.value) } } : { ...action, delayBeforeMs: Math.max(0, +e.target.value) })} min={0}  data-qoder-id="qel-input-bff0aef0" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-bff0aef0&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:658,&quot;column&quot;:9}}"/>
+        <span className="text-sm text-tertiary" data-qoder-id="qel-text-sm-4469936d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-4469936d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:659,&quot;column&quot;:9}}">= {formatDuration(action.type === 'wait' ? action.payload.durationMs : action.delayBeforeMs)}</span>
       </div>
 
-      {/* 备注 */}
-      <div className="prop-group" data-qoder-id="qel-prop-group-d12e1426" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-prop-group-d12e1426&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;prop-group&quot;,&quot;loc&quot;:{&quot;line&quot;:663,&quot;column&quot;:7}}">
-        <span className="prop-label" data-qoder-id="qel-prop-label-5443a59d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-prop-label-5443a59d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;prop-label&quot;,&quot;loc&quot;:{&quot;line&quot;:664,&quot;column&quot;:9}}">备注</span>
-        <Input value={action.comment || ''} onChange={e => onUpdate({ comment: e.target.value })} placeholder="可选备注"  data-qoder-id="qel-input-c3f0b53c" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-c3f0b53c&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:665,&quot;column&quot;:9}}"/>
-      </div>
+
     </div>
   );
 }

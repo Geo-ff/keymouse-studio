@@ -11,7 +11,7 @@ import type { TimedClickConfig, MouseButton } from '../types';
 import { formatTime } from '../data/mockData';
 
 export function TimedClick(qoderProps: Record<string, any>) {
-  const { service, state } = useService();
+  const { startTimedClick, stopTimedClick, getMousePosition, state } = useService();
 
   const [hours, setHours] = useState(0);
   const [minutes, setMinutes] = useState(30);
@@ -22,23 +22,28 @@ export function TimedClick(qoderProps: Record<string, any>) {
   const [posX, setPosX] = useState(960);
   const [posY, setPosY] = useState(540);
 
-  const isRunning = state.runState === 'running' || state.runState === 'paused';
+  const isRunning = state.snapshot.operationType === 'timed_click' && (state.runState === 'running' || state.runState === 'paused');
   const waitMs = hours * 3600000 + minutes * 60000 + seconds * 1000;
 
   const handleStart = useCallback(() => {
     const config: TimedClickConfig = {
-      waitMs: Math.max(1000, waitMs),
-      loop,
-      x: useCurrentPos ? undefined : posX,
-      y: useCurrentPos ? undefined : posY,
+      delayMs: Math.max(1000, waitMs),
       button,
+      clickCount: 1,
+      intervalMs: 100,
+      repeatMode: loop ? 'infinite' : 'count',
+      repeatCount: 1,
+      positionMode: useCurrentPos ? 'current' : 'fixed',
+      x: useCurrentPos ? null : posX,
+      y: useCurrentPos ? null : posY,
+      countdownMs: 0,
     };
-    service.startTimedClick(config);
-  }, [service, waitMs, loop, useCurrentPos, posX, posY, button]);
+    void startTimedClick(config).catch(() => undefined);
+  }, [startTimedClick, waitMs, loop, useCurrentPos, posX, posY, button]);
 
   const handleStop = useCallback(() => {
-    service.stopTimedClick();
-  }, [service]);
+    void stopTimedClick().catch(() => undefined);
+  }, [stopTimedClick]);
 
   return (
     <div className={["responsive-split", (qoderProps as any)?.className].filter(Boolean).join(" ")} style={{ ...({ display: 'flex', gap: 'var(--space-lg)', height: '100%' }), ...((qoderProps as any)?.style) }} data-qoder-id={(qoderProps as any)?.["data-qoder-id"]} data-qoder-source={(qoderProps as any)?.["data-qoder-source"]}>
@@ -111,7 +116,7 @@ export function TimedClick(qoderProps: Record<string, any>) {
                   <span className="text-sm text-secondary" data-qoder-id="qel-text-sm-6b991b6e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-6b991b6e&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:111,&quot;column&quot;:19}}">Y</span>
                   <Input type="number" variant="number" value={posY} onChange={e => setPosY(+e.target.value)} disabled={isRunning} style={{ width: 80 }}  data-qoder-id="qel-input-5be1ebcf" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-5be1ebcf&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:112,&quot;column&quot;:19}}"/>
                 </div>
-                <IconButton tooltip="拾取当前鼠标坐标" onClick={() => { const p = service.getMousePosition(); setPosX(p.x); setPosY(p.y); }} data-qoder-id="qel-iconbutton-d31de59a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-iconbutton-d31de59a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;iconbutton&quot;,&quot;loc&quot;:{&quot;line&quot;:114,&quot;column&quot;:17}}">
+                <IconButton tooltip="拾取当前鼠标坐标" onClick={() => { void getMousePosition().then(p => { setPosX(p.x); setPosY(p.y); }).catch(() => undefined); }} data-qoder-id="qel-iconbutton-d31de59a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-iconbutton-d31de59a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;iconbutton&quot;,&quot;loc&quot;:{&quot;line&quot;:114,&quot;column&quot;:17}}">
                   <MousePointer size={14}  data-qoder-id="qel-mousepointer-2009d4e1" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-mousepointer-2009d4e1&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;mousepointer&quot;,&quot;loc&quot;:{&quot;line&quot;:115,&quot;column&quot;:19}}"/>
                 </IconButton>
               </div>

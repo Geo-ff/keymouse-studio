@@ -1,580 +1,530 @@
-/* =========================================================================
-   AutomationService — 系统能力抽象层
-   定义 typed service interface，提供 Mock 实现
-   所有模拟逻辑封装于此，组件不散落模拟代码
-   ========================================================================= */
-
 import type {
+  AppSettings,
+  BackendSettings,
+  Capabilities,
+  ClickerConfig,
+  DesktopConnectionInfo,
+  EmergencyStopResponse,
+  ErrorDetail,
+  EventEnvelope,
+  HotkeyStatus,
+  HotkeyValidationResponse,
   IAutomationService,
+  MousePosition,
+  OperationTransition,
+  PlaybackOptions,
+  PlaybackRequest,
+  RecordingActionCapturedPayload,
+  RecordingConfig,
+  RecordingResult,
+  RecordingStopResponse,
+  Script,
+  ScriptAction,
+  ScriptCreate,
+  ScriptValidationResponse,
   ServiceMode,
   ServiceState,
   StateChangeListener,
-  ClickerConfig,
+  StateSnapshot,
   TimedClickConfig,
-  ScriptAction,
-  Script,
-  PlaybackOptions,
-  MousePosition,
-  RunState,
-  RecordingState,
-  AppSettings,
-  MouseButton,
-  ActionType,
 } from '../types';
-import { DEFAULT_SETTINGS } from '../types';
-import { mockScripts, generateRandomAction, randomKey } from '../data/mockData';
+import { DEFAULT_SETTINGS, INITIAL_SNAPSHOT } from '../types';
+import { generateRandomAction, mockScripts } from '../data/mockData';
+import { ApiClient, ApiError } from './ApiClient';
 
-type Timer = ReturnType<typeof setInterval> | ReturnType<typeof setTimeout> | null;
+const genId = () => crypto.randomUUID();
+const clone = <T,>(value: T): T => structuredClone(value);
+const activeState = (state: StateSnapshot['state']) => state === 'countdown' || state === 'running' || state === 'recording' || state === 'paused' || state === 'stopping';
 
-const ACTION_TYPE_LABELS: Record<ActionType, string> = {
-  mouse_move: '鼠标移动',
-  mouse_click: '鼠标点击',
-  mouse_scroll: '滚轮滚动',
-  key_down: '键盘按下',
-  key_up: '键盘释放',
-  wait: '等待',
-};
-
-const MOUSE_BUTTONS: MouseButton[] = ['left', 'right', 'middle'];
-const ACTION_TYPES: ActionType[] = ['mouse_move', 'mouse_click', 'mouse_scroll', 'key_down', 'key_up', 'wait'];
-
-const genId = () => Math.random().toString(36).slice(2, 11);
-
-function createInitialState(): ServiceState {
+function createState(snapshot: StateSnapshot = INITIAL_SNAPSHOT): ServiceState {
   return {
-    runState: 'idle',
-    recordingState: 'idle',
-    clickerCount: 0,
-    clickerRunningTime: 0,
+    snapshot: clone(snapshot),
+    runState: snapshot.state === 'paused' ? 'paused' : activeState(snapshot.state) ? 'running' : 'idle',
+    recordingState: snapshot.operationType === 'recording' ? (snapshot.state === 'paused' ? 'paused' : snapshot.state === 'recording' ? 'recording' : 'stopped') : 'idle',
+    clickerCount: snapshot.operationType === 'clicker' ? snapshot.completedCount : 0,
+    clickerRunningTime: snapshot.operationType === 'clicker' ? snapshot.elapsedMs : 0,
     nextClickCountdown: 0,
-    recordingTime: 0,
-    recordingActionCount: 0,
+    recordingTime: snapshot.operationType === 'recording' ? snapshot.elapsedMs : 0,
+    recordingActionCount: snapshot.operationType === 'recording' ? snapshot.completedCount : 0,
     recordingActions: [],
-    playbackProgress: 0,
-    playbackCurrentIndex: -1,
-    playbackCurrentLoop: 0,
+    playbackProgress: snapshot.operationType === 'playback' ? Math.round((snapshot.progress ?? 0) * 100) : 0,
+    playbackCurrentIndex: snapshot.operationType === 'playback' ? (snapshot.currentActionIndex ?? -1) : -1,
+    playbackCurrentLoop: snapshot.operationType === 'playback' ? snapshot.completedCount : 0,
     playbackLoopRemainingMs: 0,
     mousePos: { x: 960, y: 540 },
-    keyboardListening: false,
-    countdownRemaining: 0,
-    timedClickCount: 0,
-    timedClickCountdown: 0,
+    keyboardListening: snapshot.operationType === 'recording' && activeState(snapshot.state),
+    countdownRemaining: Math.ceil(snapshot.countdownRemainingMs / 1000),
+    timedClickCount: snapshot.operationType === 'timed_click' ? snapshot.completedCount : 0,
+    timedClickCountdown: snapshot.operationType === 'timed_click' ? snapshot.countdownRemainingMs : 0,
   };
 }
 
-/* --- Mock Automation Service --- */
-export class MockAutomationService implements IAutomationService {
-  readonly mode: ServiceMode = 'mock';
-  private _state: ServiceState = createInitialState();
-  private listeners = new Set<StateChangeListener>();
-  private settings: AppSettings = { ...DEFAULT_SETTINGS };
-  private scripts: Script[] = [...mockScripts];
+abstract class AutomationServiceBase implements IAutomationService {
+  abstract readonly mode: ServiceMode;
+  protected currentState = createState();
+  protected listeners = new Set<StateChangeListener>();
+  protected errorListeners = new Set<(error: ErrorDetail | null) => void>();
+  protected currentError: ErrorDetail | null = null;
 
-  // Timers
-  private mouseTimer: Timer = null;
-  private clickerTimer: Timer = null;
-  private clickerCountdownTimer: Timer = null;
-  private clickerRunningTimer: Timer = null;
-  private recordingTimer: Timer = null;
-  private recordingRunningTimer: Timer = null;
-  private playbackTimer: Timer = null;
-  private playbackDurationTimer: Timer = null;
-  private timedClickTimer: Timer = null;
-  private timedClickCountdownTimer: Timer = null;
-  private countdownTimer: Timer = null;
-
-  // Internal state
-  private currentScript: Script | null = null;
-  private currentPlaybackOptions: PlaybackOptions | null = null;
-  private clickerConfig: ClickerConfig | null = null;
-  private timedClickConfig: TimedClickConfig | null = null;
-  private playbackActions: ScriptAction[] = [];
-  private playbackIndex = 0;
-  private playbackLoop = 0;
-  private playbackStartTime = 0;
-  private playbackPauseStart = 0;
-  private isPaused = false;
-
-  constructor() {
-    this.startMouseSimulation();
-  }
-
-  get state(): ServiceState {
-    return { ...this._state };
-  }
-
-  private startMouseSimulation(): void {
-    if (this.mouseTimer) clearInterval(this.mouseTimer as any);
-    this.mouseTimer = setInterval(() => {
-      // Simulate small mouse movements
-      const dx = Math.round((Math.random() - 0.5) * 6);
-      const dy = Math.round((Math.random() - 0.5) * 6);
-      this._state.mousePos = {
-        x: Math.max(0, Math.min(1920, this._state.mousePos.x + dx)),
-        y: Math.max(0, Math.min(1080, this._state.mousePos.y + dy)),
-      };
-      this.notify();
-    }, 500);
-  }
-
-  private notify(): void {
-    const snapshot = { ...this._state };
-    this.listeners.forEach(l => l(snapshot));
-  }
-
-  onStateChange(listener: StateChangeListener): () => void {
-    this.listeners.add(listener);
-    listener(this.state);
-    return () => this.listeners.delete(listener);
-  }
-
-  getMousePosition(): MousePosition {
-    return { ...this._state.mousePos };
-  }
-
-  // --- Countdown helper ---
-  private startCountdown(seconds: number, onComplete: () => void): void {
-    this._state.countdownRemaining = seconds;
-    this.notify();
-    let remaining = seconds;
-    this.countdownTimer = setInterval(() => {
-      remaining--;
-      this._state.countdownRemaining = remaining;
-      this.notify();
-      if (remaining <= 0) {
-        this.clearTimer('countdownTimer');
-        this._state.countdownRemaining = 0;
-        this.notify();
-        onComplete();
-      }
-    }, 1000);
-  }
-
-  private clearTimer(name: string): void {
-    const t = (this as any)[name] as Timer;
-    if (t) {
-      clearInterval(t as any);
-      clearTimeout(t as any);
-      (this as any)[name] = null;
-    }
-  }
-
-  private clearAllTimers(): void {
-    this.clearTimer('clickerTimer');
-    this.clearTimer('clickerCountdownTimer');
-    this.clearTimer('clickerRunningTimer');
-    this.clearTimer('recordingTimer');
-    this.clearTimer('recordingRunningTimer');
-    this.clearTimer('playbackTimer');
-    this.clearTimer('playbackDurationTimer');
-    this.clearTimer('timedClickTimer');
-    this.clearTimer('timedClickCountdownTimer');
-    this.clearTimer('countdownTimer');
-  }
-
-  // --- Clicker ---
-  startClicker(config: ClickerConfig): void {
-    this.clickerConfig = config;
-    this._state.clickerCount = 0;
-    this._state.clickerRunningTime = 0;
-    this.isPaused = false;
-
-    const beginClicking = () => {
-      this._state.runState = 'running';
-      this._state.nextClickCountdown = config.intervalMs;
-      this.notify();
-
-      // Running time tracker
-      this.clickerRunningTimer = setInterval(() => {
-        if (!this.isPaused) {
-          this._state.clickerRunningTime += 100;
-          this._state.nextClickCountdown = Math.max(0, this._state.nextClickCountdown - 100);
-          this.notify();
-        }
-      }, 100);
-
-      // Click interval
-      this.clickerTimer = setInterval(() => {
-        if (this.isPaused) return;
-        this._state.clickerCount++;
-        this._state.nextClickCountdown = config.intervalMs;
-        this.notify();
-
-        if (config.times > 0 && this._state.clickerCount >= config.times) {
-          this.stopClicker();
-        }
-      }, config.intervalMs);
+  async getState(): Promise<ServiceState> { return clone(this.currentState); }
+  onStateChange(listener: StateChangeListener): () => void { this.listeners.add(listener); void this.getState().then(listener); return () => { this.listeners.delete(listener); }; }
+  onError(listener: (error: ErrorDetail | null) => void): () => void { this.errorListeners.add(listener); listener(this.currentError); return () => { this.errorListeners.delete(listener); }; }
+  protected notify(): void { void this.getState().then(state => this.listeners.forEach(listener => listener(state))); }
+  protected report(error: unknown): never {
+    const detail = error instanceof ApiError ? error.detail : {
+      code: 'ENGINE_INTERNAL_ERROR' as const,
+      message: error instanceof Error ? error.message : '未知错误',
+      details: {}, retryable: false, operationId: this.currentState.snapshot.operationId,
     };
-
-    if (this.settings.countdownEnabled && this.settings.countdownSeconds > 0) {
-      this.startCountdown(this.settings.countdownSeconds, beginClicking);
-    } else {
-      beginClicking();
-    }
+    this.currentError = detail;
+    this.errorListeners.forEach(listener => listener(detail));
+    throw error;
   }
-
-  pauseClicker(): void {
-    if (this._state.runState !== 'running') return;
-    this.isPaused = true;
-    this._state.runState = 'paused';
+  protected clearError(): void { this.currentError = null; this.errorListeners.forEach(listener => listener(null)); }
+  protected applySnapshot(snapshot: StateSnapshot): void {
+    const actions = this.currentState.recordingActions;
+    const mousePos = this.currentState.mousePos;
+    this.currentState = { ...createState(snapshot), recordingActions: actions, mousePos };
     this.notify();
   }
 
-  resumeClicker(): void {
-    if (this._state.runState !== 'paused') return;
-    this.isPaused = false;
-    this._state.runState = 'running';
-    this.notify();
-  }
+  abstract initialize(): Promise<void>;
 
-  stopClicker(): void {
-    this.clearTimer('clickerTimer');
-    this.clearTimer('clickerCountdownTimer');
-    this.clearTimer('clickerRunningTimer');
-    this.clearTimer('countdownTimer');
-    this._state.runState = 'idle';
-    this._state.clickerCount = 0;
-    this._state.clickerRunningTime = 0;
-    this._state.nextClickCountdown = 0;
-    this._state.countdownRemaining = 0;
-    this.isPaused = false;
-    this.notify();
-  }
-
-  // --- Timed Click ---
-  startTimedClick(config: TimedClickConfig): void {
-    this.timedClickConfig = config;
-    this._state.timedClickCount = 0;
-    this._state.timedClickCountdown = config.waitMs;
-    this.isPaused = false;
-
-    const doClick = () => {
-      this._state.timedClickCount++;
-      this.notify();
-
-      if (config.loop) {
-        this._state.timedClickCountdown = config.waitMs;
-        this.notify();
-        this.timedClickTimer = setTimeout(doClick, config.waitMs);
-      } else {
-        this._state.runState = 'idle';
-        this._state.timedClickCountdown = 0;
-        this.notify();
-      }
-    };
-
-    const begin = () => {
-      this._state.runState = 'running';
-      this.notify();
-
-      // Countdown tracker
-      this.timedClickCountdownTimer = setInterval(() => {
-        if (!this.isPaused) {
-          this._state.timedClickCountdown = Math.max(0, this._state.timedClickCountdown - 100);
-          this.notify();
-        }
-      }, 100);
-
-      this.timedClickTimer = setTimeout(doClick, config.waitMs);
-    };
-
-    if (this.settings.countdownEnabled && this.settings.countdownSeconds > 0) {
-      this.startCountdown(this.settings.countdownSeconds, begin);
-    } else {
-      begin();
-    }
-  }
-
-  stopTimedClick(): void {
-    this.clearTimer('timedClickTimer');
-    this.clearTimer('timedClickCountdownTimer');
-    this.clearTimer('countdownTimer');
-    this._state.runState = 'idle';
-    this._state.timedClickCount = 0;
-    this._state.timedClickCountdown = 0;
-    this._state.countdownRemaining = 0;
-    this.notify();
-  }
-
-  // --- Recording ---
-  startRecording(): void {
-    this._state.recordingActions = [];
-    this._state.recordingActionCount = 0;
-    this._state.recordingTime = 0;
-    this._state.recordingState = 'recording';
-    this._state.keyboardListening = true;
-    this.isPaused = false;
-    this.notify();
-
-    // Time tracker
-    this.recordingRunningTimer = setInterval(() => {
-      if (!this.isPaused) {
-        this._state.recordingTime += 100;
-        this.notify();
-      }
-    }, 100);
-
-    // Generate random actions
-    this.recordingTimer = setInterval(() => {
-      if (this.isPaused) return;
-      if (Math.random() < 0.3) return; // Skip some intervals
-
-      const action = generateRandomAction();
-      this._state.recordingActions = [...this._state.recordingActions, action];
-      this._state.recordingActionCount++;
-      this.notify();
-    }, 300 + Math.random() * 500);
-  }
-
-  pauseRecording(): void {
-    if (this._state.recordingState !== 'recording') return;
-    this.isPaused = true;
-    this._state.recordingState = 'paused';
-    this.notify();
-  }
-
-  resumeRecording(): void {
-    if (this._state.recordingState !== 'paused') return;
-    this.isPaused = false;
-    this._state.recordingState = 'recording';
-    this.notify();
-  }
-
-  stopRecording(): ScriptAction[] {
-    this.clearTimer('recordingTimer');
-    this.clearTimer('recordingRunningTimer');
-    this._state.recordingState = 'stopped';
-    this._state.keyboardListening = false;
-    this.isPaused = false;
-    const actions = [...this._state.recordingActions];
-    this.notify();
-    return actions;
-  }
-
-  // --- Playback ---
-  playback(script: Script, options: PlaybackOptions): void {
-    this.currentScript = script;
-    this.currentPlaybackOptions = options;
-    this.playbackActions = script.actions.filter(a => a.enabled);
-    this.playbackIndex = 0;
-    this.playbackLoop = 0;
-    this.playbackStartTime = 0;
-    this.isPaused = false;
-    this._state.playbackProgress = 0;
-    this._state.playbackCurrentIndex = -1;
-    this._state.playbackCurrentLoop = 0;
-    this._state.playbackLoopRemainingMs = options.loopMode === 'duration' ? (options.loopDurationMs || 0) : 0;
-    this.notify();
-
-    const begin = () => {
-      this._state.runState = 'running';
-      this.playbackStartTime = Date.now();
-      this.notify();
-
-      // Duration-based loop: track remaining time
-      if (options.loopMode === 'duration' && options.loopDurationMs) {
-        this.playbackDurationTimer = setInterval(() => {
-          if (!this.isPaused) {
-            const elapsed = Date.now() - this.playbackStartTime;
-            const remaining = Math.max(0, options.loopDurationMs! - elapsed);
-            this._state.playbackLoopRemainingMs = remaining;
-            this.notify();
-            if (remaining <= 0) {
-              this.clearTimer('playbackDurationTimer');
-              this._state.runState = 'idle';
-              this._state.playbackProgress = 100;
-              this._state.playbackCurrentIndex = -1;
-              this.notify();
-            }
-          }
-        }, 100);
-      }
-
-      this.executeNextAction();
-    };
-
-    if (this.settings.countdownEnabled && this.settings.countdownSeconds > 0) {
-      this.startCountdown(this.settings.countdownSeconds, begin);
-    } else {
-      begin();
-    }
-  }
-
-  private executeNextAction(): void {
-    if (this.isPaused) return;
-    if (this._state.runState !== 'running') return; // duration timer may have stopped us
-
-    const opts = this.currentPlaybackOptions!;
-
-    // Check if we've finished all actions in the current loop iteration
-    if (this.playbackIndex >= this.playbackActions.length) {
-      const shouldContinue =
-        opts.loopMode === 'infinite' ||
-        (opts.loopMode === 'count' && this.playbackLoop + 1 < opts.times) ||
-        opts.loopMode === 'duration'; // duration mode continues until the timer stops it
-
-      if (shouldContinue) {
-        this.playbackLoop++;
-        this.playbackIndex = 0;
-        this._state.playbackCurrentLoop = this.playbackLoop;
-        this.notify();
-      } else {
-        this._state.runState = 'idle';
-        this._state.playbackProgress = 100;
-        this._state.playbackCurrentIndex = -1;
-        this.notify();
-        return;
-      }
-    }
-
-    const action = this.playbackActions[this.playbackIndex];
-    this._state.playbackCurrentIndex = this.playbackIndex;
-
-    // Progress calculation depends on loop mode
-    if (opts.loopMode === 'count') {
-      const totalActions = this.playbackActions.length * opts.times;
-      const completed = this.playbackLoop * this.playbackActions.length + this.playbackIndex;
-      this._state.playbackProgress = totalActions > 0 ? Math.round((completed / totalActions) * 100) : 0;
-    } else if (opts.loopMode === 'duration' && opts.loopDurationMs) {
-      const elapsed = Date.now() - this.playbackStartTime;
-      this._state.playbackProgress = Math.min(100, Math.round((elapsed / opts.loopDurationMs) * 100));
-      this._state.playbackLoopRemainingMs = Math.max(0, opts.loopDurationMs - elapsed);
-    } else {
-      // infinite — progress within current loop iteration
-      this._state.playbackProgress = Math.round(((this.playbackIndex + 1) / this.playbackActions.length) * 100);
-    }
-    this.notify();
-
-    this.playbackIndex++;
-    const delay = action.delay / (opts.speedMultiplier || 1);
-    this.playbackTimer = setTimeout(() => this.executeNextAction(), Math.max(50, delay));
-  }
-
-  pausePlayback(): void {
-    if (this._state.runState !== 'running') return;
-    this.isPaused = true;
-    this.playbackPauseStart = Date.now();
-    this._state.runState = 'paused';
-    this.notify();
-  }
-
-  resumePlayback(): void {
-    if (this._state.runState !== 'paused') return;
-    // Adjust start time by pause duration so elapsed time excludes paused period
-    if (this.playbackPauseStart > 0) {
-      this.playbackStartTime += Date.now() - this.playbackPauseStart;
-      this.playbackPauseStart = 0;
-    }
-    this.isPaused = false;
-    this._state.runState = 'running';
-    this.notify();
-    this.executeNextAction();
-  }
-
-  stopPlayback(): void {
-    this.clearTimer('playbackTimer');
-    this.clearTimer('playbackDurationTimer');
-    this.clearTimer('countdownTimer');
-    this._state.runState = 'idle';
-    this._state.playbackProgress = 0;
-    this._state.playbackCurrentIndex = -1;
-    this._state.playbackCurrentLoop = 0;
-    this._state.playbackLoopRemainingMs = 0;
-    this._state.countdownRemaining = 0;
-    this.isPaused = false;
-    this.notify();
-  }
-
-  // --- Emergency Stop ---
-  emergencyStop(): void {
-    this.clearAllTimers();
-    this._state.runState = 'emergency';
-    this._state.recordingState = 'idle';
-    this._state.keyboardListening = false;
-    this._state.countdownRemaining = 0;
-    this._state.playbackProgress = 0;
-    this._state.playbackCurrentIndex = -1;
-    this._state.playbackCurrentLoop = 0;
-    this._state.playbackLoopRemainingMs = 0;
-    this._state.clickerCount = 0;
-    this._state.nextClickCountdown = 0;
-    this._state.timedClickCountdown = 0;
-    this.isPaused = false;
-    this.notify();
-
-    // Reset to idle after showing emergency state
-    setTimeout(() => {
-      if (this._state.runState === 'emergency') {
-        this._state.runState = 'idle';
-        this.notify();
-      }
-    }, 2000);
-  }
-
-  // --- Scripts ---
-  saveScript(script: Script): void {
-    const idx = this.scripts.findIndex(s => s.id === script.id);
-    if (idx >= 0) {
-      this.scripts[idx] = { ...script, updatedAt: Date.now(), lastUsedAt: Date.now() };
-    } else {
-      this.scripts.push({ ...script, id: genId(), createdAt: Date.now(), updatedAt: Date.now(), lastUsedAt: Date.now() });
-    }
-  }
-
-  loadScript(id: string): Script | undefined {
-    const script = this.scripts.find(s => s.id === id);
-    if (script) {
-      script.lastUsedAt = Date.now();
-    }
-    return script ? { ...script } : undefined;
-  }
-
-  listRecentScripts(): Script[] {
-    return [...this.scripts]
-      .sort((a, b) => (b.lastUsedAt || 0) - (a.lastUsedAt || 0))
-      .slice(0, 10);
-  }
-
-  deleteScript(id: string): void {
-    this.scripts = this.scripts.filter(s => s.id !== id);
-  }
-
-  // --- Settings ---
-  getSettings(): AppSettings {
-    return { ...this.settings };
-  }
-
-  updateSettings(settings: Partial<AppSettings>): void {
-    this.settings = { ...this.settings, ...settings };
-  }
-
-  destroy(): void {
-    this.clearAllTimers();
-    if (this.mouseTimer) clearInterval(this.mouseTimer as any);
-  }
+  abstract getMousePosition(): Promise<MousePosition>;
+  abstract startClicker(config: ClickerConfig): Promise<OperationTransition>;
+  abstract pauseClicker(): Promise<OperationTransition>;
+  abstract resumeClicker(): Promise<OperationTransition>;
+  abstract stopClicker(): Promise<OperationTransition>;
+  abstract startTimedClick(config: TimedClickConfig): Promise<OperationTransition>;
+  abstract stopTimedClick(): Promise<OperationTransition>;
+  abstract startRecording(config?: RecordingConfig): Promise<OperationTransition>;
+  abstract pauseRecording(): Promise<OperationTransition>;
+  abstract resumeRecording(): Promise<OperationTransition>;
+  abstract stopRecording(): Promise<RecordingStopResponse>;
+  abstract getRecordingResult(id: string): Promise<RecordingResult>;
+  abstract playback(script: Script, options: PlaybackOptions): Promise<OperationTransition>;
+  abstract pausePlayback(): Promise<OperationTransition>;
+  abstract resumePlayback(): Promise<OperationTransition>;
+  abstract stopPlayback(): Promise<OperationTransition>;
+  abstract emergencyStop(): Promise<EmergencyStopResponse>;
+  abstract validateScript(script: Script): Promise<ScriptValidationResponse>;
+  abstract saveScript(script: Script): Promise<Script>;
+  abstract loadScript(id: string): Promise<Script>;
+  abstract listScripts(): Promise<Script[]>;
+  abstract duplicateScript(id: string): Promise<Script>;
+  abstract deleteScript(id: string): Promise<void>;
+  abstract getSettings(): Promise<AppSettings>;
+  abstract updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>;
+  abstract getCapabilities(): Promise<Capabilities>;
+  abstract getHotkeyStatus(): Promise<HotkeyStatus>;
+  abstract dispose(): Promise<void>;
 }
 
-/* --- Factory --- */
-let serviceInstance: IAutomationService | null = null;
+export class MockAutomationService extends AutomationServiceBase {
+  readonly mode = 'mock' as const;
+  private settings = { ...DEFAULT_SETTINGS };
+  private scripts = clone(mockScripts);
+  private timers = new Set<ReturnType<typeof setTimeout>>();
+  private operationId: string | null = null;
+  private operationType: StateSnapshot['operationType'] = null;
+  private beforePause: StateSnapshot['state'] = 'running';
+  private sequence = 0;
+  private recordingResults = new Map<string, RecordingResult>();
+  private lastRecordingStop: RecordingStopResponse | null = null;
+  private disposed = false;
 
-export function createService(mode: ServiceMode = 'mock'): IAutomationService {
-  if (serviceInstance) {
-    return serviceInstance;
+  async initialize(): Promise<void> { this.ensureActive(); this.clearError(); }
+
+  private ensureActive(): void {
+    if (this.disposed) throw new Error('服务已释放');
   }
-  if (mode === 'real') {
-    // In real mode, a RealAutomationService would be instantiated here
-    // Currently not implemented — falls back to mock with a warning
-    console.warn('[AutomationService] Real mode not yet implemented, using mock.');
+
+  private transition(state: StateSnapshot['state']): OperationTransition {
+    this.ensureActive();
+    if (!this.operationId) this.operationId = genId();
+    const snapshot: StateSnapshot = {
+      ...this.currentState.snapshot,
+      operationId: state === 'idle' ? null : this.operationId,
+      operationType: state === 'idle' ? null : this.operationType,
+      state,
+      sequence: ++this.sequence,
+      startedAt: state === 'idle' ? null : (this.currentState.snapshot.startedAt ?? new Date().toISOString()),
+      elapsedMs: state === 'idle' ? 0 : this.currentState.snapshot.elapsedMs,
+      countdownRemainingMs: 0,
+    };
+    const operationId = this.operationId;
+    this.applySnapshot(snapshot);
+    if (state === 'idle') { this.operationId = null; this.operationType = null; }
+    return { operationId, state, snapshot };
   }
-  serviceInstance = new MockAutomationService();
-  return serviceInstance;
+
+  private start(type: NonNullable<StateSnapshot['operationType']>, state: StateSnapshot['state']): OperationTransition {
+    if (this.operationId) throw new ApiError({ code: 'OPERATION_CONFLICT', message: '已有操作正在运行', details: {}, retryable: false, operationId: this.operationId });
+    this.operationId = genId(); this.operationType = type;
+    this.currentState.recordingActions = type === 'recording' ? [] : this.currentState.recordingActions;
+    return this.transition(state);
+  }
+
+  private requireOperation(): string {
+    if (!this.operationId) throw new ApiError({ code: 'INVALID_STATE_TRANSITION', message: '当前没有活动操作', details: {}, retryable: false, operationId: null });
+    return this.operationId;
+  }
+
+  private timer(callback: () => void, delay: number): void {
+    this.ensureActive();
+    const timer = setTimeout(() => { this.timers.delete(timer); callback(); }, delay);
+    this.timers.add(timer);
+  }
+
+  async getMousePosition(): Promise<MousePosition> { return clone(this.currentState.mousePos); }
+  async startClicker(config: ClickerConfig): Promise<OperationTransition> {
+    const result = this.start('clicker', 'running');
+    const tick = () => {
+      if (!this.operationId || this.operationType !== 'clicker') return;
+      if (this.currentState.snapshot.state === 'paused') { this.timer(tick, config.intervalMs); return; }
+      this.currentState.snapshot.completedCount += config.clickCount;
+      this.currentState.snapshot.elapsedMs += config.intervalMs;
+      this.applySnapshot({ ...this.currentState.snapshot, sequence: ++this.sequence });
+      if (config.repeatMode === 'count' && this.currentState.snapshot.completedCount >= config.repeatCount * config.clickCount) this.transition('idle');
+      else this.timer(tick, config.intervalMs);
+    };
+    this.timer(tick, config.intervalMs);
+    return result;
+  }
+  async pauseClicker(): Promise<OperationTransition> { return this.pause(); }
+  async resumeClicker(): Promise<OperationTransition> { return this.resume(); }
+  async stopClicker(): Promise<OperationTransition> { this.requireOperation(); return this.transition('idle'); }
+  async startTimedClick(config: TimedClickConfig): Promise<OperationTransition> {
+    const result = this.start('timed_click', 'running');
+    const tick = () => {
+      if (!this.operationId || this.operationType !== 'timed_click') return;
+      this.currentState.snapshot.completedCount += config.clickCount;
+      this.currentState.snapshot.elapsedMs += config.delayMs;
+      this.applySnapshot({ ...this.currentState.snapshot, sequence: ++this.sequence });
+      if (config.repeatMode === 'infinite' || this.currentState.snapshot.completedCount < config.repeatCount * config.clickCount) this.timer(tick, config.delayMs);
+      else this.transition('idle');
+    };
+    this.timer(tick, config.delayMs);
+    return result;
+  }
+  async stopTimedClick(): Promise<OperationTransition> { this.requireOperation(); return this.transition('idle'); }
+  async startRecording(): Promise<OperationTransition> {
+    this.lastRecordingStop = null;
+    const result = this.start('recording', 'recording');
+    const capture = () => {
+      if (!this.operationId || this.operationType !== 'recording') return;
+      if (this.currentState.snapshot.state !== 'paused') {
+        this.currentState.recordingActions = [...this.currentState.recordingActions, generateRandomAction()];
+        this.currentState.snapshot.completedCount = this.currentState.recordingActions.length;
+        this.currentState.snapshot.elapsedMs += 400;
+        this.applySnapshot({ ...this.currentState.snapshot, sequence: ++this.sequence });
+      }
+      this.timer(capture, 400);
+    };
+    this.timer(capture, 400);
+    return result;
+  }
+  private async pause(): Promise<OperationTransition> { this.requireOperation(); this.beforePause = this.currentState.snapshot.state; return this.transition('paused'); }
+  private async resume(): Promise<OperationTransition> { this.requireOperation(); return this.transition(this.beforePause === 'paused' ? 'running' : this.beforePause); }
+  async pauseRecording(): Promise<OperationTransition> { return this.pause(); }
+  async resumeRecording(): Promise<OperationTransition> { return this.resume(); }
+  async stopRecording(): Promise<RecordingStopResponse> {
+    if (this.lastRecordingStop) return clone(this.lastRecordingStop);
+    const operationId = this.requireOperation();
+    const actions = clone(this.currentState.recordingActions);
+    const durationMs = this.currentState.snapshot.elapsedMs;
+    const transition = this.transition('idle');
+    const recordingResultId = genId();
+    this.recordingResults.set(recordingResultId, { id: recordingResultId, operationId, durationMs, actionCount: actions.length, actions });
+    this.currentState.recordingState = 'stopped'; this.currentState.recordingActions = actions; this.currentState.recordingActionCount = actions.length; this.notify();
+    const response = { ...transition, recordingResultId };
+    this.lastRecordingStop = response;
+    return clone(response);
+  }
+  async getRecordingResult(id: string): Promise<RecordingResult> {
+    const result = this.recordingResults.get(id);
+    if (!result) throw new ApiError({ code: 'SCRIPT_NOT_FOUND', message: '录制结果不存在', details: { id }, retryable: false, operationId: null });
+    return clone(result);
+  }
+  async playback(script: Script, options: PlaybackOptions): Promise<OperationTransition> {
+    const result = this.start('playback', 'running');
+    const actions = script.actions.filter(action => action.enabled);
+    let index = 0;
+    const total = Math.max(1, actions.length * (options.loopMode === 'count' ? options.times : 1));
+    const tick = () => {
+      if (!this.operationId || this.operationType !== 'playback' || !actions.length) return;
+      if (this.currentState.snapshot.state === 'paused') { this.timer(tick, 100); return; }
+      this.currentState.snapshot.currentActionIndex = index % actions.length;
+      this.currentState.snapshot.completedCount = Math.floor(index / actions.length);
+      this.currentState.snapshot.progress = options.loopMode === 'infinite' ? (index % actions.length) / actions.length : Math.min(1, (index + 1) / total);
+      this.applySnapshot({ ...this.currentState.snapshot, sequence: ++this.sequence });
+      index += 1;
+      if (options.loopMode === 'count' && index >= total) this.transition('idle');
+      else this.timer(tick, Math.max(50, actions[index % actions.length].delayBeforeMs / options.speedMultiplier));
+    };
+    this.timer(tick, 50);
+    return result;
+  }
+  async pausePlayback(): Promise<OperationTransition> { return this.pause(); }
+  async resumePlayback(): Promise<OperationTransition> { return this.resume(); }
+  async stopPlayback(): Promise<OperationTransition> { this.requireOperation(); return this.transition('idle'); }
+  async emergencyStop(): Promise<EmergencyStopResponse> {
+    const operationId = this.operationId;
+    this.timers.forEach(clearTimeout); this.timers.clear();
+    if (this.operationId) this.transition('idle');
+    this.currentState.runState = 'emergency'; this.notify();
+    this.timer(() => { this.currentState.runState = 'idle'; this.notify(); }, 1000);
+    return { operationId, state: 'idle', releasedInputCount: 0, releaseFailures: [] };
+  }
+  async validateScript(script: Script): Promise<ScriptValidationResponse> { return { valid: true, script: clone(script) }; }
+  async saveScript(script: Script): Promise<Script> {
+    const now = new Date().toISOString();
+    const saved = { ...clone(script), id: script.id || genId(), createdAt: script.createdAt || now, updatedAt: now };
+    const index = this.scripts.findIndex(item => item.id === saved.id);
+    if (index >= 0) this.scripts[index] = saved; else this.scripts.push(saved);
+    return clone(saved);
+  }
+  async loadScript(id: string): Promise<Script> {
+    const script = this.scripts.find(item => item.id === id);
+    if (!script) throw new ApiError({ code: 'SCRIPT_NOT_FOUND', message: '脚本不存在', details: { id }, retryable: false, operationId: null });
+    return clone(script);
+  }
+  async listScripts(): Promise<Script[]> { return clone([...this.scripts].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))); }
+  async duplicateScript(id: string): Promise<Script> {
+    const source = await this.loadScript(id); const now = new Date().toISOString();
+    const copy = { ...source, id: genId(), name: `${source.name} (副本)`, createdAt: now, updatedAt: now };
+    this.scripts.push(copy); return clone(copy);
+  }
+  async deleteScript(id: string): Promise<void> { this.scripts = this.scripts.filter(script => script.id !== id); }
+  async getSettings(): Promise<AppSettings> { return clone(this.settings); }
+  async updateSettings(settings: Partial<AppSettings>): Promise<AppSettings> { this.settings = { ...this.settings, ...settings }; return clone(this.settings); }
+  async getCapabilities(): Promise<Capabilities> { this.ensureActive(); return { platform: 'windows', platformVersion: 'mock', input: { status: 'available', reason: null }, globalHotkey: { status: 'available', reason: null }, display: { status: 'available', reason: null }, displayCount: 1, dpiAwareness: { status: 'available', reason: null } }; }
+  async getHotkeyStatus(): Promise<HotkeyStatus> { this.ensureActive(); return { key: this.settings.emergencyHotkey, available: true, registered: true }; }
+  async dispose(): Promise<void> { if (this.disposed) return; this.disposed = true; this.timers.forEach(clearTimeout); this.timers.clear(); this.operationId = null; this.operationType = null; this.listeners.clear(); this.errorListeners.clear(); }
 }
 
-export function getService(): IAutomationService {
-  if (!serviceInstance) {
-    return createService();
+export class RealAutomationService extends AutomationServiceBase {
+  readonly mode = 'real' as const;
+  private client: ApiClient | null = null;
+  private connection: DesktopConnectionInfo | null = null;
+  private socket: WebSocket | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempt = 0;
+  private disposed = false;
+  private initializePromise: Promise<void> | null = null;
+  private lastSequence = -1;
+  private settings = { ...DEFAULT_SETTINGS, serviceMode: 'real' as const };
+  private capabilities: Capabilities | null = null;
+  private lastRecordingStop: RecordingStopResponse | null = null;
+
+  private api(): ApiClient { if (!this.client) throw new Error('服务尚未初始化'); return this.client; }
+  private async call<T>(request: () => Promise<T>): Promise<T> { try { const value = await request(); this.clearError(); return value; } catch (error) { return this.report(error); } }
+
+  async initialize(): Promise<void> {
+    if (this.initializePromise) return this.initializePromise;
+    const pending = this.initializeOnce();
+    this.initializePromise = pending;
+    try {
+      await pending;
+    } catch (error) {
+      if (this.initializePromise === pending) this.initializePromise = null;
+      throw error;
+    }
   }
-  return serviceInstance;
+
+  private async initializeOnce(): Promise<void> {
+    if (this.disposed) throw new Error('服务已释放');
+    if (!window.desktop) return this.report(new ApiError({ code: 'CONNECTION_ERROR', message: '桌面连接桥不可用', details: {}, retryable: false, operationId: null }));
+    try {
+      this.connection = await window.desktop.getConnectionInfo();
+      const baseUrl = `http://${this.connection.host}:${this.connection.port}`;
+      this.client = new ApiClient(baseUrl, this.connection.token);
+      this.capabilities = await this.api().get<Capabilities>('/api/v1/capabilities');
+      await this.alignState();
+      this.connectEvents();
+      this.clearError();
+    } catch (error) { this.report(error); }
+  }
+
+  private async alignState(): Promise<void> {
+    const snapshot = await this.api().get<StateSnapshot>('/api/v1/state');
+    if (snapshot.sequence >= this.lastSequence) { this.lastSequence = snapshot.sequence; this.applySnapshot(snapshot); }
+  }
+
+  private connectEvents(): void {
+    if (this.disposed || !this.connection) return;
+    if (this.socket) {
+      this.socket.onclose = null;
+      this.socket.close();
+    }
+    const { host, port, token } = this.connection;
+    const socket = new WebSocket(`ws://${host}:${port}/api/v1/events?token=${encodeURIComponent(token)}`);
+    this.socket = socket;
+    let receivedFirstSnapshot = false;
+    socket.onmessage = event => {
+      try {
+        const envelope = JSON.parse(String(event.data)) as EventEnvelope;
+        if (!receivedFirstSnapshot) {
+          if (envelope.type !== 'engine.state_snapshot') return;
+          receivedFirstSnapshot = true;
+        }
+        this.handleEvent(envelope);
+      } catch (error) {
+        this.currentError = { code: 'ENGINE_INTERNAL_ERROR', message: error instanceof Error ? error.message : '事件解析失败', details: {}, retryable: true, operationId: this.currentState.snapshot.operationId };
+        this.errorListeners.forEach(listener => listener(this.currentError));
+      }
+    };
+    socket.onopen = () => { this.reconnectAttempt = 0; };
+    socket.onerror = () => socket.close();
+    socket.onclose = () => { if (!this.disposed) this.scheduleReconnect(); };
+  }
+
+  private handleEvent(envelope: EventEnvelope): void {
+    if (envelope.sequence <= this.lastSequence) return;
+    const activeOperationId = this.currentState.snapshot.operationId;
+    const activeOperation = activeState(this.currentState.snapshot.state);
+    if (activeOperation && activeOperationId && envelope.operationId && envelope.operationId !== activeOperationId) return;
+    this.lastSequence = envelope.sequence;
+    if (envelope.type === 'engine.state_snapshot' || envelope.type === 'operation.state_changed' || envelope.type === 'operation.progress') {
+      const snapshot = envelope.payload as StateSnapshot;
+      if (snapshot.sequence < this.currentState.snapshot.sequence) return;
+      this.applySnapshot(snapshot);
+    } else if (envelope.type === 'recording.action_captured') {
+      const payload = envelope.payload as RecordingActionCapturedPayload;
+      this.currentState.recordingActions = [...this.currentState.recordingActions, payload.action];
+      this.currentState.recordingActionCount = payload.actionCount;
+      this.notify();
+    } else if (envelope.type === 'recording.snapshot') {
+      const result = envelope.payload as RecordingResult;
+      this.currentState.recordingActions = result.actions;
+      this.currentState.recordingActionCount = result.actionCount;
+      this.currentState.recordingTime = result.durationMs;
+      this.notify();
+    } else if (envelope.type === 'error.raised') {
+      const payload = envelope.payload as Partial<ErrorDetail>;
+      this.currentError = { code: payload.code ?? 'ENGINE_INTERNAL_ERROR', message: payload.message ?? '自动化服务错误', details: payload.details ?? {}, retryable: false, operationId: envelope.operationId };
+      this.errorListeners.forEach(listener => listener(this.currentError));
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    const delay = Math.min(30000, 500 * 2 ** this.reconnectAttempt++);
+    this.reconnectTimer = setTimeout(async () => {
+      this.reconnectTimer = null;
+      if (this.disposed) return;
+      try { await this.alignState(); this.connectEvents(); } catch (error) {
+        const detail = error instanceof ApiError ? error.detail : { code: 'CONNECTION_ERROR' as const, message: error instanceof Error ? error.message : '重连失败', details: {}, retryable: true, operationId: null };
+        this.currentError = detail; this.errorListeners.forEach(listener => listener(detail)); this.scheduleReconnect();
+      }
+    }, delay);
+  }
+
+  private applyTransition(transition: OperationTransition): OperationTransition { this.applySnapshot(transition.snapshot); return transition; }
+  private operationPath(action: 'pause' | 'resume' | 'stop'): string {
+    const id = this.currentState.snapshot.operationId;
+    if (!id) throw new ApiError({ code: 'INVALID_STATE_TRANSITION', message: '当前没有活动操作', details: {}, retryable: false, operationId: null });
+    return `/api/v1/operations/${id}/${action}`;
+  }
+
+  async getMousePosition(): Promise<MousePosition> {
+    return this.report(new ApiError({
+      code: 'CAPABILITY_UNAVAILABLE',
+      message: '真实模式尚未提供鼠标当前位置接口',
+      details: {},
+      retryable: false,
+      operationId: this.currentState.snapshot.operationId,
+    }));
+  }
+  async startClicker(config: ClickerConfig): Promise<OperationTransition> { return this.call(async () => this.applyTransition(await this.api().post('/api/v1/clicker/start', config))); }
+  async pauseClicker(): Promise<OperationTransition> { return this.pauseOperation(); }
+  async resumeClicker(): Promise<OperationTransition> { return this.resumeOperation(); }
+  async stopClicker(): Promise<OperationTransition> { return this.stopOperation(); }
+  async startTimedClick(config: TimedClickConfig): Promise<OperationTransition> { return this.call(async () => this.applyTransition(await this.api().post('/api/v1/timed-click/start', config))); }
+  async stopTimedClick(): Promise<OperationTransition> { return this.stopOperation(); }
+  async startRecording(config: RecordingConfig = { recordMouseMove: true, minMoveSampleMs: 10, moveErrorPx: 2, recordWheel: true, recordMouse: true, recordKeyboard: true }): Promise<OperationTransition> { this.lastRecordingStop = null; return this.call(async () => this.applyTransition(await this.api().post('/api/v1/recordings/start', config))); }
+  async pauseRecording(): Promise<OperationTransition> { return this.pauseOperation(); }
+  async resumeRecording(): Promise<OperationTransition> { return this.resumeOperation(); }
+  async stopRecording(): Promise<RecordingStopResponse> {
+    if (this.lastRecordingStop) return clone(this.lastRecordingStop);
+    return this.call(async () => {
+      const result = await this.api().post<RecordingStopResponse>(this.operationPath('stop'));
+      this.lastRecordingStop = result;
+      const recording = await this.api().get<RecordingResult>(`/api/v1/recordings/${result.recordingResultId}`);
+      this.applySnapshot(result.snapshot);
+      this.currentState.recordingState = 'stopped';
+      this.currentState.recordingActions = recording.actions;
+      this.currentState.recordingActionCount = recording.actionCount;
+      this.currentState.recordingTime = recording.durationMs;
+      this.notify();
+      return result;
+    });
+  }
+  async getRecordingResult(id: string): Promise<RecordingResult> { return this.call(() => this.api().get(`/api/v1/recordings/${id}`)); }
+  async playback(script: Script, options: PlaybackOptions): Promise<OperationTransition> {
+    const request: PlaybackRequest = { scriptId: null, inlineScript: script, speedMultiplier: options.speedMultiplier, loopMode: options.loopMode === 'duration' ? 'infinite' : options.loopMode, loopCount: options.loopMode === 'count' ? options.times : 1, loopDurationMs: options.loopMode === 'duration' ? (options.loopDurationMs ?? null) : null, countdownMs: script.settings.countdownMs };
+    return this.call(async () => this.applyTransition(await this.api().post('/api/v1/playback/start', request)));
+  }
+  async pausePlayback(): Promise<OperationTransition> { return this.pauseOperation(); }
+  async resumePlayback(): Promise<OperationTransition> { return this.resumeOperation(); }
+  async stopPlayback(): Promise<OperationTransition> { return this.stopOperation(); }
+  private async pauseOperation(): Promise<OperationTransition> { return this.call(async () => this.applyTransition(await this.api().post(this.operationPath('pause')))); }
+  private async resumeOperation(): Promise<OperationTransition> { return this.call(async () => this.applyTransition(await this.api().post(this.operationPath('resume')))); }
+  private async stopOperation(): Promise<OperationTransition> { return this.call(async () => this.applyTransition(await this.api().post(this.operationPath('stop')))); }
+  async emergencyStop(): Promise<EmergencyStopResponse> { return this.call(async () => { const result = await this.api().post<EmergencyStopResponse>('/api/v1/emergency-stop'); await this.alignState(); return result; }); }
+  async validateScript(script: Script): Promise<ScriptValidationResponse> { return this.call(() => this.api().post('/api/v1/scripts/validate', { script })); }
+  async saveScript(script: Script): Promise<Script> {
+    return this.call(() => script.id ? this.api().put(`/api/v1/scripts/${script.id}`, script) : this.api().post<Script>('/api/v1/scripts', { name: script.name, description: script.description, settings: script.settings, actions: script.actions } satisfies ScriptCreate));
+  }
+  async loadScript(id: string): Promise<Script> { return this.call(() => this.api().get(`/api/v1/scripts/${id}`)); }
+  async listScripts(): Promise<Script[]> { return this.call(() => this.api().get('/api/v1/scripts')); }
+  async duplicateScript(id: string): Promise<Script> { return this.call(() => this.api().post(`/api/v1/scripts/${id}/duplicate`)); }
+  async deleteScript(id: string): Promise<void> { return this.call(() => this.api().delete(`/api/v1/scripts/${id}`)); }
+  private mergeBackendSettings(backend: BackendSettings): AppSettings {
+    this.settings = {
+      ...this.settings,
+      emergencyHotkey: backend.emergencyStopHotkey.toUpperCase(),
+      countdownEnabled: backend.defaultCountdownMs > 0,
+      countdownSeconds: backend.defaultCountdownMs / 1000,
+      defaultSpeedMultiplier: backend.defaultSpeedMultiplier,
+      defaultLoopTimes: backend.defaultLoopCount,
+      serviceMode: 'real',
+    };
+    return clone(this.settings);
+  }
+  private toBackendSettings(settings: AppSettings): BackendSettings {
+    return {
+      defaultSpeedMultiplier: settings.defaultSpeedMultiplier,
+      defaultLoopMode: 'count',
+      defaultLoopCount: settings.defaultLoopTimes,
+      defaultCountdownMs: settings.countdownEnabled ? Math.round(settings.countdownSeconds * 1000) : 0,
+      emergencyStopHotkey: settings.emergencyHotkey,
+    };
+  }
+  async getSettings(): Promise<AppSettings> {
+    const backend = await this.call(() => this.api().get<BackendSettings>('/api/v1/settings'));
+    return this.mergeBackendSettings(backend);
+  }
+  async updateSettings(updates: Partial<AppSettings>): Promise<AppSettings> {
+    const next = { ...this.settings, ...updates, serviceMode: 'real' as const };
+    if (updates.emergencyHotkey) {
+      const validation = await this.call(() => this.api().post<HotkeyValidationResponse>('/api/v1/hotkeys/validate', { hotkey: updates.emergencyHotkey }));
+      next.emergencyHotkey = validation.normalizedHotkey.toUpperCase();
+    }
+    const backend = await this.call(() => this.api().put<BackendSettings>('/api/v1/settings', this.toBackendSettings(next)));
+    this.settings = { ...next, serviceMode: 'real' };
+    return this.mergeBackendSettings(backend);
+  }
+  async getCapabilities(): Promise<Capabilities> { return this.capabilities ? clone(this.capabilities) : this.call(() => this.api().get('/api/v1/capabilities')); }
+  async getHotkeyStatus(): Promise<HotkeyStatus> {
+    const validation = await this.call(() => this.api().post<HotkeyValidationResponse>('/api/v1/hotkeys/validate', { hotkey: this.settings.emergencyHotkey }));
+    return { key: validation.normalizedHotkey.toUpperCase(), available: validation.availability === 'available', registered: true, reason: validation.reason };
+  }
+  async dispose(): Promise<void> { this.disposed = true; if (this.reconnectTimer) clearTimeout(this.reconnectTimer); this.reconnectTimer = null; if (this.socket) { this.socket.onclose = null; this.socket.close(); } this.socket = null; this.listeners.clear(); this.errorListeners.clear(); }
 }
 
-export { ACTION_TYPE_LABELS, genId };
+export function createService(mode: ServiceMode): IAutomationService {
+  return mode === 'real' ? new RealAutomationService() : new MockAutomationService();
+}
+
+export { genId };

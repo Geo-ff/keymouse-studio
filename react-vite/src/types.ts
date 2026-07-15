@@ -1,167 +1,248 @@
-/* =========================================================================
-   类型定义 — 键鼠自动化工具
-   所有业务类型集中于此，确保 service interface 和组件使用统一类型
-   ========================================================================= */
-
 export type MouseButton = 'left' | 'right' | 'middle';
-
 export type ClickMode = 'single' | 'double';
-
-export type ActionType =
-  | 'mouse_move'
-  | 'mouse_click'
-  | 'mouse_scroll'
-  | 'key_down'
-  | 'key_up'
-  | 'wait';
-
-export type RunState = 'idle' | 'running' | 'paused' | 'stopped' | 'emergency';
-
-export type RecordingState = 'idle' | 'recording' | 'paused' | 'stopped';
-
+export type LoopMode = 'count' | 'infinite';
+export type EditorLoopMode = LoopMode | 'duration';
+export type PositionMode = 'current' | 'fixed';
+export type EngineState = 'idle' | 'countdown' | 'recording' | 'running' | 'paused' | 'stopping' | 'error';
+export type OperationType = 'clicker' | 'timed_click' | 'recording' | 'playback';
 export type ServiceMode = 'mock' | 'real';
+export type RunState = ServiceState['runState'];
+export type BackendErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'UNAUTHORIZED_LOCAL_CLIENT'
+  | 'ORIGIN_NOT_ALLOWED'
+  | 'NOT_FOUND'
+  | 'METHOD_NOT_ALLOWED'
+  | 'OPERATION_CONFLICT'
+  | 'INVALID_STATE_TRANSITION'
+  | 'SCRIPT_NOT_FOUND'
+  | 'SCRIPT_VERSION_UNSUPPORTED'
+  | 'SETTINGS_INVALID'
+  | 'HOTKEY_REGISTRATION_FAILED'
+  | 'INPUT_PERMISSION_DENIED'
+  | 'DISPLAY_LAYOUT_CHANGED'
+  | 'ENGINE_INTERNAL_ERROR';
+export type ErrorCode = BackendErrorCode | 'CONNECTION_ERROR' | 'CAPABILITY_UNAVAILABLE';
 
-export interface ScriptAction {
+export interface ErrorDetail {
+  code: ErrorCode;
+  message: string;
+  details: Record<string, unknown>;
+  retryable: boolean;
+  operationId: string | null;
+}
+
+export interface ErrorResponse {
+  error: ErrorDetail;
+}
+
+export interface ActionBase {
   id: string;
-  type: ActionType;
   enabled: boolean;
-  /** 鼠标移动/点击/滚轮参数 */
-  x?: number;
-  y?: number;
-  button?: MouseButton;
-  clickMode?: ClickMode;
-  scrollDelta?: number;
-  /** 键盘参数 */
-  key?: string;
-  /** 执行此动作前的等待时间（毫秒） */
-  delay: number;
-  /** 动作持续时间（毫秒），仅用于按下保持等场景 */
-  duration?: number;
-  /** 备注 */
-  comment?: string;
+  delayBeforeMs: number;
+}
+
+export interface MouseMoveAction extends ActionBase {
+  type: 'mouse_move';
+  payload: { x: number; y: number; durationMs: number };
+}
+
+export interface MouseButtonDownAction extends ActionBase {
+  type: 'mouse_button_down';
+  payload: { button: MouseButton };
+}
+
+export interface MouseButtonUpAction extends ActionBase {
+  type: 'mouse_button_up';
+  payload: { button: MouseButton };
+}
+
+export interface MouseClickAction extends ActionBase {
+  type: 'mouse_click';
+  payload: { button: MouseButton; clickCount: 1 | 2; x: number | null; y: number | null; intervalMs: number };
+}
+
+export interface MouseWheelAction extends ActionBase {
+  type: 'mouse_wheel';
+  payload: { deltaX: number; deltaY: number };
+}
+
+export interface KeyDownAction extends ActionBase {
+  type: 'key_down';
+  payload: { keyCode: string; scanCode: number | null; extended: boolean };
+}
+
+export interface KeyUpAction extends ActionBase {
+  type: 'key_up';
+  payload: { keyCode: string; scanCode: number | null; extended: boolean };
+}
+
+export interface WaitAction extends ActionBase {
+  type: 'wait';
+  payload: { durationMs: number };
+}
+
+export type ScriptAction =
+  | MouseMoveAction
+  | MouseButtonDownAction
+  | MouseButtonUpAction
+  | MouseClickAction
+  | MouseWheelAction
+  | KeyDownAction
+  | KeyUpAction
+  | WaitAction;
+export type ActionType = ScriptAction['type'];
+
+export interface ScriptSettings {
+  speedMultiplier: number;
+  loopMode: LoopMode;
+  loopCount: number;
+  countdownMs: number;
 }
 
 export interface Script {
+  schemaVersion: 1;
   id: string;
   name: string;
   description: string;
+  createdAt: string;
+  updatedAt: string;
+  settings: ScriptSettings;
   actions: ScriptAction[];
-  createdAt: number;
-  updatedAt: number;
-  lastUsedAt?: number;
+}
+
+export interface ScriptCreate {
+  name: string;
+  description: string;
+  settings: ScriptSettings;
+  actions: ScriptAction[];
+}
+
+export type ScriptUpdate = Script;
+export interface ScriptValidationRequest { script: Record<string, unknown>; }
+export interface ScriptValidationResponse { valid: true; script: Script; }
+
+export interface StateSnapshot {
+  operationId: string | null;
+  operationType: OperationType | null;
+  state: EngineState;
+  sequence: number;
+  startedAt: string | null;
+  elapsedMs: number;
+  progress: number | null;
+  currentActionIndex: number | null;
+  completedCount: number;
+  countdownRemainingMs: number;
+  error: ErrorDetail | null;
+}
+
+export interface OperationTransition {
+  operationId: string;
+  state: EngineState;
+  snapshot: StateSnapshot;
+}
+
+export interface RecordingStopResponse extends OperationTransition { recordingResultId: string; }
+export interface RecordingResult {
+  id: string;
+  operationId: string;
+  durationMs: number;
+  actionCount: number;
+  actions: ScriptAction[];
 }
 
 export interface ClickerConfig {
   button: MouseButton;
-  clickMode: ClickMode;
-  /** 间隔时间（毫秒） */
+  clickCount: 1 | 2;
   intervalMs: number;
-  /** 执行次数，0 = 持续运行 */
-  times: number;
-  /** 使用当前鼠标位置 */
-  useCurrentPos: boolean;
-  x?: number;
-  y?: number;
+  repeatMode: LoopMode;
+  repeatCount: number;
+  positionMode: PositionMode;
+  x: number | null;
+  y: number | null;
+  countdownMs: number;
 }
 
-export interface TimedClickConfig {
-  /** 等待时间（毫秒） */
-  waitMs: number;
-  /** 循环执行 */
-  loop: boolean;
-  x?: number;
-  y?: number;
-  button: MouseButton;
+export interface TimedClickConfig extends ClickerConfig { delayMs: number; }
+export interface RecordingConfig {
+  recordMouseMove: boolean;
+  minMoveSampleMs: number;
+  moveErrorPx: number;
+  recordWheel: boolean;
+  recordMouse: boolean;
+  recordKeyboard: boolean;
 }
 
-export type LoopMode = 'count' | 'duration' | 'infinite';
+export interface PlaybackRequest {
+  scriptId: string | null;
+  inlineScript: Script | null;
+  speedMultiplier: number;
+  loopMode: LoopMode;
+  loopCount: number;
+  loopDurationMs: number | null;
+  countdownMs: number;
+}
 
 export interface PlaybackOptions {
-  /** 执行次数（loopMode='count' 时有效） */
   times: number;
-  /** 速度倍率 */
   speedMultiplier: number;
-  /** 无限循环（loopMode='infinite' 时为 true） */
   loop: boolean;
-  /** 循环模式 */
-  loopMode: LoopMode;
-  /** 循环总时长（毫秒，loopMode='duration' 时有效） */
+  loopMode: EditorLoopMode;
   loopDurationMs?: number;
 }
 
-export interface MousePosition {
-  x: number;
-  y: number;
+export interface EmergencyStopResponse {
+  operationId: string | null;
+  state: 'idle';
+  releasedInputCount: number;
+  releaseFailures: string[];
 }
 
-export interface ServiceState {
-  runState: RunState;
-  recordingState: RecordingState;
-  clickerCount: number;
-  clickerRunningTime: number;
-  nextClickCountdown: number;
-  recordingTime: number;
-  recordingActionCount: number;
-  recordingActions: ScriptAction[];
-  playbackProgress: number;
-  playbackCurrentIndex: number;
-  playbackCurrentLoop: number;
-  /** 循环剩余时间（毫秒，loopMode='duration' 时有效） */
-  playbackLoopRemainingMs: number;
-  mousePos: MousePosition;
-  keyboardListening: boolean;
-  countdownRemaining: number;
-  timedClickCount: number;
-  timedClickCountdown: number;
+export interface CapabilityStatus {
+  status: 'available' | 'unavailable';
+  reason: string | null;
 }
 
-export type StateChangeListener = (state: ServiceState) => void;
-
-export interface IAutomationService {
-  readonly mode: ServiceMode;
-  readonly state: ServiceState;
-
-  // Listeners
-  onStateChange(listener: StateChangeListener): () => void;
-
-  // Mouse
-  getMousePosition(): MousePosition;
-
-  // Clicker
-  startClicker(config: ClickerConfig): void;
-  pauseClicker(): void;
-  resumeClicker(): void;
-  stopClicker(): void;
-
-  // Timed Click
-  startTimedClick(config: TimedClickConfig): void;
-  stopTimedClick(): void;
-
-  // Recording
-  startRecording(): void;
-  pauseRecording(): void;
-  resumeRecording(): void;
-  stopRecording(): ScriptAction[];
-
-  // Playback
-  playback(script: Script, options: PlaybackOptions): void;
-  pausePlayback(): void;
-  resumePlayback(): void;
-  stopPlayback(): void;
-
-  // Emergency
-  emergencyStop(): void;
-
-  // Scripts
-  saveScript(script: Script): void;
-  loadScript(id: string): Script | undefined;
-  listRecentScripts(): Script[];
-  deleteScript(id: string): void;
-
-  // Settings
-  getSettings(): AppSettings;
-  updateSettings(settings: Partial<AppSettings>): void;
+export interface Capabilities {
+  platform: string;
+  platformVersion: string;
+  input: CapabilityStatus;
+  globalHotkey: CapabilityStatus;
+  display: CapabilityStatus;
+  displayCount: number | null;
+  dpiAwareness: CapabilityStatus;
 }
+
+export interface HealthResponse {
+  status: 'ok';
+  appVersion: string;
+  protocolVersion: number;
+  engineState: EngineState;
+}
+
+export type EventType =
+  | 'engine.state_snapshot'
+  | 'operation.state_changed'
+  | 'operation.progress'
+  | 'recording.action_captured'
+  | 'recording.snapshot'
+  | 'error.raised';
+
+export interface EventEnvelope<T = unknown> {
+  protocolVersion: number;
+  eventId: string;
+  sequence: number;
+  timestamp: string;
+  operationId: string | null;
+  type: EventType;
+  payload: T;
+}
+
+export interface StateSnapshotEvent extends EventEnvelope<StateSnapshot> {
+  type: 'engine.state_snapshot' | 'operation.state_changed' | 'operation.progress';
+}
+
+export interface RecordingActionCapturedPayload { action: ScriptAction; actionCount: number; }
 
 export interface AppSettings {
   emergencyHotkey: string;
@@ -175,6 +256,100 @@ export interface AppSettings {
   defaultLoopTimes: number;
 }
 
+export interface BackendSettings {
+  defaultSpeedMultiplier: number;
+  defaultLoopMode: LoopMode;
+  defaultLoopCount: number;
+  defaultCountdownMs: number;
+  emergencyStopHotkey: string;
+}
+
+export interface HotkeyValidationResponse {
+  valid: true;
+  normalizedHotkey: string;
+  availability: 'available' | 'unavailable';
+  reason: string | null;
+}
+
+export interface SettingsResponse { settings: AppSettings; }
+export interface SettingsUpdateRequest { settings: Partial<AppSettings>; }
+export interface HotkeyStatus {
+  key: string;
+  available: boolean;
+  registered: boolean;
+  reason?: string | null;
+}
+export interface HotkeyUpdateRequest { key: string; }
+export interface HotkeyUpdateResponse { hotkey: HotkeyStatus; }
+
+export interface MousePosition { x: number; y: number; }
+export interface ServiceState {
+  snapshot: StateSnapshot;
+  runState: 'idle' | 'running' | 'paused' | 'emergency';
+  recordingState: 'idle' | 'recording' | 'paused' | 'stopped';
+  clickerCount: number;
+  clickerRunningTime: number;
+  nextClickCountdown: number;
+  recordingTime: number;
+  recordingActionCount: number;
+  recordingActions: ScriptAction[];
+  playbackProgress: number;
+  playbackCurrentIndex: number;
+  playbackCurrentLoop: number;
+  playbackLoopRemainingMs: number;
+  mousePos: MousePosition;
+  keyboardListening: boolean;
+  countdownRemaining: number;
+  timedClickCount: number;
+  timedClickCountdown: number;
+}
+
+export type StateChangeListener = (state: ServiceState) => void;
+export type ErrorListener = (error: ErrorDetail | null) => void;
+
+export interface IAutomationService {
+  readonly mode: ServiceMode;
+  onStateChange(listener: StateChangeListener): () => void;
+  onError(listener: ErrorListener): () => void;
+  initialize(): Promise<void>;
+  getState(): Promise<ServiceState>;
+  getMousePosition(): Promise<MousePosition>;
+  startClicker(config: ClickerConfig): Promise<OperationTransition>;
+  pauseClicker(): Promise<OperationTransition>;
+  resumeClicker(): Promise<OperationTransition>;
+  stopClicker(): Promise<OperationTransition>;
+  startTimedClick(config: TimedClickConfig): Promise<OperationTransition>;
+  stopTimedClick(): Promise<OperationTransition>;
+  startRecording(config?: RecordingConfig): Promise<OperationTransition>;
+  pauseRecording(): Promise<OperationTransition>;
+  resumeRecording(): Promise<OperationTransition>;
+  stopRecording(): Promise<RecordingStopResponse>;
+  getRecordingResult(recordingResultId: string): Promise<RecordingResult>;
+  playback(script: Script, options: PlaybackOptions): Promise<OperationTransition>;
+  pausePlayback(): Promise<OperationTransition>;
+  resumePlayback(): Promise<OperationTransition>;
+  stopPlayback(): Promise<OperationTransition>;
+  emergencyStop(): Promise<EmergencyStopResponse>;
+  validateScript(script: Script): Promise<ScriptValidationResponse>;
+  saveScript(script: Script): Promise<Script>;
+  loadScript(id: string): Promise<Script>;
+  listScripts(): Promise<Script[]>;
+  duplicateScript(id: string): Promise<Script>;
+  deleteScript(id: string): Promise<void>;
+  getSettings(): Promise<AppSettings>;
+  updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>;
+  getCapabilities(): Promise<Capabilities>;
+  getHotkeyStatus(): Promise<HotkeyStatus>;
+  dispose(): Promise<void>;
+}
+
+export interface DesktopConnectionInfo { host: string; port: number; token: string; }
+export interface DesktopApi { getConnectionInfo(): Promise<DesktopConnectionInfo>; }
+
+declare global {
+  interface Window { desktop?: DesktopApi; }
+}
+
 export const DEFAULT_SETTINGS: AppSettings = {
   emergencyHotkey: 'F12',
   countdownEnabled: true,
@@ -183,6 +358,20 @@ export const DEFAULT_SETTINGS: AppSettings = {
   serviceMode: 'mock',
   recordMouseMove: true,
   minRecordInterval: 50,
-  defaultSpeedMultiplier: 1.0,
+  defaultSpeedMultiplier: 1,
   defaultLoopTimes: 1,
+};
+
+export const INITIAL_SNAPSHOT: StateSnapshot = {
+  operationId: null,
+  operationType: null,
+  state: 'idle',
+  sequence: 0,
+  startedAt: null,
+  elapsedMs: 0,
+  progress: null,
+  currentActionIndex: null,
+  completedCount: 0,
+  countdownRemainingMs: 0,
+  error: null,
 };
