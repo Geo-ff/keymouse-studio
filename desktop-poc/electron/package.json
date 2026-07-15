@@ -5,6 +5,7 @@
   "version": "0.1.2",
   "description": "KeyMouse Studio — Windows 键鼠自动化工具",
   "author": "Geo-ff",
+  "license": "MIT",
   "homepage": "https://github.com/Geo-ff/keymouse-studio",
   "repository": {
     "type": "git",
