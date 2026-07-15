@@ -256,6 +256,7 @@ input, select, textarea {
   background: var(--color-bg-page);
 }
 
+
 .app-sidebar {
   width: var(--sidebar-width);
   flex-shrink: 0;
@@ -275,6 +276,46 @@ input, select, textarea {
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
+}
+
+.sidebar-brand {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 2px;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.sidebar-brand:hover,
+.sidebar-brand:focus,
+.sidebar-brand:focus-visible,
+.sidebar-brand:active {
+  border: none;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.sidebar-brand-logo {
+  display: block;
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+
+.sidebar-divider {
+  width: 32px;
+  height: 1px;
+  margin: 2px 0 4px;
+  background: var(--color-border-subtle);
 }
 
 .app-toolbar {

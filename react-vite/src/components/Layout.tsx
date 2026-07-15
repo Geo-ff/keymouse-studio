@@ -47,6 +47,15 @@ const NAV_ITEMS: NavItem[] = [
 function Sidebar({ activePage, onNavigate, ...qoderProps }: { activePage: PageId; onNavigate: (page: PageId) => void } & Record<string, any>) {
   return (
     <nav className={["app-sidebar", (qoderProps as any)?.className].filter(Boolean).join(" ")} role="navigation" aria-label="主导航" data-component="sidebar" style={(qoderProps as any)?.style} data-qoder-id={(qoderProps as any)?.["data-qoder-id"]} data-qoder-source={(qoderProps as any)?.["data-qoder-source"]}>
+      <button
+        className="sidebar-brand"
+        type="button"
+        onClick={() => onNavigate('dashboard')}
+        aria-label="KeyBoard Studio 首页"
+      >
+        <img src="./keyboard-studio-logo.png" alt="" className="sidebar-brand-logo" draggable={false} />
+      </button>
+      <div className="sidebar-divider" />
       {NAV_ITEMS.map(item => (
         <button
           key={item.id}

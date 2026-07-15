@@ -6,6 +6,7 @@ import { startSidecar, stopSidecar } from './sidecar-manager.mjs'
 
 const directory = path.dirname(fileURLToPath(import.meta.url))
 const productionEntry = path.resolve(directory, '../../react-vite/dist/index.html')
+const taskbarIcon = path.resolve(directory, 'assets/app-icon.png')
 const APP_TITLE = getAppTitle()
 let sidecar
 let rendererOrigin
@@ -57,11 +58,12 @@ async function createWindow() {
     applyNativeTheme(theme === 'dark' || theme === 'light' ? theme : 'system')
     return { ok: true, dark: nativeTheme.shouldUseDarkColors }
   })
-
   const window = new BrowserWindow({
     width: 1200,
     height: 800,
     title: APP_TITLE,
+    icon: taskbarIcon,
+    autoHideMenuBar: false,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#1a1b1e' : '#f5f5f5',
     show: false,
     webPreferences: {
@@ -106,6 +108,7 @@ async function handleSidecarCrash(error) {
   quitting = true
   ipcMain.removeHandler('connection:get')
   ipcMain.removeHandler('theme:set')
+
   sidecarDetach()
   sidecarDetach = () => {}
   if (sidecar) {
@@ -157,6 +160,7 @@ app.on('before-quit', async (event) => {
   quitting = true
   ipcMain.removeHandler('connection:get')
   ipcMain.removeHandler('theme:set')
+
   sidecarDetach()
   sidecarDetach = () => {}
   await stopSidecar(sidecar.child)

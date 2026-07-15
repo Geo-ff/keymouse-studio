@@ -356,6 +356,7 @@ export interface DesktopConnectionInfo { host: string; port: number; token: stri
 export interface DesktopApi {
   getConnectionInfo(): Promise<DesktopConnectionInfo>;
   setTheme?(theme: 'light' | 'dark' | 'system'): Promise<{ ok: boolean; dark: boolean }>;
+
 }
 
 declare global {
