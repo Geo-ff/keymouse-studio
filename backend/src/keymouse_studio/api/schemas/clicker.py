@@ -4,7 +4,6 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from keymouse_studio.api.schemas.common import ApiModel
-from keymouse_studio.api.schemas.operations import StateSnapshot
 from keymouse_studio.domain.enums import EngineState, LoopMode, MouseButton, PositionMode
 
 MAX_WAIT_MS = 86_400_000
@@ -36,12 +35,6 @@ class ClickerConfig(ApiModel):
 
 class TimedClickConfig(ClickerConfig):
     delay_ms: int = Field(ge=0, le=MAX_WAIT_MS)
-
-
-class OperationTransition(ApiModel):
-    operation_id: UUID
-    state: EngineState
-    snapshot: StateSnapshot
 
 
 class EmergencyStopResponse(ApiModel):

@@ -2,11 +2,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 
-from keymouse_studio.api.schemas.clicker import (
-    ClickerConfig,
-    OperationTransition,
-    TimedClickConfig,
-)
+from keymouse_studio.api.schemas.clicker import ClickerConfig, TimedClickConfig
+from keymouse_studio.api.schemas.operations import OperationTransition
 from keymouse_studio.dependencies import get_clicker_service
 from keymouse_studio.services.clicker_service import ClickerService
 

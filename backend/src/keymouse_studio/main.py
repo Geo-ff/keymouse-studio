@@ -1,23 +1,41 @@
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
-from keymouse_studio.api.routers import capabilities, clicker, events, health, operations, scripts
+from keymouse_studio.api.routers import (
+    capabilities,
+    clicker,
+    events,
+    health,
+    operations,
+    playback,
+    recording,
+    scripts,
+)
 from keymouse_studio.api.schemas.common import ErrorDetail, ErrorResponse
 from keymouse_studio.config import Settings
 from keymouse_studio.dependencies import require_session_token
 from keymouse_studio.domain.errors import AppError, ErrorCode
 from keymouse_studio.infrastructure.input.adapter import InputAdapter, InputWorker
+from keymouse_studio.infrastructure.input.listener import (
+    InputEventBridge,
+    InputListener,
+    PynputInputListener,
+)
 from keymouse_studio.infrastructure.input.send_input import SendInputAdapter
 from keymouse_studio.infrastructure.persistence.json_script_repository import JsonScriptRepository
 from keymouse_studio.infrastructure.system.clock import MonotonicClock
+from keymouse_studio.services.automation_coordinator import AutomationCoordinator
 from keymouse_studio.services.clicker_service import ClickerService
 from keymouse_studio.services.event_service import EventService
+from keymouse_studio.services.hotkey_service import HotkeyService
 from keymouse_studio.services.operation_service import OperationService
+from keymouse_studio.services.playback_service import PlaybackService
+from keymouse_studio.services.recording_service import RecordingService
 from keymouse_studio.services.script_service import ScriptService
 
 API_PREFIX = "/api/v1"
@@ -25,9 +43,33 @@ API_PREFIX = "/api/v1"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    yield
-    clicker_service: ClickerService = app.state.clicker_service
-    await clicker_service.shutdown()
+    bridge: InputEventBridge = app.state.input_bridge
+    hotkey: HotkeyService = app.state.hotkey_service
+    bridge_started = False
+    hotkey_started = False
+    try:
+        hotkey_started = True
+        await hotkey.start()
+        await bridge.start()
+        bridge_started = True
+        yield
+    finally:
+        if hotkey_started:
+            with suppress(Exception):
+                await hotkey.stop()
+        with suppress(Exception):
+            await app.state.automation_coordinator.emergency_stop()
+        with suppress(Exception):
+            await app.state.recording_service.shutdown()
+        with suppress(Exception):
+            await app.state.playback_service.shutdown()
+        with suppress(Exception):
+            await app.state.clicker_service.shutdown()
+        if bridge_started:
+            with suppress(Exception):
+                await bridge.stop()
+        with suppress(Exception):
+            app.state.input_worker.close()
 
 
 def _error_response(detail: ErrorDetail, status_code: int) -> JSONResponse:
@@ -41,6 +83,7 @@ def _error_response(detail: ErrorDetail, status_code: int) -> JSONResponse:
 def create_app(
     settings: Settings | None = None,
     input_adapter: InputAdapter | None = None,
+    input_listener: InputListener | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="KeyMouse Studio API",
@@ -49,20 +92,41 @@ def create_app(
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        separate_input_output_schemas=False,
     )
     app_settings = settings or Settings()
     event_service = EventService(app_settings.protocol_version)
     operation_service = OperationService(event_service)
-    adapter = input_adapter or SendInputAdapter()
+    input_worker = InputWorker(input_adapter or SendInputAdapter())
+    bridge = InputEventBridge(input_listener or PynputInputListener())
+    script_service = ScriptService(JsonScriptRepository(app_settings.script_directory))
+    clock = MonotonicClock()
+    clicker_service = ClickerService(operation_service, input_worker, clock)
+    recording_service = RecordingService(operation_service, event_service, bridge)
+    playback_service = PlaybackService(
+        operation_service,
+        script_service,
+        input_worker,
+        clock,
+    )
+    coordinator = AutomationCoordinator(
+        operation_service,
+        clicker_service,
+        recording_service,
+        playback_service,
+        input_worker,
+    )
     app.state.settings = app_settings
     app.state.event_service = event_service
     app.state.operation_service = operation_service
-    app.state.clicker_service = ClickerService(
-        operation_service,
-        InputWorker(adapter),
-        MonotonicClock(),
-    )
-    app.state.script_service = ScriptService(JsonScriptRepository(app_settings.script_directory))
+    app.state.input_worker = input_worker
+    app.state.input_bridge = bridge
+    app.state.clicker_service = clicker_service
+    app.state.recording_service = recording_service
+    app.state.playback_service = playback_service
+    app.state.script_service = script_service
+    app.state.automation_coordinator = coordinator
+    app.state.hotkey_service = HotkeyService(bridge, coordinator)
 
     @app.exception_handler(AppError)
     async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
@@ -121,26 +185,15 @@ def create_app(
 
     app.include_router(health.router, prefix=API_PREFIX)
     protected_dependencies = [Depends(require_session_token)]
-    app.include_router(
+    for api_router in (
         capabilities.router,
-        prefix=API_PREFIX,
-        dependencies=protected_dependencies,
-    )
-    app.include_router(
         operations.router,
-        prefix=API_PREFIX,
-        dependencies=protected_dependencies,
-    )
-    app.include_router(
         clicker.router,
-        prefix=API_PREFIX,
-        dependencies=protected_dependencies,
-    )
-    app.include_router(
+        recording.router,
+        playback.router,
         scripts.router,
-        prefix=API_PREFIX,
-        dependencies=protected_dependencies,
-    )
+    ):
+        app.include_router(api_router, prefix=API_PREFIX, dependencies=protected_dependencies)
     app.include_router(events.router, prefix=API_PREFIX)
     return app
 

@@ -5,8 +5,11 @@ from fastapi import Depends, Header, Request
 
 from keymouse_studio.config import Settings
 from keymouse_studio.domain.errors import UnauthorizedError
+from keymouse_studio.services.automation_coordinator import AutomationCoordinator
 from keymouse_studio.services.clicker_service import ClickerService
 from keymouse_studio.services.operation_service import OperationService
+from keymouse_studio.services.playback_service import PlaybackService
+from keymouse_studio.services.recording_service import RecordingService
 from keymouse_studio.services.script_service import ScriptService
 
 
@@ -24,6 +27,18 @@ def get_clicker_service(request: Request) -> ClickerService:
 
 def get_script_service(request: Request) -> ScriptService:
     return cast(ScriptService, request.app.state.script_service)
+
+
+def get_recording_service(request: Request) -> RecordingService:
+    return cast(RecordingService, request.app.state.recording_service)
+
+
+def get_playback_service(request: Request) -> PlaybackService:
+    return cast(PlaybackService, request.app.state.playback_service)
+
+
+def get_automation_coordinator(request: Request) -> AutomationCoordinator:
+    return cast(AutomationCoordinator, request.app.state.automation_coordinator)
 
 
 def require_session_token(

@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115,<1",
   "pydantic>=2.10,<3",
+  "pynput>=1.8,<2",
   "uvicorn[standard]>=0.34,<1",
 ]
 
@@ -29,6 +30,7 @@ packages = ["src/keymouse_studio"]
 [tool.pytest.ini_options]
 addopts = "--strict-markers --strict-config"
 asyncio_mode = "auto"
+pythonpath = ["src"]
 testpaths = ["tests"]
 markers = [
   "windows_probe: Windows-only read-only technical probe",

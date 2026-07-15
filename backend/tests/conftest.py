@@ -8,6 +8,8 @@ import pytest
 from fastapi import FastAPI
 
 from keymouse_studio.config import Settings
+from keymouse_studio.infrastructure.input.adapter import FakeInputAdapter
+from keymouse_studio.infrastructure.input.listener import FakeInputListener
 from keymouse_studio.main import create_app
 
 SESSION_TOKEN = "test-session-token"
@@ -39,7 +41,7 @@ def settings(tmp_path: Path) -> Settings:
 
 @pytest.fixture
 def app(settings: Settings) -> FastAPI:
-    return create_app(settings)
+    return create_app(settings, FakeInputAdapter(), FakeInputListener())
 
 
 @pytest.fixture

@@ -5,12 +5,12 @@ from uuid import UUID
 from keymouse_studio.api.schemas.clicker import (
     ClickerConfig,
     EmergencyStopResponse,
-    OperationTransition,
     TimedClickConfig,
 )
+from keymouse_studio.api.schemas.operations import OperationTransition
 from keymouse_studio.domain.enums import EngineState, LoopMode, OperationType, PositionMode
 from keymouse_studio.domain.errors import AppError, ErrorCode
-from keymouse_studio.infrastructure.input.adapter import InputWorker
+from keymouse_studio.infrastructure.input.adapter import InputWorker, ReleaseResult
 from keymouse_studio.infrastructure.system.clock import Clock
 from keymouse_studio.services.operation_service import OperationService
 
@@ -33,6 +33,7 @@ class ClickerService:
         self._task: asyncio.Task[None] | None = None
         self._last_operation_id: UUID | None = None
         self._elapsed_ns = 0
+        self._release_results: dict[UUID, ReleaseResult] = {}
 
     async def start_clicker(self, config: ClickerConfig) -> OperationTransition:
         return await self._start(OperationType.CLICKER, config, 0)
@@ -56,6 +57,13 @@ class ClickerService:
             operation_id=operation_id, state=snapshot.state, snapshot=snapshot
         )
 
+    def cancel(self) -> None:
+        self._cancelled.set()
+        self._running.set()
+
+    def release_result(self, operation_id: UUID) -> ReleaseResult:
+        return self._release_results.pop(operation_id, ReleaseResult())
+
     async def stop(self, operation_id: UUID) -> OperationTransition:
         if self._operations.operation_id is None and operation_id == self._last_operation_id:
             snapshot = self._operations.snapshot()
@@ -63,8 +71,7 @@ class ClickerService:
                 operation_id=operation_id, state=snapshot.state, snapshot=snapshot
             )
         self._operations.require_operation(operation_id)
-        self._cancelled.set()
-        self._running.set()
+        self.cancel()
         if self._operations.state != EngineState.STOPPING:
             await self._operations.transition(EngineState.STOPPING, operation_id)
         await self._wait_for_task()
@@ -92,8 +99,12 @@ class ClickerService:
         )
 
     async def shutdown(self) -> None:
-        await self.emergency_stop()
-        self._input.close()
+        operation_id = self._operations.operation_id
+        if operation_id is not None and self._operations.snapshot().operation_type in {
+            OperationType.CLICKER,
+            OperationType.TIMED_CLICK,
+        }:
+            await self.stop(operation_id)
 
     async def wait_finished(self) -> None:
         await self._wait_for_task()
@@ -151,8 +162,10 @@ class ClickerService:
         except asyncio.CancelledError:
             self._cancelled.set()
             raise
+        except Exception as exc:
+            await self._operations.fail(operation_id, exc)
         finally:
-            await self._input.release_all()
+            self._release_results[operation_id] = await self._safe_release()
             if self._operations.operation_id == operation_id:
                 if self._operations.state != EngineState.STOPPING:
                     with suppress(AppError):
@@ -199,6 +212,12 @@ class ClickerService:
             progress=progress,
             countdown_remaining_ms=countdown_remaining_ms,
         )
+
+    async def _safe_release(self) -> ReleaseResult:
+        try:
+            return await self._input.release_all()
+        except Exception as exc:
+            return ReleaseResult(failures=(f"release_all:{type(exc).__name__}",))
 
     def _raise_if_cancelled(self) -> None:
         if self._cancelled.is_set():

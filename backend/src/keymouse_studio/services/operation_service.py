@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import suppress
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -20,6 +21,7 @@ class OperationService:
         self._started_at: datetime | None = None
         self._elapsed_ms = 0
         self._progress: float | None = None
+        self._current_action_index: int | None = None
         self._completed_count = 0
         self._countdown_remaining_ms = 0
 
@@ -40,6 +42,7 @@ class OperationService:
             started_at=self._started_at,
             elapsed_ms=self._elapsed_ms,
             progress=self._progress,
+            current_action_index=self._current_action_index,
             completed_count=self._completed_count,
             countdown_remaining_ms=self._countdown_remaining_ms,
         )
@@ -60,6 +63,7 @@ class OperationService:
             self._started_at = datetime.now(UTC)
             self._elapsed_ms = 0
             self._progress = None
+            self._current_action_index = None
             self._completed_count = 0
             self._countdown_remaining_ms = 0
             self._machine.transition(initial_state)
@@ -92,13 +96,34 @@ class OperationService:
         completed_count: int,
         progress: float | None,
         countdown_remaining_ms: int = 0,
+        current_action_index: int | None = None,
+        operation_id: UUID | None = None,
     ) -> StateSnapshot:
         async with self._lock:
+            self._require_operation(operation_id)
             self._elapsed_ms = max(0, elapsed_ms)
             self._completed_count = max(0, completed_count)
             self._progress = progress
+            self._current_action_index = current_action_index
             self._countdown_remaining_ms = max(0, countdown_remaining_ms)
             await self._publish("operation.progress")
+            return self.snapshot()
+
+    async def fail(self, operation_id: UUID, exc: Exception) -> StateSnapshot:
+        async with self._lock:
+            self._require_operation(operation_id)
+            self._machine.transition(EngineState.ERROR)
+            with suppress(Exception):
+                await self._events.create(
+                    "error.raised",
+                    {
+                        "code": ErrorCode.ENGINE_INTERNAL_ERROR,
+                        "message": "Input operation failed",
+                        "details": {"exceptionType": type(exc).__name__},
+                    },
+                    operation_id,
+                )
+            await self._publish("operation.state_changed")
             return self.snapshot()
 
     async def snapshot_event(self) -> EventEnvelope:
@@ -113,8 +138,9 @@ class OperationService:
 
     async def _publish(self, event_type: str) -> None:
         snapshot = self.snapshot()
-        event = await self._events.create(event_type, snapshot, self._operation_id)
-        snapshot.sequence = event.sequence
+        with suppress(Exception):
+            event = await self._events.create(event_type, snapshot, self._operation_id)
+            snapshot.sequence = event.sequence
 
     def _require_operation(self, operation_id: UUID | None) -> None:
         if operation_id is not None and operation_id != self._operation_id:
@@ -131,5 +157,6 @@ class OperationService:
         self._started_at = None
         self._elapsed_ms = 0
         self._progress = None
+        self._current_action_index = None
         self._completed_count = 0
         self._countdown_remaining_ms = 0
