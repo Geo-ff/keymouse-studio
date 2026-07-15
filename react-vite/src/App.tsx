@@ -13,10 +13,11 @@ import { ScriptEditor } from './pages/ScriptEditor';
 import { ScriptManager } from './pages/ScriptManager';
 import { Settings } from './pages/Settings';
 import { useService } from './hooks/useService';
-import { mockScripts } from './data/mockData';
+import { createEmptyScript, mockScripts } from './data/mockData';
 import { useToast } from './providers/ToastProvider';
 import type { Script, ScriptAction, AppSettings } from './types';
 
+const MOCK_SCRIPT_IDS = new Set(mockScripts.map(script => script.id));
 
 export default function App() {
   const { emergencyStop, state, settings, error, clearError, updateSettings, saveScript, refreshScripts } = useService();
@@ -24,15 +25,14 @@ export default function App() {
 
   const [page, setPage] = useState<PageId>('dashboard');
   const theme = settings.theme;
-  const [currentScript, setCurrentScript] = useState<Script>(mockScripts[0]);
+  const [currentScript, setCurrentScript] = useState<Script>(createEmptyScript);
   const [saved, setSaved] = useState(true);
 
   useEffect(() => {
-    if (settings.serviceMode === 'real' && mockScripts.some(script => script.id === currentScript.id)) {
-      const now = new Date().toISOString();
-      setCurrentScript(previous => ({ ...previous, id: '', createdAt: now, updatedAt: now }));
-      setSaved(false);
-    }
+    if (settings.serviceMode !== 'real') return;
+    if (!currentScript.id || !MOCK_SCRIPT_IDS.has(currentScript.id)) return;
+    setCurrentScript(createEmptyScript());
+    setSaved(true);
   }, [settings.serviceMode, currentScript.id]);
 
 
@@ -146,7 +146,7 @@ export default function App() {
       <Layout
         activePage={page}
         onPageChange={setPage}
-        scriptName={currentScript.name}
+        scriptName={currentScript.name.trim() || '暂未选择脚本'}
         saved={saved}
         theme={theme}
         onToggleTheme={handleToggleTheme}

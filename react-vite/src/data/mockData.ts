@@ -46,6 +46,20 @@ const wait = (durationMs: number): ScriptAction => ({ id: genId(), enabled: true
 const wheel = (deltaY: number, delayBeforeMs = 300): ScriptAction => ({ id: genId(), enabled: true, delayBeforeMs, type: 'mouse_wheel', payload: { deltaX: 0, deltaY } });
 const settings = { speedMultiplier: 1, loopMode: 'count' as const, loopCount: 1, countdownMs: 3000 };
 
+export function createEmptyScript(): Script {
+  const now = new Date().toISOString();
+  return {
+    schemaVersion: 1,
+    id: '',
+    name: '',
+    description: '',
+    createdAt: now,
+    updatedAt: now,
+    settings: { speedMultiplier: 1, loopMode: 'count', loopCount: 1, countdownMs: 3000 },
+    actions: [],
+  };
+}
+
 export const mockScripts: Script[] = [
   { schemaVersion: 1, id: '00000000-0000-4000-8000-000000000001', name: '浏览器自动刷新页面', description: '打开浏览器并定时刷新当前页面', createdAt: date(259200000), updatedAt: date(3600000), settings, actions: [move(100, 100), click(100, 100), wait(1000), key('key_down', 'F5', 500), key('key_up', 'F5', 50), wait(2000), move(960, 540, 300), wheel(-300, 200), wait(500), click(960, 540)] },
   { schemaVersion: 1, id: '00000000-0000-4000-8000-000000000002', name: 'Excel 表格批量填写', description: '在 Excel 中自动填写数据并切换单元格', createdAt: date(604800000), updatedAt: date(172800000), settings, actions: [click(300, 200, 1, 0), key('key_down', 'Ctrl+A'), key('key_up', 'Ctrl+A'), key('key_down', 'Delete'), key('key_up', 'Delete'), key('key_down', 'Tab'), key('key_up', 'Tab'), key('key_down', 'Enter'), key('key_up', 'Enter'), wait(500)] },
