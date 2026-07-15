@@ -31,12 +31,19 @@ async def test_settings_get_put_persists_public_values_atomically(
                 "defaultLoopCount": 4,
                 "defaultCountdownMs": 1000,
                 "emergencyStopHotkey": "Ctrl + Shift + F11",
+                "recordStartHotkey": "F9",
+                "recordStopHotkey": "F10",
+                "playbackStartHotkey": "F5",
+                "playbackStopHotkey": "F6",
             },
         )
 
     assert initial.json()["emergencyStopHotkey"] == "f12"
+    assert initial.json()["recordStartHotkey"] == ""
     assert updated.status_code == 200
     assert updated.json()["emergencyStopHotkey"] == "ctrl+shift+f11"
+    assert updated.json()["recordStartHotkey"] == "f9"
+    assert updated.json()["playbackStopHotkey"] == "f6"
     stored = json.loads(app.state.settings.settings_file.read_text(encoding="utf-8"))
     assert stored == updated.json()
     assert "token" not in json.dumps(stored).lower()
@@ -53,6 +60,48 @@ async def test_settings_rejects_sensitive_and_partial_payloads(
         response = await client.put("/api/v1/settings", headers=auth_headers, json=data)
         assert response.status_code == 422
         assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_settings_accepts_empty_operation_hotkeys_and_rejects_duplicates(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    empty_ok = await client.put(
+        "/api/v1/settings",
+        headers=auth_headers,
+        json={
+            "defaultSpeedMultiplier": 1,
+            "defaultLoopMode": "count",
+            "defaultLoopCount": 1,
+            "defaultCountdownMs": 0,
+            "emergencyStopHotkey": "f12",
+            "recordStartHotkey": "",
+            "recordStopHotkey": "",
+            "playbackStartHotkey": "",
+            "playbackStopHotkey": "",
+        },
+    )
+    assert empty_ok.status_code == 200
+    assert empty_ok.json()["recordStartHotkey"] == ""
+
+    conflict = await client.put(
+        "/api/v1/settings",
+        headers=auth_headers,
+        json={
+            "defaultSpeedMultiplier": 1,
+            "defaultLoopMode": "count",
+            "defaultLoopCount": 1,
+            "defaultCountdownMs": 0,
+            "emergencyStopHotkey": "f12",
+            "recordStartHotkey": "f12",
+            "recordStopHotkey": "",
+            "playbackStartHotkey": "",
+            "playbackStopHotkey": "",
+        },
+    )
+    assert conflict.status_code == 422
+    assert conflict.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
 @pytest.mark.asyncio

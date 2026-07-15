@@ -555,10 +555,32 @@ export class RealAutomationService extends AutomationServiceBase {
   async listScripts(): Promise<Script[]> { return this.call(() => this.api().get('/api/v1/scripts')); }
   async duplicateScript(id: string): Promise<Script> { return this.call(() => this.api().post(`/api/v1/scripts/${id}/duplicate`)); }
   async deleteScript(id: string): Promise<void> { return this.call(() => this.api().delete(`/api/v1/scripts/${id}`)); }
+  private formatHotkeyFromBackend(value: string): string {
+    if (!value.trim()) return '';
+    return value
+      .split('+')
+      .map(part => {
+        const lower = part.trim().toLowerCase();
+        if (lower === 'ctrl' || lower === 'control') return 'Ctrl';
+        if (lower === 'alt') return 'Alt';
+        if (lower === 'shift') return 'Shift';
+        if (lower === 'win' || lower === 'cmd' || lower === 'meta') return 'Win';
+        if (lower === 'esc' || lower === 'escape') return 'Esc';
+        if (lower === 'space') return 'Space';
+        if (/^f\d+$/.test(lower)) return lower.toUpperCase();
+        return lower.length === 1 ? lower.toUpperCase() : part;
+      })
+      .join('+');
+  }
+
   private mergeBackendSettings(backend: BackendSettings): AppSettings {
     this.settings = {
       ...this.settings,
-      emergencyHotkey: backend.emergencyStopHotkey.toUpperCase(),
+      emergencyHotkey: this.formatHotkeyFromBackend(backend.emergencyStopHotkey),
+      recordStartHotkey: this.formatHotkeyFromBackend(backend.recordStartHotkey ?? ''),
+      recordStopHotkey: this.formatHotkeyFromBackend(backend.recordStopHotkey ?? ''),
+      playbackStartHotkey: this.formatHotkeyFromBackend(backend.playbackStartHotkey ?? ''),
+      playbackStopHotkey: this.formatHotkeyFromBackend(backend.playbackStopHotkey ?? ''),
       countdownEnabled: backend.defaultCountdownMs > 0,
       countdownSeconds: backend.defaultCountdownMs / 1000,
       defaultSpeedMultiplier: backend.defaultSpeedMultiplier,
@@ -574,6 +596,10 @@ export class RealAutomationService extends AutomationServiceBase {
       defaultLoopCount: settings.defaultLoopTimes,
       defaultCountdownMs: settings.countdownEnabled ? Math.round(settings.countdownSeconds * 1000) : 0,
       emergencyStopHotkey: settings.emergencyHotkey,
+      recordStartHotkey: settings.recordStartHotkey,
+      recordStopHotkey: settings.recordStopHotkey,
+      playbackStartHotkey: settings.playbackStartHotkey,
+      playbackStopHotkey: settings.playbackStopHotkey,
     };
   }
   async getSettings(): Promise<AppSettings> {
@@ -582,9 +608,16 @@ export class RealAutomationService extends AutomationServiceBase {
   }
   async updateSettings(updates: Partial<AppSettings>): Promise<AppSettings> {
     const next = { ...this.settings, ...updates, serviceMode: 'real' as const };
-    if (updates.emergencyHotkey) {
-      const validation = await this.call(() => this.api().post<HotkeyValidationResponse>('/api/v1/hotkeys/validate', { hotkey: updates.emergencyHotkey }));
-      next.emergencyHotkey = validation.normalizedHotkey.toUpperCase();
+    const hotkeyFields = ['emergencyHotkey', 'recordStartHotkey', 'recordStopHotkey', 'playbackStartHotkey', 'playbackStopHotkey'] as const;
+    for (const field of hotkeyFields) {
+      if (!(field in updates)) continue;
+      const value = updates[field] ?? '';
+      if (!value.trim()) {
+        next[field] = '';
+        continue;
+      }
+      const validation = await this.call(() => this.api().post<HotkeyValidationResponse>('/api/v1/hotkeys/validate', { hotkey: value }));
+      next[field] = this.formatHotkeyFromBackend(validation.normalizedHotkey);
     }
     const backend = await this.call(() => this.api().put<BackendSettings>('/api/v1/settings', this.toBackendSettings(next)));
     this.settings = { ...next, serviceMode: 'real' };

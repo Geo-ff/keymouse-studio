@@ -246,6 +246,10 @@ export interface RecordingActionCapturedPayload { action: ScriptAction; actionCo
 
 export interface AppSettings {
   emergencyHotkey: string;
+  recordStartHotkey: string;
+  recordStopHotkey: string;
+  playbackStartHotkey: string;
+  playbackStopHotkey: string;
   countdownEnabled: boolean;
   countdownSeconds: number;
   theme: 'light' | 'dark';
@@ -262,6 +266,10 @@ export interface BackendSettings {
   defaultLoopCount: number;
   defaultCountdownMs: number;
   emergencyStopHotkey: string;
+  recordStartHotkey: string;
+  recordStopHotkey: string;
+  playbackStartHotkey: string;
+  playbackStopHotkey: string;
 }
 
 export interface HotkeyValidationResponse {
@@ -353,10 +361,14 @@ declare global {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   emergencyHotkey: 'F12',
+  recordStartHotkey: '',
+  recordStopHotkey: '',
+  playbackStartHotkey: '',
+  playbackStopHotkey: '',
   countdownEnabled: true,
   countdownSeconds: 3,
   theme: 'light',
-  serviceMode: 'mock',
+  serviceMode: 'real',
   recordMouseMove: true,
   minRecordInterval: 50,
   defaultSpeedMultiplier: 1,

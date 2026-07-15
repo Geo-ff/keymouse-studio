@@ -3,7 +3,7 @@
    录制状态、时长、动作数量、实时动作流
    ========================================================================= */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Circle,
   Play,
@@ -18,9 +18,11 @@ import {
   Clock,
 } from 'lucide-react';
 import { useService } from '../hooks/useService';
+import { usePageHotkeys } from '../hooks/usePageHotkeys';
 import { Button, ConfirmDialog, EmptyState, Input } from '../components/ui';
 import { useToast } from '../providers/ToastProvider';
 import { formatTime, formatDuration } from '../data/mockData';
+import { formatHotkeyLabel } from '../utils/hotkey';
 import type { ScriptAction, ActionType } from '../types';
 import type { PageId } from '../components/Layout';
 
@@ -167,6 +169,19 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
     }
   }, [pending, discardRecording, toast]);
 
+  usePageHotkeys(useMemo(() => [
+    {
+      hotkey: settings.recordStartHotkey,
+      enabled: !pending && (state.recordingState === 'idle' || state.recordingState === 'stopped'),
+      handler: () => { void handleStart(); },
+    },
+    {
+      hotkey: settings.recordStopHotkey,
+      enabled: !pending && (isRecording || isPaused),
+      handler: () => { void handleStop(); },
+    },
+  ], [settings.recordStartHotkey, settings.recordStopHotkey, pending, state.recordingState, isRecording, isPaused, handleStart, handleStop]));
+
   // Type distribution
   const typeCounts: Partial<Record<ActionType, number>> = {};
   state.recordingActions.forEach(a => {
@@ -269,6 +284,10 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
           )}
           {state.recordingState === 'stopped' && (
             <>
+              <div className="text-sm text-tertiary" style={{ width: '100%', lineHeight: 1.6 }}>
+                可用快捷键控制录制：开始 {formatHotkeyLabel(settings.recordStartHotkey)} · 停止 {formatHotkeyLabel(settings.recordStopHotkey)}。
+                可在「设置 → 录制 / 回放快捷键」中自定义；推荐 F9 开始、F10 停止。
+              </div>
               <Button variant="primary" icon={<Save size={14}  data-qoder-id="qel-save-8bfa1432" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-save-8bfa1432&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;save&quot;,&quot;loc&quot;:{&quot;line&quot;:180,&quot;column&quot;:47}}"/>} onClick={handleSave} disabled={pending || !hasActions || !scriptName.trim()} data-qoder-id="qel-button-7f61e225" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-7f61e225&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Recording.tsx&quot;,&quot;componentName&quot;:&quot;Recording&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:180,&quot;column&quot;:15}}">
                 保存为脚本
               </Button>

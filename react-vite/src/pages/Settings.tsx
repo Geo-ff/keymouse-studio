@@ -3,35 +3,102 @@
    急停热键、运行参数、外观偏好、Mock/Real 模式
    ========================================================================= */
 
-import { useState } from 'react';
-import { Zap, Clock, Palette, Cpu, MousePointerClick, Play } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Zap, Clock, Palette, Cpu, MousePointerClick, Play, Keyboard } from 'lucide-react';
 import { useService } from '../hooks/useService';
-import { Toggle, Input, Select } from '../components/ui';
+import { Toggle, Input, Select, Button } from '../components/ui';
 import type { AppSettings } from '../types';
+import { eventToHotkey, formatHotkeyLabel, normalizeHotkeyDisplay } from '../utils/hotkey';
 
 interface SettingsProps {
   settings: AppSettings;
   onUpdate: (settings: Partial<AppSettings>) => void;
 }
 
+type HotkeyField = 'emergencyHotkey' | 'recordStartHotkey' | 'recordStopHotkey' | 'playbackStartHotkey' | 'playbackStopHotkey';
+
+const HOTKEY_SUGGESTIONS = [
+  { label: '开始录制', value: 'F9' },
+  { label: '停止录制', value: 'F10' },
+  { label: '开始回放', value: 'F5' },
+  { label: '停止回放', value: 'F6' },
+];
+
 export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & Record<string, any>) {
   const { mode, capabilities, hotkey } = useService();
-  const [hotkeyInput, setHotkeyInput] = useState(settings.emergencyHotkey);
+  const [hotkeyDrafts, setHotkeyDrafts] = useState<Record<HotkeyField, string>>({
+    emergencyHotkey: settings.emergencyHotkey,
+    recordStartHotkey: settings.recordStartHotkey,
+    recordStopHotkey: settings.recordStopHotkey,
+    playbackStartHotkey: settings.playbackStartHotkey,
+    playbackStopHotkey: settings.playbackStopHotkey,
+  });
 
-  const handleHotkeyCapture = (e: React.KeyboardEvent) => {
+  useEffect(() => {
+    setHotkeyDrafts({
+      emergencyHotkey: settings.emergencyHotkey,
+      recordStartHotkey: settings.recordStartHotkey,
+      recordStopHotkey: settings.recordStopHotkey,
+      playbackStartHotkey: settings.playbackStartHotkey,
+      playbackStopHotkey: settings.playbackStopHotkey,
+    });
+  }, [
+    settings.emergencyHotkey,
+    settings.recordStartHotkey,
+    settings.recordStopHotkey,
+    settings.playbackStartHotkey,
+    settings.playbackStopHotkey,
+  ]);
+
+  const captureHotkey = (field: HotkeyField, e: React.KeyboardEvent) => {
     e.preventDefault();
-    const key = e.key;
-    if (key === ' ') {
-      setHotkeyInput('Space');
-      onUpdate({ emergencyHotkey: 'Space' });
-    } else if (key.length === 1 && /[a-zA-Z]/.test(key)) {
-      setHotkeyInput(key.toUpperCase());
-      onUpdate({ emergencyHotkey: key.toUpperCase() });
-    } else if (key.startsWith('F') && /\d+/.test(key.slice(1))) {
-      setHotkeyInput(key);
-      onUpdate({ emergencyHotkey: key });
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      setHotkeyDrafts(prev => ({ ...prev, [field]: '' }));
+      onUpdate({ [field]: '' });
+      return;
     }
+    const captured = eventToHotkey(e);
+    if (!captured) return;
+    const normalized = normalizeHotkeyDisplay(captured);
+    setHotkeyDrafts(prev => ({ ...prev, [field]: normalized }));
+    onUpdate({ [field]: normalized });
   };
+
+  const clearHotkey = (field: HotkeyField) => {
+    setHotkeyDrafts(prev => ({ ...prev, [field]: '' }));
+    onUpdate({ [field]: '' });
+  };
+
+  const applySuggestions = () => {
+    const next = {
+      recordStartHotkey: 'F9',
+      recordStopHotkey: 'F10',
+      playbackStartHotkey: 'F5',
+      playbackStopHotkey: 'F6',
+    };
+    setHotkeyDrafts(prev => ({ ...prev, ...next }));
+    onUpdate(next);
+  };
+
+  const renderHotkeyRow = (field: HotkeyField, label: string, allowEmpty = true) => (
+    <div className="field-row" style={{ alignItems: 'center' }}>
+      <label className="field-label" style={{ width: 140 }}>{label}</label>
+      <input
+        className="input"
+        style={{ width: 160, textAlign: 'center', fontFamily: 'var(--font-mono)' }}
+        value={formatHotkeyLabel(hotkeyDrafts[field], allowEmpty ? '点击后按键' : '')}
+        onKeyDown={e => captureHotkey(field, e)}
+        onChange={() => {}}
+        readOnly
+        placeholder={allowEmpty ? '未设置' : '必填'}
+      />
+      {allowEmpty && (
+        <Button size="sm" variant="ghost" onClick={() => clearHotkey(field)} disabled={!hotkeyDrafts[field]}>
+          清空
+        </Button>
+      )}
+    </div>
+  );
 
   return (
     <div style={{ ...({ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)', maxWidth: 720 }), ...((qoderProps as any)?.style) }} className={(qoderProps as any)?.className} data-qoder-id={(qoderProps as any)?.["data-qoder-id"]} data-qoder-source={(qoderProps as any)?.["data-qoder-source"]}>
@@ -43,18 +110,10 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
           </span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }} data-qoder-id="qel-div-ae6a449f" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-ae6a449f&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Settings.tsx&quot;,&quot;componentName&quot;:&quot;Settings&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:45,&quot;column&quot;:9}}">
-          <div className="field-row" data-qoder-id="qel-field-row-49e2d642" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-row-49e2d642&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Settings.tsx&quot;,&quot;componentName&quot;:&quot;Settings&quot;,&quot;elementRole&quot;:&quot;field-row&quot;,&quot;loc&quot;:{&quot;line&quot;:46,&quot;column&quot;:11}}">
-            <label className="field-label" style={{ width: 140 }} data-qoder-id="qel-field-label-1b0c0f04" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-label-1b0c0f04&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Settings.tsx&quot;,&quot;componentName&quot;:&quot;Settings&quot;,&quot;elementRole&quot;:&quot;field-label&quot;,&quot;loc&quot;:{&quot;line&quot;:47,&quot;column&quot;:13}}">急停热键</label>
-            <input
-              className="input"
-              style={{ width: 120, textAlign: 'center', fontFamily: 'var(--font-mono)' }}
-              value={hotkeyInput}
-              onKeyDown={handleHotkeyCapture}
-              onChange={() => {}}
-              readOnly
-             data-qoder-id="qel-input-c0b602e2" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-c0b602e2&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Settings.tsx&quot;,&quot;componentName&quot;:&quot;Settings&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:48,&quot;column&quot;:13}}"/>
-            <span className="text-sm text-tertiary" data-qoder-id="qel-text-sm-cdc6a8d6" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-cdc6a8d6&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Settings.tsx&quot;,&quot;componentName&quot;:&quot;Settings&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:56,&quot;column&quot;:13}}">在输入框内按下按键设置热键</span>
-          </div>
+          {renderHotkeyRow('emergencyHotkey', '急停热键', false)}
+          <p className="text-sm text-tertiary" style={{ margin: 0, paddingLeft: 140 }}>
+            支持修饰键组合（如 Ctrl+Shift+F12）。在输入框内按下目标按键即可设置。
+          </p>
 
           <div className="field-row" data-qoder-id="qel-field-row-bf088633" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-row-bf088633&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Settings.tsx&quot;,&quot;componentName&quot;:&quot;Settings&quot;,&quot;elementRole&quot;:&quot;field-row&quot;,&quot;loc&quot;:{&quot;line&quot;:59,&quot;column&quot;:11}}">
             <label className="field-label" style={{ width: 140 }} data-qoder-id="qel-field-label-5be9fbb7" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-label-5be9fbb7&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Settings.tsx&quot;,&quot;componentName&quot;:&quot;Settings&quot;,&quot;elementRole&quot;:&quot;field-label&quot;,&quot;loc&quot;:{&quot;line&quot;:60,&quot;column&quot;:13}}">运行前倒计时</label>
@@ -130,6 +189,25 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
           输入能力：{capabilities?.input.status === 'available' ? '可用' : '不可用'} · 全局热键：{hotkey?.registered ? `${hotkey.key} 已配置${hotkey.available ? '' : '（占用状态未知）'}` : '不可用'}
           {mode === 'real' && !capabilities ? ' · 真实服务未就绪（不会回退 Mock）' : ''}
         </p>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <span className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+            <Keyboard size={14} /> 录制 / 回放快捷键
+          </span>
+          <Button size="sm" variant="secondary" onClick={applySuggestions}>应用推荐配置</Button>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+          {renderHotkeyRow('recordStartHotkey', '开始录制')}
+          {renderHotkeyRow('recordStopHotkey', '停止录制')}
+          {renderHotkeyRow('playbackStartHotkey', '开始回放')}
+          {renderHotkeyRow('playbackStopHotkey', '停止回放')}
+          <div className="text-sm text-tertiary" style={{ paddingLeft: 140, lineHeight: 1.6 }}>
+            默认为空。推荐：{HOTKEY_SUGGESTIONS.map(item => `${item.label} ${item.value}`).join(' · ')}。
+            可自定义任意功能键或 Ctrl/Alt/Shift 组合；请勿与急停热键冲突。当前为窗口内快捷键。
+          </div>
+        </div>
       </div>
 
       {/* 录制选项 */}

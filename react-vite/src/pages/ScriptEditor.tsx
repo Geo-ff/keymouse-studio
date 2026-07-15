@@ -31,6 +31,7 @@ import {
   Timer,
 } from 'lucide-react';
 import { useService } from '../hooks/useService';
+import { usePageHotkeys } from '../hooks/usePageHotkeys';
 import { Button, IconButton, Toggle, Input, Select, RadioGroup, EmptyState, ProgressBar } from '../components/ui';
 import { formatDuration, formatTime, createAction } from '../data/mockData';
 import type { ScriptAction, ActionType, MouseButton, Script, PlaybackOptions, EditorLoopMode } from '../types';
@@ -94,7 +95,7 @@ function summarizeAction(a: ScriptAction): string {
 }
 
 export function ScriptEditor({ script, onScriptChange, onScriptSave, onNavigate, ...qoderProps }: ScriptEditorProps & Record<string, any>) {
-  const { playback, pausePlayback, resumePlayback, stopPlayback, state } = useService();
+  const { playback, pausePlayback, resumePlayback, stopPlayback, state, settings } = useService();
   const [actions, setActions] = useState<ScriptAction[]>(script.actions);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -258,6 +259,19 @@ export function ScriptEditor({ script, onScriptChange, onScriptSave, onNavigate,
     if (!script.name.trim()) return;
     void onScriptSave({ ...script, name: script.name.trim(), actions });
   }, [onScriptSave, script, actions]);
+
+  usePageHotkeys(useMemo(() => [
+    {
+      hotkey: settings.playbackStartHotkey,
+      enabled: !isPlaying && actions.some(a => a.enabled),
+      handler: handleRun,
+    },
+    {
+      hotkey: settings.playbackStopHotkey,
+      enabled: isPlaying || isPaused,
+      handler: handleStop,
+    },
+  ], [settings.playbackStartHotkey, settings.playbackStopHotkey, isPlaying, isPaused, actions, handleRun, handleStop]));
 
   return (
     <div style={{ ...({ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }), ...((qoderProps as any)?.style) }} className={(qoderProps as any)?.className} data-qoder-id={(qoderProps as any)?.["data-qoder-id"]} data-qoder-source={(qoderProps as any)?.["data-qoder-source"]}>

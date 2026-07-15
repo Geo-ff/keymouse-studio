@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useService } from '../hooks/useService';
 import type { RunState } from '../types';
+import { matchesHotkey } from '../utils/hotkey';
 
 export type PageId = 'dashboard' | 'clicker' | 'timed' | 'recording' | 'script' | 'manager' | 'settings';
 
@@ -232,7 +233,7 @@ export function Layout(props: LayoutProps & Record<string, any>) {
   const { emergencyStop, settings } = useService();
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key.toUpperCase() === settings.emergencyHotkey.toUpperCase()) {
+    if (matchesHotkey(e, settings.emergencyHotkey)) {
       e.preventDefault();
       void emergencyStop().catch(() => undefined);
     }
