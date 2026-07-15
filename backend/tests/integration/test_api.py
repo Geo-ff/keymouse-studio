@@ -40,7 +40,7 @@ async def test_unknown_route_uses_unified_error_response(client: httpx.AsyncClie
     assert response.status_code == 404
     assert response.json() == {
         "error": {
-            "code": "VALIDATION_ERROR",
+            "code": "NOT_FOUND",
             "message": "Not Found",
             "details": {},
             "retryable": False,
@@ -57,7 +57,7 @@ async def test_documentation_endpoints_are_disabled(client: httpx.AsyncClient) -
 
 
 @pytest.mark.asyncio
-async def test_capabilities_returns_safe_skeleton(
+async def test_capabilities_returns_injected_detection(
     client: httpx.AsyncClient, auth_headers: dict[str, str]
 ) -> None:
     response = await client.get("/api/v1/capabilities", headers=auth_headers)
@@ -65,10 +65,12 @@ async def test_capabilities_returns_safe_skeleton(
     assert response.status_code == 200
     assert response.json() == {
         "platform": "windows",
-        "inputAvailable": False,
-        "globalHotkeyAvailable": False,
-        "displayCount": 0,
-        "dpiAware": False,
+        "platformVersion": "10.0.test",
+        "input": {"status": "available", "reason": None},
+        "globalHotkey": {"status": "available", "reason": None},
+        "display": {"status": "available", "reason": None},
+        "displayCount": 2,
+        "dpiAwareness": {"status": "available", "reason": None},
     }
 
 

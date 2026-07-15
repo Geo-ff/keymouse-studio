@@ -7,6 +7,7 @@ from keymouse_studio.config import Settings
 from keymouse_studio.domain.enums import MouseButton
 from keymouse_studio.infrastructure.input.adapter import FakeInputAdapter
 from keymouse_studio.main import create_app
+from tests.conftest import asgi_transport
 
 
 @pytest.mark.asyncio
@@ -14,7 +15,7 @@ async def test_clicker_api_runs_and_reports_state() -> None:
     adapter = FakeInputAdapter()
     settings = Settings(session_token="test-token")
     app = create_app(settings, adapter)
-    transport = httpx.ASGITransport(app=app)
+    transport = asgi_transport(app)
     headers = {"Authorization": "Bearer test-token"}
     try:
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -54,7 +55,7 @@ async def test_clicker_api_runs_and_reports_state() -> None:
 async def test_clicker_api_validates_fixed_position() -> None:
     adapter = FakeInputAdapter()
     app = create_app(Settings(session_token="test-token"), adapter)
-    transport = httpx.ASGITransport(app=app)
+    transport = asgi_transport(app)
     try:
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(

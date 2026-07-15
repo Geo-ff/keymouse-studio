@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from keymouse_studio.api.schemas.operations import StateSnapshot
 from keymouse_studio.api.schemas.playback import PlaybackRequest
 from keymouse_studio.api.schemas.scripts import Script
 from keymouse_studio.domain.enums import EngineState, LoopMode, MouseButton
@@ -230,6 +231,7 @@ async def test_loop_duration_excludes_countdown_and_publishes_final_progress(
         if event.type == "operation.progress":
             snapshots.append(event.payload)
     final = snapshots[-1]
+    assert isinstance(final, StateSnapshot)
 
     assert wall_ms >= 45
     assert final.progress == 1.0
@@ -268,6 +270,7 @@ async def test_count_playback_final_progress_tracks_completed_loops(tmp_path: Pa
         if event.type == "operation.progress":
             snapshots.append(event.payload)
     final = snapshots[-1]
+    assert isinstance(final, StateSnapshot)
 
     assert final.completed_count == 2
     assert final.progress == 1.0

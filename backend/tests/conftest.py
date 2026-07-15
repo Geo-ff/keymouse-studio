@@ -2,6 +2,7 @@ import os
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -10,10 +11,20 @@ from fastapi import FastAPI
 from keymouse_studio.config import Settings
 from keymouse_studio.infrastructure.input.adapter import FakeInputAdapter
 from keymouse_studio.infrastructure.input.listener import FakeInputListener
+from keymouse_studio.infrastructure.system.capabilities import (
+    CapabilityCheck,
+    CapabilitySnapshot,
+    FakeCapabilityDetector,
+)
 from keymouse_studio.main import create_app
 
 SESSION_TOKEN = "test-session-token"
 ACKNOWLEDGEMENT = "I_UNDERSTAND"
+ASGIApp = Any
+
+
+def asgi_transport(app: FastAPI) -> httpx.ASGITransport:
+    return httpx.ASGITransport(app=cast(ASGIApp, app))
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -36,17 +47,42 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
-    return Settings(session_token=SESSION_TOKEN, script_directory=tmp_path / "scripts")
+    return Settings(
+        session_token=SESSION_TOKEN,
+        script_directory=tmp_path / "scripts",
+        settings_file=tmp_path / "settings.json",
+    )
 
 
 @pytest.fixture
-def app(settings: Settings) -> FastAPI:
-    return create_app(settings, FakeInputAdapter(), FakeInputListener())
+def capability_detector() -> FakeCapabilityDetector:
+    available = CapabilityCheck("available")
+    return FakeCapabilityDetector(
+        CapabilitySnapshot(
+            platform="windows",
+            platform_version="10.0.test",
+            input=available,
+            global_hotkey=available,
+            display=available,
+            display_count=2,
+            dpi_awareness=available,
+        )
+    )
+
+
+@pytest.fixture
+def app(settings: Settings, capability_detector: FakeCapabilityDetector) -> FastAPI:
+    return create_app(
+        settings,
+        FakeInputAdapter(),
+        FakeInputListener(),
+        capability_detector,
+    )
 
 
 @pytest.fixture
 async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
-    transport = httpx.ASGITransport(app=app)
+    transport = asgi_transport(app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
 

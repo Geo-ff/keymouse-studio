@@ -9,6 +9,7 @@ from keymouse_studio.infrastructure.input.listener import (
     FakeInputListener,
     InputEventBridge,
     PynputInputListener,
+    RawEventType,
     RawInputEvent,
 )
 
@@ -23,6 +24,7 @@ async def test_bridge_transfers_thread_events_to_async_subscriber() -> None:
     listener.emit(RawInputEvent("key_down", 1, key_code="a"))
     event = await asyncio.wait_for(subscriber.get(), timeout=1)
 
+    assert isinstance(event, RawInputEvent)
     assert event.key_code == "a"
     await bridge.stop()
     assert not listener.started
@@ -40,16 +42,16 @@ async def test_move_pressure_preserves_f12_and_input_edges() -> None:
     listener.emit(RawInputEvent("key_down", 1001, key_code="a"))
     listener.emit(RawInputEvent("mouse_button_down", 1002, button=MouseButton.LEFT))
     listener.emit(RawInputEvent("key_down", 1003, key_code="f12"))
-    await asyncio.sleep(0.02)
 
-    events = []
-    while not subscriber.empty():
-        event = subscriber.get_nowait()
-        if event is not None:
-            events.append(event)
-    edges = [
-        (event.type, event.key_code, event.button) for event in events if event.type != "mouse_move"
-    ]
+    async def collect_edges() -> list[tuple[str, str | None, MouseButton | None]]:
+        edges: list[tuple[str, str | None, MouseButton | None]] = []
+        while len(edges) < 3:
+            event = await subscriber.get()
+            if isinstance(event, RawInputEvent) and event.type != "mouse_move":
+                edges.append((event.type, event.key_code, event.button))
+        return edges
+
+    edges = await asyncio.wait_for(collect_edges(), timeout=2)
     assert edges == [
         ("key_down", "a", None),
         ("mouse_button_down", None, MouseButton.LEFT),
@@ -66,10 +68,10 @@ async def test_critical_edge_pressure_preserves_order_and_f12() -> None:
     bridge = InputEventBridge(listener, capacity=1, subscriber_capacity=1)
     subscriber = bridge.subscribe()
     await bridge.start()
-    expected = []
+    expected: list[tuple[str, str | None]] = []
 
     async def consume() -> list[tuple[str, str | None]]:
-        received = []
+        received: list[tuple[str, str | None]] = []
         for _ in range(200):
             event = await subscriber.get()
             assert isinstance(event, RawInputEvent)
@@ -79,7 +81,7 @@ async def test_critical_edge_pressure_preserves_order_and_f12() -> None:
     consumer = asyncio.create_task(consume())
     for index in range(200):
         key = "f12" if index == 100 else f"vk_{index}"
-        event_type = "key_down" if index % 2 == 0 else "key_up"
+        event_type: RawEventType = "key_down" if index % 2 == 0 else "key_up"
         expected.append((event_type, key))
         listener.emit(RawInputEvent(event_type, index, key_code=key))
     received = await asyncio.wait_for(consumer, timeout=2)
@@ -91,7 +93,7 @@ async def test_critical_edge_pressure_preserves_order_and_f12() -> None:
 
 
 class FakeThreadListener:
-    def __init__(self, fail_start: bool = False, **callbacks: object) -> None:
+    def __init__(self, *, fail_start: bool = False, **callbacks: object) -> None:
         self.fail_start = fail_start
         self.stopped = False
         self.joined = False
@@ -117,12 +119,12 @@ async def test_partial_pynput_start_rolls_back_keyboard(
     created: list[FakeThreadListener] = []
 
     def keyboard_listener(**callbacks: object) -> FakeThreadListener:
-        listener = FakeThreadListener(**callbacks)
+        listener = FakeThreadListener()
         created.append(listener)
         return listener
 
     def mouse_listener(**callbacks: object) -> FakeThreadListener:
-        listener = FakeThreadListener(fail_start=True, **callbacks)
+        listener = FakeThreadListener(fail_start=True)
         created.append(listener)
         return listener
 

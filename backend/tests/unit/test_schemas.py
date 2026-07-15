@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
@@ -7,7 +8,7 @@ from pydantic import TypeAdapter, ValidationError
 from keymouse_studio.api.schemas.actions import ScriptAction
 from keymouse_studio.api.schemas.scripts import Script
 
-adapter: TypeAdapter[ScriptAction] = TypeAdapter(ScriptAction)
+adapter: TypeAdapter[ScriptAction] = TypeAdapter(cast(Any, ScriptAction))
 
 
 @pytest.mark.parametrize(

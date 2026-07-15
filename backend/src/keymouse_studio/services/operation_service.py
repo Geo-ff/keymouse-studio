@@ -76,11 +76,10 @@ class OperationService:
         async with self._lock:
             self._require_operation(operation_id)
             self._machine.transition(target)
-            await self._publish("operation.state_changed")
-            snapshot = self.snapshot()
             if target == EngineState.IDLE:
                 self._clear()
-            return snapshot
+            await self._publish("operation.state_changed")
+            return self.snapshot()
 
     async def resume(self, operation_id: UUID | None = None) -> StateSnapshot:
         async with self._lock:
@@ -128,7 +127,11 @@ class OperationService:
 
     async def snapshot_event(self) -> EventEnvelope:
         snapshot = self.snapshot()
-        event = await self._events.create("engine.state_snapshot", snapshot, self._operation_id)
+        event = await self._events.create_private(
+            "engine.state_snapshot",
+            snapshot,
+            self._operation_id,
+        )
         snapshot.sequence = event.sequence
         event.payload = snapshot
         return event

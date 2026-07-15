@@ -10,6 +10,7 @@ from keymouse_studio.domain.enums import MouseButton
 from keymouse_studio.infrastructure.input.adapter import FakeInputAdapter
 from keymouse_studio.infrastructure.input.listener import FakeInputListener, RawInputEvent
 from keymouse_studio.main import create_app
+from tests.conftest import asgi_transport
 
 
 @pytest.mark.asyncio
@@ -24,7 +25,7 @@ async def test_recording_api_captures_and_returns_actions(tmp_path: Path) -> Non
     headers = {"Authorization": "Bearer test-token"}
     event_queue = app.state.event_service.subscribe()
     async with app.router.lifespan_context(app):
-        transport = httpx.ASGITransport(app=app)
+        transport = asgi_transport(app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             started = await client.post(
                 "/api/v1/recordings/start",
@@ -86,7 +87,7 @@ async def test_f12_hotkey_emergency_stops_playback(tmp_path: Path) -> None:
         ],
     }
     async with app.router.lifespan_context(app):
-        transport = httpx.ASGITransport(app=app)
+        transport = asgi_transport(app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             started = await client.post(
                 "/api/v1/playback/start",
@@ -115,7 +116,7 @@ async def test_recording_pause_stop_excludes_paused_time_and_is_idempotent(
     )
     headers = {"Authorization": "Bearer test-token"}
     async with app.router.lifespan_context(app):
-        transport = httpx.ASGITransport(app=app)
+        transport = asgi_transport(app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             started = await client.post(
                 "/api/v1/recordings/start",
@@ -154,7 +155,7 @@ async def test_recording_keeps_balanced_key_edges_across_pause(tmp_path: Path) -
     )
     headers = {"Authorization": "Bearer test-token"}
     async with app.router.lifespan_context(app):
-        transport = httpx.ASGITransport(app=app)
+        transport = asgi_transport(app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             started = await client.post(
                 "/api/v1/recordings/start",
@@ -215,7 +216,7 @@ async def test_emergency_stop_releases_before_waiting_for_playback(tmp_path: Pat
         ],
     }
     async with app.router.lifespan_context(app):
-        transport = httpx.ASGITransport(app=app)
+        transport = asgi_transport(app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             started = await client.post(
                 "/api/v1/playback/start",

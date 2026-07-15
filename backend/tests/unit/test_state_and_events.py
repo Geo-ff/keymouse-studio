@@ -44,6 +44,31 @@ async def test_operation_service_enforces_exclusive_operation() -> None:
 
 
 @pytest.mark.asyncio
+async def test_idle_transition_clears_operation_before_publishing() -> None:
+    events = EventService(protocol_version=1)
+    service = OperationService(events)
+    subscriber = events.subscribe()
+    first = await service.start(OperationType.RECORDING, EngineState.RECORDING)
+    await subscriber.get()
+
+    await service.transition(EngineState.STOPPING, first.operation_id)
+    await subscriber.get()
+    stopped = await service.transition(EngineState.IDLE, first.operation_id)
+    event = await subscriber.get()
+
+    assert stopped.operation_id is None
+    assert stopped.operation_type is None
+    assert isinstance(event.payload, StateSnapshot)
+    assert event.operation_id is None
+    assert event.payload.operation_id is None
+    assert event.payload.operation_type is None
+
+    second = await service.start(OperationType.PLAYBACK, EngineState.RUNNING)
+    assert second.operation_id is not None
+    assert second.operation_id != first.operation_id
+
+
+@pytest.mark.asyncio
 async def test_snapshot_event_uses_same_sequence_in_envelope_and_payload() -> None:
     service = OperationService(EventService(protocol_version=1))
     event = await service.snapshot_event()

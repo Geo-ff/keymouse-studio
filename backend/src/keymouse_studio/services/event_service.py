@@ -23,6 +23,25 @@ class EventService:
         event_type: str,
         payload: EventPayload,
         operation_id: UUID | None = None,
+
+    ) -> EventEnvelope:
+        return await self._build(event_type, payload, operation_id, broadcast=True)
+
+    async def create_private(
+        self,
+        event_type: str,
+        payload: EventPayload,
+        operation_id: UUID | None = None,
+    ) -> EventEnvelope:
+        return await self._build(event_type, payload, operation_id, broadcast=False)
+
+    async def _build(
+        self,
+        event_type: str,
+        payload: EventPayload,
+        operation_id: UUID | None,
+        *,
+        broadcast: bool,
     ) -> EventEnvelope:
         async with self._lock:
             self._sequence += 1
@@ -35,10 +54,11 @@ class EventService:
                 type=event_type,
                 payload=payload,
             )
-            for queue in self._subscribers:
-                if queue.full():
-                    queue.get_nowait()
-                queue.put_nowait(event)
+            if broadcast:
+                for queue in self._subscribers:
+                    if queue.full():
+                        queue.get_nowait()
+                    queue.put_nowait(event)
             return event
 
     def subscribe(self) -> asyncio.Queue[EventEnvelope]:

@@ -37,9 +37,16 @@ class HealthResponse(ApiModel):
     engine_state: EngineState = EngineState.IDLE
 
 
+class CapabilityStatus(ApiModel):
+    status: Literal["available", "unavailable"]
+    reason: str | None = None
+
+
 class CapabilitiesResponse(ApiModel):
-    platform: Literal["windows"] = "windows"
-    input_available: bool = False
-    global_hotkey_available: bool = False
-    display_count: int = 0
-    dpi_aware: bool = False
+    platform: str
+    platform_version: str
+    input: CapabilityStatus
+    global_hotkey: CapabilityStatus
+    display: CapabilityStatus
+    display_count: int | None = None
+    dpi_awareness: CapabilityStatus

@@ -5,6 +5,7 @@ from secrets import compare_digest
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
 from keymouse_studio.config import Settings
+from keymouse_studio.security import is_allowed_browser_origin, is_loopback_host
 from keymouse_studio.services.event_service import EventService
 from keymouse_studio.services.operation_service import OperationService
 
@@ -14,8 +15,25 @@ router = APIRouter(tags=["events"])
 @router.websocket("/events")
 async def events(websocket: WebSocket) -> None:
     settings: Settings = websocket.app.state.settings
-    scheme, _, token = (websocket.headers.get("authorization") or "").partition(" ")
-    if scheme.lower() != "bearer" or not compare_digest(token, settings.session_token):
+    if not is_allowed_browser_origin(websocket.headers.get("origin")):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Origin not allowed")
+        return
+    scheme, _, authorization_token = (websocket.headers.get("authorization") or "").partition(
+        " "
+    )
+    authorized = scheme.lower() == "bearer" and compare_digest(
+        authorization_token, settings.session_token
+    )
+    query_token = websocket.query_params.get("token")
+    client_host = websocket.client.host if websocket.client is not None else None
+    if (
+        not authorized
+        and query_token is not None
+        and is_loopback_host(client_host)
+        and is_loopback_host(settings.host)
+    ):
+        authorized = compare_digest(query_token, settings.session_token)
+    if not authorized:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized")
         return
 
@@ -24,7 +42,8 @@ async def events(websocket: WebSocket) -> None:
     event_service: EventService = websocket.app.state.event_service
     queue = event_service.subscribe()
     try:
-        await operations.snapshot_event()
+        snapshot = await operations.snapshot_event()
+        await websocket.send_json(snapshot.model_dump(mode="json", by_alias=True))
         while True:
             receive_task = asyncio.create_task(websocket.receive())
             event_task = asyncio.create_task(queue.get())

@@ -7,8 +7,8 @@ from ctypes import wintypes
 
 import pytest
 
-from probes.windows.hotkey_probe import latency_ms
-from probes.windows.send_input_probe import InputRegistry, MouseButton, SendInputProbe
+from probes.windows.hotkey_probe import InputRegistry, latency_ms
+from probes.windows.send_input_probe import MouseButton, SendInputProbe
 from probes.windows.system_probe import snapshot
 
 pytestmark = [pytest.mark.windows_probe, pytest.mark.real_input, pytest.mark.manual]

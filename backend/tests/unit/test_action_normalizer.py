@@ -1,3 +1,4 @@
+from keymouse_studio.api.schemas.actions import KeyPayload
 from keymouse_studio.api.schemas.recording import RecordingConfig
 from keymouse_studio.domain.enums import MouseButton
 from keymouse_studio.infrastructure.input.listener import RawInputEvent
@@ -69,7 +70,7 @@ def test_normalizer_keeps_balanced_keys_across_pause() -> None:
     keys = [
         (action.type, action.payload.key_code)
         for action in normalizer.actions
-        if action.type in {"key_down", "key_up"}
+        if isinstance(action.payload, KeyPayload)
     ]
     assert keys == [
         ("key_down", "ctrl"),
@@ -97,7 +98,7 @@ def test_suppressed_combo_state_resets_across_pause() -> None:
     assert [
         (action.type, action.payload.key_code)
         for action in normalizer.actions
-        if action.type in {"key_down", "key_up"}
+        if isinstance(action.payload, KeyPayload)
     ] == [
         ("key_down", "alt"),
         ("key_down", "a"),

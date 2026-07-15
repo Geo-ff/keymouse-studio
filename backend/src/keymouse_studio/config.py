@@ -13,12 +13,13 @@ class Settings:
     script_directory: Path = field(
         default_factory=lambda: Path.home() / ".keymouse-studio" / "scripts"
     )
+    settings_file: Path = field(
+        default_factory=lambda: Path.home() / ".keymouse-studio" / "settings.json"
+    )
     session_token: str = field(default_factory=lambda: token_urlsafe(32), repr=False)
 
     def __post_init__(self) -> None:
-        address = ip_address(self.host)
-        if not address.is_loopback:
-            raise ValueError("host must be a loopback address")
+        ip_address(self.host)
         if not 0 <= self.port <= 65535:
             raise ValueError("port must be between 0 and 65535")
         if not self.session_token:
