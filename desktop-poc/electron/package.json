@@ -2,7 +2,7 @@
   "name": "keymouse-studio",
   "productName": "KeyMouse Studio",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "KeyMouse Studio — Windows 键鼠自动化工具",
   "author": "Geo-ff",
   "homepage": "https://github.com/Geo-ff/keymouse-studio",
