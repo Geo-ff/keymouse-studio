@@ -115,8 +115,15 @@ export default function App() {
   return (
     <>
       {error && (
-        <div role="alert" style={{ position: 'fixed', top: 48, left: 64, right: 0, zIndex: 1001, padding: '8px 16px', background: 'var(--color-danger-bg)', color: 'var(--color-danger)', borderBottom: '1px solid var(--color-danger)', display: 'flex', justifyContent: 'space-between', gap: 16 }}>
-          <span><strong>{error.code}</strong> · {error.message}{error.operationId ? ` · ${error.operationId}` : ''}</span>
+        <div role="alert" style={{ position: 'fixed', top: 48, left: 64, right: 0, zIndex: 1001, padding: '8px 16px', background: 'var(--color-danger-bg)', color: 'var(--color-danger)', borderBottom: '1px solid var(--color-danger)', display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+            <span><strong>{error.code}</strong> · {error.message}{error.operationId ? ` · 操作 ${error.operationId}` : ''}{error.retryable ? ' · 可重试' : ''}</span>
+            {Object.keys(error.details).length > 0 && (
+              <span className="text-sm" style={{ opacity: 0.85, fontFamily: 'var(--font-mono)', wordBreak: 'break-all' }}>
+                {JSON.stringify(error.details)}
+              </span>
+            )}
+          </div>
           <button className="btn btn-ghost btn-sm" onClick={clearError}>关闭</button>
         </div>
       )}

@@ -59,8 +59,22 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
         if (!active || currentGeneration !== generation.current) return;
         setSettings(previous => ({ ...previous, ...nextSettings, serviceMode: service.mode }));
         setCapabilities(nextCapabilities); setHotkey(nextHotkey); setScripts(nextScripts); setReady(true);
-      } catch {
-        if (active && currentGeneration === generation.current) setReady(false);
+      } catch (cause) {
+        if (!active || currentGeneration !== generation.current) return;
+        setReady(false);
+        setCapabilities(null);
+        setHotkey(null);
+        setScripts([]);
+        // Real 初始化失败不得静默回退 Mock；onError 可能已推送，这里兜底展示
+        if (service.mode === 'real') {
+          setError(previous => previous ?? {
+            code: 'CONNECTION_ERROR',
+            message: cause instanceof Error ? cause.message : '真实服务初始化失败',
+            details: { mode: 'real' },
+            retryable: true,
+            operationId: null,
+          });
+        }
       }
     })();
     return () => {
@@ -82,8 +96,10 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
   const updateSettings = useCallback(async (updates: Partial<AppSettings>) => {
     const requestedMode = updates.serviceMode;
     if (requestedMode && requestedMode !== service.mode) {
-      const nextSettings = { ...settings, ...updates };
+      const nextSettings = { ...settings, ...updates, serviceMode: requestedMode };
       setSettings(nextSettings);
+      setError(null);
+      setReady(false);
       setService(createService(requestedMode));
       return;
     }
@@ -94,10 +110,12 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
     } catch { }
   }, [service, settings]);
 
+  const clearError = useCallback(() => setError(null), []);
+
   const value = useMemo<AutomationContextValue>(() => ({
     service, state, settings, capabilities, hotkey, scripts, error, ready,
-    updateSettings, refreshScripts, clearError: () => setError(null),
-  }), [service, state, settings, capabilities, hotkey, scripts, error, ready, updateSettings, refreshScripts]);
+    updateSettings, refreshScripts, clearError,
+  }), [service, state, settings, capabilities, hotkey, scripts, error, ready, updateSettings, refreshScripts, clearError]);
 
   return <AutomationContext.Provider value={value}>{children}</AutomationContext.Provider>;
 }

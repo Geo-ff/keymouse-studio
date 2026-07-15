@@ -442,7 +442,12 @@ export class RealAutomationService extends AutomationServiceBase {
   async stopClicker(): Promise<OperationTransition> { return this.stopOperation(); }
   async startTimedClick(config: TimedClickConfig): Promise<OperationTransition> { return this.call(async () => this.applyTransition(await this.api().post('/api/v1/timed-click/start', config))); }
   async stopTimedClick(): Promise<OperationTransition> { return this.stopOperation(); }
-  async startRecording(config: RecordingConfig = { recordMouseMove: true, minMoveSampleMs: 10, moveErrorPx: 2, recordWheel: true, recordMouse: true, recordKeyboard: true }): Promise<OperationTransition> { this.lastRecordingStop = null; return this.call(async () => this.applyTransition(await this.api().post('/api/v1/recordings/start', config))); }
+  async startRecording(config: RecordingConfig = { recordMouseMove: true, minMoveSampleMs: 10, moveErrorPx: 2, recordWheel: true, recordMouse: true, recordKeyboard: true }): Promise<OperationTransition> {
+    this.lastRecordingStop = null;
+    this.currentState.recordingActions = [];
+    this.currentState.recordingActionCount = 0;
+    return this.call(async () => this.applyTransition(await this.api().post('/api/v1/recordings/start', config)));
+  }
   async pauseRecording(): Promise<OperationTransition> { return this.pauseOperation(); }
   async resumeRecording(): Promise<OperationTransition> { return this.resumeOperation(); }
   async stopRecording(): Promise<RecordingStopResponse> {
@@ -462,7 +467,17 @@ export class RealAutomationService extends AutomationServiceBase {
   }
   async getRecordingResult(id: string): Promise<RecordingResult> { return this.call(() => this.api().get(`/api/v1/recordings/${id}`)); }
   async playback(script: Script, options: PlaybackOptions): Promise<OperationTransition> {
-    const request: PlaybackRequest = { scriptId: null, inlineScript: script, speedMultiplier: options.speedMultiplier, loopMode: options.loopMode === 'duration' ? 'infinite' : options.loopMode, loopCount: options.loopMode === 'count' ? options.times : 1, loopDurationMs: options.loopMode === 'duration' ? (options.loopDurationMs ?? null) : null, countdownMs: script.settings.countdownMs };
+    const request: PlaybackRequest = {
+      scriptId: null,
+      inlineScript: script.id
+        ? script
+        : { ...script, id: crypto.randomUUID(), createdAt: script.createdAt || new Date().toISOString(), updatedAt: script.updatedAt || new Date().toISOString() },
+      speedMultiplier: options.speedMultiplier,
+      loopMode: options.loopMode === 'duration' ? 'infinite' : options.loopMode,
+      loopCount: options.loopMode === 'count' ? options.times : 1,
+      loopDurationMs: options.loopMode === 'duration' ? (options.loopDurationMs ?? null) : null,
+      countdownMs: script.settings.countdownMs,
+    };
     return this.call(async () => this.applyTransition(await this.api().post('/api/v1/playback/start', request)));
   }
   async pausePlayback(): Promise<OperationTransition> { return this.pauseOperation(); }
@@ -471,7 +486,20 @@ export class RealAutomationService extends AutomationServiceBase {
   private async pauseOperation(): Promise<OperationTransition> { return this.call(async () => this.applyTransition(await this.api().post(this.operationPath('pause')))); }
   private async resumeOperation(): Promise<OperationTransition> { return this.call(async () => this.applyTransition(await this.api().post(this.operationPath('resume')))); }
   private async stopOperation(): Promise<OperationTransition> { return this.call(async () => this.applyTransition(await this.api().post(this.operationPath('stop')))); }
-  async emergencyStop(): Promise<EmergencyStopResponse> { return this.call(async () => { const result = await this.api().post<EmergencyStopResponse>('/api/v1/emergency-stop'); await this.alignState(); return result; }); }
+  async emergencyStop(): Promise<EmergencyStopResponse> {
+    return this.call(async () => {
+      const result = await this.api().post<EmergencyStopResponse>('/api/v1/emergency-stop');
+      await this.alignState();
+      this.currentState = { ...this.currentState, runState: 'emergency' };
+      this.notify();
+      window.setTimeout(() => {
+        if (this.disposed || this.currentState.runState !== 'emergency') return;
+        this.currentState = { ...this.currentState, runState: 'idle' };
+        this.notify();
+      }, 1000);
+      return result;
+    });
+  }
   async validateScript(script: Script): Promise<ScriptValidationResponse> { return this.call(() => this.api().post('/api/v1/scripts/validate', { script })); }
   async saveScript(script: Script): Promise<Script> {
     return this.call(() => script.id ? this.api().put(`/api/v1/scripts/${script.id}`, script) : this.api().post<Script>('/api/v1/scripts', { name: script.name, description: script.description, settings: script.settings, actions: script.actions } satisfies ScriptCreate));

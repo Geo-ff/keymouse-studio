@@ -122,12 +122,13 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
             <option value="mock" data-qoder-id="qel-option-d68e4bf1" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-option-d68e4bf1&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Settings.tsx&quot;,&quot;componentName&quot;:&quot;Settings&quot;,&quot;elementRole&quot;:&quot;option&quot;,&quot;loc&quot;:{&quot;line&quot;:122,&quot;column&quot;:13}}">Mock（模拟）</option>
             <option value="real" data-qoder-id="qel-option-d38e4738" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-option-d38e4738&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Settings.tsx&quot;,&quot;componentName&quot;:&quot;Settings&quot;,&quot;elementRole&quot;:&quot;option&quot;,&quot;loc&quot;:{&quot;line&quot;:123,&quot;column&quot;:13}}">Real（真实）</option>
           </Select>
-          <span className="badge" style={{ color: 'var(--color-paused)' }} data-qoder-id="qel-badge-728545c6" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-badge-728545c6&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Settings.tsx&quot;,&quot;componentName&quot;:&quot;Settings&quot;,&quot;elementRole&quot;:&quot;badge&quot;,&quot;loc&quot;:{&quot;line&quot;:125,&quot;column&quot;:11}}">
+          <span className="badge" style={{ color: mode === 'real' ? 'var(--color-running)' : 'var(--color-paused)' }} data-qoder-id="qel-badge-728545c6" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-badge-728545c6&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Settings.tsx&quot;,&quot;componentName&quot;:&quot;Settings&quot;,&quot;elementRole&quot;:&quot;badge&quot;,&quot;loc&quot;:{&quot;line&quot;:125,&quot;column&quot;:11}}">
             当前为 {mode === 'mock' ? 'Mock' : 'Real'} 模式
           </span>
         </div>
         <p className="text-sm text-tertiary mt-sm" style={{ paddingLeft: 140 }} data-qoder-id="qel-text-sm-4c0f698a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-4c0f698a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Settings.tsx&quot;,&quot;componentName&quot;:&quot;Settings&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:129,&quot;column&quot;:9}}">
           输入能力：{capabilities?.input.status === 'available' ? '可用' : '不可用'} · 全局热键：{hotkey?.registered ? `${hotkey.key} 已配置${hotkey.available ? '' : '（占用状态未知）'}` : '不可用'}
+          {mode === 'real' && !capabilities ? ' · 真实服务未就绪（不会回退 Mock）' : ''}
         </p>
       </div>
 

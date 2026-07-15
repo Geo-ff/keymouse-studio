@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
 import { startSidecar, stopSidecar } from './sidecar-manager.mjs'
@@ -8,6 +8,7 @@ const productionEntry = path.resolve(directory, '../../react-vite/dist/index.htm
 let sidecar
 let rendererOrigin
 let quitting = false
+let sidecarDetach = () => {}
 
 function getDevelopmentEntry() {
   const value = process.env.KEYMOUSE_VITE_URL
@@ -55,15 +56,55 @@ async function createWindow() {
   else await window.loadFile(productionEntry)
 }
 
+async function handleSidecarCrash(error) {
+  if (quitting) return
+  console.error(error)
+  try {
+    await dialog.showErrorBox(
+      '自动化引擎已退出',
+      `${error instanceof Error ? error.message : String(error)}\n\n应用将关闭。请重新启动；真实模式不会回退到 Mock。`,
+    )
+  } catch {
+    // dialog may fail during shutdown
+  }
+  quitting = true
+  ipcMain.removeHandler('connection:get')
+  sidecarDetach()
+  sidecarDetach = () => {}
+  if (sidecar) {
+    try {
+      await stopSidecar(sidecar.child)
+    } catch (stopError) {
+      console.error(stopError)
+    }
+    sidecar = undefined
+  }
+  app.quit()
+}
+
 app.whenReady().then(async () => {
   try {
     sidecar = await startSidecar(
       process.env.KEYMOUSE_PYTHON ?? 'python',
       path.join(directory, 'backend-sidecar.py'),
+      {
+        onCrash: (error) => {
+          void handleSidecarCrash(error)
+        },
+      },
     )
+    sidecarDetach = sidecar.detach ?? (() => {})
     await createWindow()
   } catch (error) {
     console.error(error)
+    try {
+      await dialog.showErrorBox(
+        '无法启动自动化引擎',
+        error instanceof Error ? error.message : String(error),
+      )
+    } catch {
+      // ignore
+    }
     if (sidecar) await stopSidecar(sidecar.child)
     app.quit()
   }
@@ -75,6 +116,8 @@ app.on('before-quit', async (event) => {
   event.preventDefault()
   quitting = true
   ipcMain.removeHandler('connection:get')
+  sidecarDetach()
+  sidecarDetach = () => {}
   await stopSidecar(sidecar.child)
   sidecar = undefined
   app.quit()

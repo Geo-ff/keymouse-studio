@@ -98,3 +98,22 @@ test('stopSidecar force terminates a child that ignores shutdown', async () => {
     },
   )
 })
+
+test('attachSidecarWatchers reports unexpected non-zero exit', async () => {
+  const { attachSidecarWatchers } = await import('./sidecar-manager.mjs')
+  await withFixture(
+    `import json, sys\nprint(json.dumps({'port': 12345, 'token': '${token}'}), flush=True)\nsys.exit(7)\n`,
+    async (script) => {
+      const sidecar = await startSidecar(python, script)
+      const crashes = []
+      const detach = attachSidecarWatchers(sidecar.child, {
+        onCrash: (error) => crashes.push(error),
+      })
+      await new Promise((resolve) => sidecar.child.once('exit', resolve))
+      assert.equal(sidecar.child.exitCode, 7)
+      assert.equal(crashes.length, 1)
+      assert.match(String(crashes[0].message), /exited unexpectedly/)
+      detach()
+    },
+  )
+})

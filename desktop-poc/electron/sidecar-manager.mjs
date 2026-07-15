@@ -40,7 +40,27 @@ function validateConnection(connection) {
   return { host: '127.0.0.1', port: connection.port, token: connection.token }
 }
 
-export async function startSidecar(python, script) {
+export function attachSidecarWatchers(child, { onCrash, onStderr } = {}) {
+  const stderrHandler = (chunk) => {
+    const text = String(chunk)
+    process.stderr.write(`[sidecar] ${text}`)
+    onStderr?.(text)
+  }
+  child.stderr.on('data', stderrHandler)
+  const onExit = (code, signal) => {
+    if (code === 0 || signal === 'SIGTERM' || signal === 'SIGKILL') return
+    const reason = `sidecar exited unexpectedly: code=${code ?? 'null'} signal=${signal ?? 'null'}`
+    process.stderr.write(`[sidecar] ${reason}\n`)
+    onCrash?.(new Error(reason))
+  }
+  child.on('exit', onExit)
+  return () => {
+    child.stderr.off('data', stderrHandler)
+    child.off('exit', onExit)
+  }
+}
+
+export async function startSidecar(python, script, options = {}) {
   const pythonPath = [backendSource, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter)
   const child = spawn(python, ['-u', script], {
     env: { ...process.env, PYTHONPATH: pythonPath },
@@ -48,7 +68,8 @@ export async function startSidecar(python, script) {
     windowsHide: true,
   })
   child.stdin.on('error', () => {})
-  child.stderr.on('data', (chunk) => process.stderr.write(`[sidecar] ${chunk}`))
+  const preHandshakeStderr = (chunk) => process.stderr.write(`[sidecar] ${chunk}`)
+  child.stderr.on('data', preHandshakeStderr)
   const lines = createInterface({ input: child.stdout })
 
   try {
@@ -84,10 +105,13 @@ export async function startSidecar(python, script) {
     })
     lines.close()
     child.stdout.resume()
-    return { child, connection }
+    child.stderr.off('data', preHandshakeStderr)
+    const detach = attachSidecarWatchers(child, options)
+    return { child, connection, detach }
   } catch (error) {
     lines.close()
     child.stdout.resume()
+    child.stderr.off('data', preHandshakeStderr)
     await stopSidecar(child)
     throw error
   }
