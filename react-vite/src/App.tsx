@@ -57,9 +57,7 @@ export default function App() {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [privilegeDialog, setPrivilegeDialog] = useState<{ title: string; description: string } | null>(null);
   const pendingHotkeyActions = useRef(new Set<string>());
-  const playbackActive =
-    state.snapshot.operationType === 'playback' &&
-    (state.runState === 'running' || state.runState === 'paused');
+
 
   useEffect(() => {
     if (!error || error.code !== 'INPUT_PERMISSION_DENIED') return;
@@ -80,18 +78,14 @@ export default function App() {
 
   useEffect(() => {
     if (!window.desktop?.setGlobalHotkeys) return;
-    const bindings: Record<string, string> = {};
-    if (!playbackActive) {
-      bindings.recordStart = settings.recordStartHotkey;
-      bindings.recordStop = settings.recordStopHotkey;
-      bindings.playbackStart = settings.playbackStartHotkey;
-      bindings.playbackStop = settings.playbackStopHotkey;
-    } else {
-      bindings.playbackStop = settings.playbackStopHotkey;
-    }
+    const bindings: Record<string, string> = {
+      recordStart: settings.recordStartHotkey,
+      recordStop: settings.recordStopHotkey,
+      playbackStart: settings.playbackStartHotkey,
+      playbackStop: settings.playbackStopHotkey,
+    };
     void window.desktop.setGlobalHotkeys(bindings).catch(() => undefined);
   }, [
-    playbackActive,
     settings.emergencyHotkey,
     settings.recordStartHotkey,
     settings.recordStopHotkey,
@@ -160,7 +154,10 @@ export default function App() {
           toast.error('当前脚本没有可回放的动作');
           return;
         }
-        if (state.runState !== 'idle' && state.snapshot.operationType === 'playback') return;
+        if (state.runState !== 'idle' && state.snapshot.operationType === 'playback') {
+          toast.error('回放正在运行，请先停止或急停后再重新开始');
+          return;
+        }
         if (state.runState !== 'idle' && state.snapshot.operationType) {
           toast.error('当前已有任务在运行，请先停止或急停后再开始回放');
           return;

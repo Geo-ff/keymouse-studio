@@ -349,6 +349,10 @@ export class RealAutomationService extends AutomationServiceBase {
   private socket: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
+  private socketGeneration = 0;
+  private socketReady = false;
+  private connectPromise: Promise<void> | null = null;
+  private alignPromise: Promise<void> | null = null;
   private disposed = false;
   private initializePromise: Promise<void> | null = null;
   private lastSequence = -1;
@@ -356,6 +360,7 @@ export class RealAutomationService extends AutomationServiceBase {
   private capabilities: Capabilities | null = null;
   private lastRecordingStop: RecordingStopResponse | null = null;
   private mousePositionTimer: ReturnType<typeof setInterval> | null = null;
+  private stateAlignmentTimer: ReturnType<typeof setInterval> | null = null;
   private mousePositionPending = false;
 
   private api(): ApiClient { if (!this.client) throw new Error('服务尚未初始化'); return this.client; }
@@ -382,58 +387,114 @@ export class RealAutomationService extends AutomationServiceBase {
       this.client = new ApiClient(baseUrl, this.connection.token);
       this.capabilities = await this.api().get<Capabilities>('/api/v1/capabilities');
       await this.alignState();
+      await this.connectEvents();
       await this.refreshMousePosition();
       this.startMousePositionPolling();
-      this.connectEvents();
+      this.startStateAlignmentPolling();
       this.clearError();
     } catch (error) { this.report(error); }
   }
 
   private async alignState(): Promise<void> {
-    const snapshot = await this.api().get<StateSnapshot>('/api/v1/state');
-    if (snapshot.sequence >= this.lastSequence) { this.lastSequence = snapshot.sequence; this.applySnapshot(snapshot); }
+    if (this.alignPromise) return this.alignPromise;
+    const pending = (async () => {
+      const snapshot = await this.api().get<StateSnapshot>('/api/v1/state');
+      this.acceptSnapshot(snapshot);
+    })();
+    this.alignPromise = pending;
+    try {
+      await pending;
+    } finally {
+      if (this.alignPromise === pending) this.alignPromise = null;
+    }
   }
 
-  private connectEvents(): void {
-    if (this.disposed || !this.connection) return;
+  private acceptSnapshot(snapshot: StateSnapshot): boolean {
+    const sequence = snapshot.sequence ?? 0;
+    if (sequence <= this.lastSequence) return false;
+    this.lastSequence = sequence;
+    this.applySnapshot(snapshot);
+    return true;
+  }
+
+  private connectEvents(): Promise<void> {
+    if (this.disposed || !this.connection) return Promise.reject(new Error('服务已释放'));
+    if (this.socket?.readyState === WebSocket.OPEN && this.socketReady) return Promise.resolve();
+    if (this.connectPromise) return this.connectPromise;
     if (this.socket) {
       this.socket.onclose = null;
       this.socket.close();
     }
+    const generation = ++this.socketGeneration;
     const { host, port, token } = this.connection;
     const socket = new WebSocket(`ws://${host}:${port}/api/v1/events?token=${encodeURIComponent(token)}`);
     this.socket = socket;
-    let receivedFirstSnapshot = false;
-    socket.onmessage = event => {
-      try {
-        const envelope = JSON.parse(String(event.data)) as EventEnvelope;
-        if (!receivedFirstSnapshot) {
-          if (envelope.type !== 'engine.state_snapshot') return;
-          receivedFirstSnapshot = true;
+    this.socketReady = false;
+    const pending = new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const timeout = window.setTimeout(() => {
+        if (settled || generation !== this.socketGeneration) return;
+        settled = true;
+        socket.close();
+        reject(new Error('状态通道连接超时'));
+      }, 5000);
+      const settleReady = () => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        this.socketReady = true;
+        this.reconnectAttempt = 0;
+        resolve();
+      };
+      const settleError = () => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        reject(new Error('状态通道连接已断开'));
+      };
+      socket.onmessage = event => {
+        if (generation !== this.socketGeneration) return;
+        try {
+          const envelope = JSON.parse(String(event.data)) as EventEnvelope;
+          if (!this.socketReady && envelope.type !== 'engine.state_snapshot') return;
+          this.handleEvent(envelope, !this.socketReady);
+          if (envelope.type === 'engine.state_snapshot') settleReady();
+        } catch (error) {
+          this.currentError = { code: 'ENGINE_INTERNAL_ERROR', message: error instanceof Error ? error.message : '事件解析失败', details: {}, retryable: true, operationId: this.currentState.snapshot.operationId };
+          this.errorListeners.forEach(listener => listener(this.currentError));
         }
-        this.handleEvent(envelope);
-      } catch (error) {
-        this.currentError = { code: 'ENGINE_INTERNAL_ERROR', message: error instanceof Error ? error.message : '事件解析失败', details: {}, retryable: true, operationId: this.currentState.snapshot.operationId };
-        this.errorListeners.forEach(listener => listener(this.currentError));
-      }
-    };
-    socket.onopen = () => { this.reconnectAttempt = 0; };
-    socket.onerror = () => socket.close();
-    socket.onclose = () => { if (!this.disposed) this.scheduleReconnect(); };
+      };
+      socket.onerror = () => socket.close();
+      socket.onclose = () => {
+        if (generation !== this.socketGeneration) return;
+        this.socketReady = false;
+        settleError();
+        if (!this.disposed) {
+          void this.alignState().catch(() => undefined);
+          this.scheduleReconnect();
+        }
+      };
+    });
+    this.connectPromise = pending;
+    void pending.finally(() => {
+      if (this.connectPromise === pending) this.connectPromise = null;
+    }).catch(() => undefined);
+    return pending;
   }
 
-  private handleEvent(envelope: EventEnvelope): void {
-    if (envelope.sequence <= this.lastSequence) return;
+  private handleEvent(envelope: EventEnvelope, initialSnapshot = false): void {
+    if (!initialSnapshot && envelope.sequence <= this.lastSequence) return;
     const activeOperationId = this.currentState.snapshot.operationId;
     const activeOperation = activeState(this.currentState.snapshot.state);
     if (activeOperation && activeOperationId && envelope.operationId && envelope.operationId !== activeOperationId) return;
-    this.lastSequence = envelope.sequence;
     if (envelope.type === 'engine.state_snapshot' || envelope.type === 'operation.state_changed' || envelope.type === 'operation.progress') {
       const raw = envelope.payload as StateSnapshot;
-      const snapshot = { ...raw, sequence: Math.max(raw.sequence ?? 0, envelope.sequence) };
-      if (snapshot.sequence < this.currentState.snapshot.sequence) return;
-      this.applySnapshot(snapshot);
-    } else if (envelope.type === 'recording.action_captured') {
+      this.acceptSnapshot({ ...raw, sequence: Math.max(raw.sequence ?? 0, envelope.sequence) });
+      return;
+    }
+    if (envelope.sequence <= this.lastSequence) return;
+    this.lastSequence = envelope.sequence;
+    if (envelope.type === 'recording.action_captured') {
       const payload = envelope.payload as RecordingActionCapturedPayload;
       this.currentState.recordingActions = [...this.currentState.recordingActions, payload.action];
       this.currentState.recordingActionCount = Math.max(
@@ -468,7 +529,10 @@ export class RealAutomationService extends AutomationServiceBase {
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
       if (this.disposed) return;
-      try { await this.alignState(); this.connectEvents(); } catch (error) {
+      try {
+        await this.alignState();
+        await this.connectEvents();
+      } catch (error) {
         const detail = error instanceof ApiError ? error.detail : { code: 'CONNECTION_ERROR' as const, message: error instanceof Error ? error.message : '重连失败', details: {}, retryable: true, operationId: null };
         this.currentError = detail; this.errorListeners.forEach(listener => listener(detail)); this.scheduleReconnect();
       }
@@ -476,9 +540,16 @@ export class RealAutomationService extends AutomationServiceBase {
   }
 
   private applyTransition(transition: OperationTransition): OperationTransition {
-    const seq = Math.max(transition.snapshot.sequence ?? 0, this.lastSequence);
-    this.lastSequence = seq;
-    this.applySnapshot({ ...transition.snapshot, sequence: seq });
+    this.acceptSnapshot(transition.snapshot);
+    return transition;
+  }
+
+  private async applyCommandTransition(
+    request: () => Promise<OperationTransition>,
+  ): Promise<OperationTransition> {
+    const transition = await request();
+    this.applyTransition(transition);
+    await this.alignState();
     return transition;
   }
   private operationPath(action: 'pause' | 'resume' | 'stop'): string {
@@ -505,20 +576,28 @@ export class RealAutomationService extends AutomationServiceBase {
     }, 250);
   }
 
+  private startStateAlignmentPolling(): void {
+    if (this.stateAlignmentTimer) clearInterval(this.stateAlignmentTimer);
+    this.stateAlignmentTimer = setInterval(() => {
+      if (this.disposed || !activeState(this.currentState.snapshot.state)) return;
+      void this.alignState().catch(() => undefined);
+    }, 1000);
+  }
+
   async getMousePosition(): Promise<MousePosition> {
     return this.call(() => this.refreshMousePosition());
   }
-  async startClicker(config: ClickerConfig): Promise<OperationTransition> { return this.call(async () => this.applyTransition(await this.api().post('/api/v1/clicker/start', config))); }
+  async startClicker(config: ClickerConfig): Promise<OperationTransition> { return this.call(() => this.applyCommandTransition(() => this.api().post('/api/v1/clicker/start', config))); }
   async pauseClicker(): Promise<OperationTransition> { return this.pauseOperation(); }
   async resumeClicker(): Promise<OperationTransition> { return this.resumeOperation(); }
   async stopClicker(): Promise<OperationTransition> { return this.stopOperation(); }
-  async startTimedClick(config: TimedClickConfig): Promise<OperationTransition> { return this.call(async () => this.applyTransition(await this.api().post('/api/v1/timed-click/start', config))); }
+  async startTimedClick(config: TimedClickConfig): Promise<OperationTransition> { return this.call(() => this.applyCommandTransition(() => this.api().post('/api/v1/timed-click/start', config))); }
   async stopTimedClick(): Promise<OperationTransition> { return this.stopOperation(); }
   async startRecording(config: RecordingConfig = { recordMouseMove: true, minMoveSampleMs: 10, moveErrorPx: 2, recordWheel: true, recordMouse: true, recordKeyboard: true }): Promise<OperationTransition> {
     this.lastRecordingStop = null;
     this.currentState.recordingActions = [];
     this.currentState.recordingActionCount = 0;
-    return this.call(async () => this.applyTransition(await this.api().post('/api/v1/recordings/start', config)));
+    return this.call(() => this.applyCommandTransition(() => this.api().post('/api/v1/recordings/start', config)));
   }
   async pauseRecording(): Promise<OperationTransition> { return this.pauseOperation(); }
   async resumeRecording(): Promise<OperationTransition> { return this.resumeOperation(); }
@@ -528,7 +607,8 @@ export class RealAutomationService extends AutomationServiceBase {
       const result = await this.api().post<RecordingStopResponse>(this.operationPath('stop'));
       this.lastRecordingStop = result;
       const recording = await this.api().get<RecordingResult>(`/api/v1/recordings/${result.recordingResultId}`);
-      this.applySnapshot(result.snapshot);
+      this.applyTransition(result);
+      await this.alignState();
       this.currentState.recordingState = 'stopped';
       this.currentState.recordingActions = recording.actions;
       this.currentState.recordingActionCount = recording.actionCount;
@@ -561,13 +641,13 @@ export class RealAutomationService extends AutomationServiceBase {
       loopDurationMs: options.loopMode === 'duration' ? (options.loopDurationMs ?? null) : null,
       countdownMs: options.countdownMs ?? resolveCountdownMs(this.settings),
     };
-    return this.call(async () => this.applyTransition(await this.api().post('/api/v1/playback/start', request)));
+    return this.call(() => this.applyCommandTransition(() => this.api().post('/api/v1/playback/start', request)));
   }
   async pausePlayback(): Promise<OperationTransition> { return this.pauseOperation(); }
   async resumePlayback(): Promise<OperationTransition> { return this.resumeOperation(); }
   async stopPlayback(): Promise<OperationTransition> { return this.stopOperation(); }
-  private async pauseOperation(): Promise<OperationTransition> { return this.call(async () => this.applyTransition(await this.api().post(this.operationPath('pause')))); }
-  private async resumeOperation(): Promise<OperationTransition> { return this.call(async () => this.applyTransition(await this.api().post(this.operationPath('resume')))); }
+  private async pauseOperation(): Promise<OperationTransition> { return this.call(() => this.applyCommandTransition(() => this.api().post(this.operationPath('pause')))); }
+  private async resumeOperation(): Promise<OperationTransition> { return this.call(() => this.applyCommandTransition(() => this.api().post(this.operationPath('resume')))); }
   private async stopOperation(): Promise<OperationTransition> {
     return this.call(async () => {
       const id = this.currentState.snapshot.operationId;
@@ -577,7 +657,10 @@ export class RealAutomationService extends AutomationServiceBase {
         return { operationId: id ?? '', state: 'idle' as const, snapshot };
       }
       try {
-        return this.applyTransition(await this.api().post(this.operationPath('stop')));
+        const transition = await this.api().post<OperationTransition>(this.operationPath('stop'));
+        this.applyTransition(transition);
+        await this.alignState();
+        return transition;
       } catch (error) {
         if (error instanceof ApiError && error.detail.code === 'OPERATION_CONFLICT') {
           await this.alignState();
@@ -706,7 +789,24 @@ export class RealAutomationService extends AutomationServiceBase {
       reason: validation.reason,
     };
   }
-  async dispose(): Promise<void> { this.disposed = true; if (this.reconnectTimer) clearTimeout(this.reconnectTimer); this.reconnectTimer = null; if (this.mousePositionTimer) clearInterval(this.mousePositionTimer); this.mousePositionTimer = null; if (this.socket) { this.socket.onclose = null; this.socket.close(); } this.socket = null; this.listeners.clear(); this.errorListeners.clear(); }
+  async dispose(): Promise<void> {
+    this.disposed = true;
+    this.socketGeneration += 1;
+    this.socketReady = false;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    if (this.mousePositionTimer) clearInterval(this.mousePositionTimer);
+    this.mousePositionTimer = null;
+    if (this.stateAlignmentTimer) clearInterval(this.stateAlignmentTimer);
+    this.stateAlignmentTimer = null;
+    if (this.socket) {
+      this.socket.onclose = null;
+      this.socket.close();
+    }
+    this.socket = null;
+    this.listeners.clear();
+    this.errorListeners.clear();
+  }
 }
 
 export function createService(mode: ServiceMode): IAutomationService {
