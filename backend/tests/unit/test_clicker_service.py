@@ -59,7 +59,7 @@ async def test_fixed_count_executes_requested_clicks_and_position() -> None:
         ClickerConfig(
             button=MouseButton.RIGHT,
             click_count=2,
-            interval_ms=1,
+            interval_ms=50,
             repeat_count=3,
             position_mode=PositionMode.FIXED,
             x=-20,
@@ -78,7 +78,7 @@ async def test_fixed_count_executes_requested_clicks_and_position() -> None:
 async def test_infinite_clicker_stops_and_releases_input() -> None:
     service, operations, adapter, _events = create_service()
     transition = await service.start_clicker(
-        ClickerConfig(repeat_mode=LoopMode.INFINITE, interval_ms=1)
+        ClickerConfig(repeat_mode=LoopMode.INFINITE, interval_ms=50)
     )
     await asyncio.wait_for(asyncio.to_thread(adapter.action_recorded.wait), timeout=1)
 
@@ -96,7 +96,7 @@ async def test_infinite_clicker_stops_and_releases_input() -> None:
 async def test_pause_freezes_timed_click_remaining_wait() -> None:
     service, operations, adapter, _events = create_service()
     transition = await service.start_timed_click(
-        TimedClickConfig(delay_ms=80, interval_ms=1, repeat_count=1)
+        TimedClickConfig(delay_ms=80, interval_ms=50, repeat_count=1)
     )
     await asyncio.sleep(0.015)
     paused = await service.pause(transition.operation_id)
@@ -129,7 +129,7 @@ async def test_progress_events_embed_sequence_and_completed_count() -> None:
     service, operations, _adapter, events = create_service(progress_publish_interval_ms=0)
     queue = events.subscribe()
     await service.start_clicker(
-        ClickerConfig(interval_ms=5, repeat_count=2, countdown_ms=0)
+        ClickerConfig(interval_ms=50, repeat_count=2, countdown_ms=0)
     )
     await wait_until_idle(service, operations)
 

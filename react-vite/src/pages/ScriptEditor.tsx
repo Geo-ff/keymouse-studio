@@ -260,11 +260,15 @@ export function ScriptEditor({ script, onScriptChange, onScriptSave, onNavigate,
       countdownMs: resolveCountdownMs(settings),
     };
     void (async () => {
-      await window.desktop?.setGlobalHotkeys?.({}).catch(() => undefined);
+      await window.desktop?.setGlobalHotkeys?.({
+        emergency: settings.emergencyHotkey || 'F12',
+        playbackStop: settings.playbackStopHotkey,
+      }).catch(() => undefined);
       await playback({ ...script, actions: enabledActions }, options);
       void showSystemAlert('回放', '回放已开始', script.name.trim() ? `脚本：${script.name.trim()}` : undefined);
     })().catch(() => {
       void window.desktop?.setGlobalHotkeys?.({
+        emergency: settings.emergencyHotkey || 'F12',
         recordStart: settings.recordStartHotkey,
         recordStop: settings.recordStopHotkey,
         playbackStart: settings.playbackStartHotkey,

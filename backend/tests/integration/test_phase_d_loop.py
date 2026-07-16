@@ -203,7 +203,7 @@ def test_websocket_state_snapshot_and_progress(tmp_path: Path) -> None:
                 json={
                     "button": "right",
                     "clickCount": 1,
-                    "intervalMs": 20,
+                    "intervalMs": 50,
                     "repeatMode": "count",
                     "repeatCount": 2,
                     "positionMode": "current",

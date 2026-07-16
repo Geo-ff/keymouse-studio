@@ -25,7 +25,7 @@ async def test_clicker_api_runs_and_reports_state() -> None:
                 json={
                     "button": "middle",
                     "clickCount": 1,
-                    "intervalMs": 1,
+                    "intervalMs": 50,
                     "repeatMode": "count",
                     "repeatCount": 2,
                     "positionMode": "current",

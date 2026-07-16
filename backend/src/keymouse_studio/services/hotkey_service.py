@@ -87,10 +87,28 @@ class HotkeyService:
         self._ready.set()
         try:
             while True:
-                event = await subscriber.get()
+                # Drain keyboard events preferentially; skip mouse flood so F12 stays responsive
+                # while clicker/playback injects high-frequency mouse events.
+                event = await self._next_keyboard_event(subscriber)
                 if event is None:
                     return
-                if isinstance(event, RawInputEvent):
-                    await self.handle(event)
+                await self.handle(event)
         finally:
             self._bridge.unsubscribe(subscriber)
+
+    async def _next_keyboard_event(self, subscriber: object) -> RawInputEvent | None:
+        from keymouse_studio.infrastructure.input.listener import SubscriptionBarrier
+
+        while True:
+            event = await subscriber.get()  # type: ignore[attr-defined]
+            if event is None:
+                return None
+            if isinstance(event, SubscriptionBarrier):
+                if not event.reached.done():
+                    event.reached.set_result(None)
+                continue
+            if not isinstance(event, RawInputEvent):
+                continue
+            if event.type in {"key_down", "key_up"}:
+                return event
+            # Drop mouse_move / mouse_button / wheel — they must not block emergency stop.

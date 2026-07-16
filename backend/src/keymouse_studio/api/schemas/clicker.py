@@ -12,7 +12,7 @@ MAX_WAIT_MS = 86_400_000
 class ClickerConfig(ApiModel):
     button: MouseButton = MouseButton.LEFT
     click_count: Literal[1, 2] = 1
-    interval_ms: int = Field(default=100, ge=1, le=MAX_WAIT_MS)
+    interval_ms: int = Field(default=100, ge=50, le=MAX_WAIT_MS)
     repeat_mode: LoopMode = LoopMode.COUNT
     repeat_count: int = Field(default=1, ge=1, le=1_000_000)
     position_mode: PositionMode = PositionMode.CURRENT

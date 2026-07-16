@@ -1,10 +1,11 @@
 import asyncio
+from contextlib import suppress
 from uuid import UUID
 
 from keymouse_studio.api.schemas.clicker import EmergencyStopResponse
 from keymouse_studio.api.schemas.operations import OperationTransition
 from keymouse_studio.api.schemas.recording import RecordingStopResponse
-from keymouse_studio.domain.enums import OperationType
+from keymouse_studio.domain.enums import EngineState, OperationType
 from keymouse_studio.infrastructure.input.adapter import InputWorker, ReleaseResult
 from keymouse_studio.services.clicker_service import ClickerService
 from keymouse_studio.services.operation_service import OperationService
@@ -36,15 +37,25 @@ class AutomationCoordinator:
     async def stop(self, operation_id: UUID) -> OperationTransition | RecordingStopResponse:
         if self._recording.has_stopped(operation_id):
             return await self._recording.stop(operation_id)
+        # Idle: treat stop as idempotent success (avoids stale operationId 409).
+        if self._operations.operation_id is None:
+            snapshot = self._operations.snapshot()
+            return OperationTransition(
+                operation_id=operation_id, state=snapshot.state, snapshot=snapshot
+            )
         return await self._service().stop(operation_id)
 
     async def emergency_stop(self) -> EmergencyStopResponse:
         operation_id = self._operations.operation_id
         operation_type = self._operations.snapshot().operation_type
+        # Always halt injection loops even if operation_id is desynced.
+        self._clicker.cancel()
+        self._playback.cancel()
         release_task = asyncio.create_task(self._safe_release())
         service = self._service() if operation_id is not None else None
-        if isinstance(service, (ClickerService, PlaybackService)):
-            service.cancel()
+        if service is None and operation_type is None:
+            # Prefer clicker stop path when type unknown but a loop may still be alive.
+            service = self._clicker
         released = await release_task
         if operation_id is not None and service is not None:
             try:
@@ -61,6 +72,19 @@ class AutomationCoordinator:
                     released,
                     self._playback.release_result(operation_id),
                 )
+        # Ensure background tasks fully exit even when operation_id was already cleared.
+        await asyncio.gather(
+            self._clicker.wait_finished(),
+            self._playback.wait_finished(),
+            return_exceptions=True,
+        )
+        if self._operations.operation_id is not None:
+            active_id = self._operations.operation_id
+            with suppress(Exception):
+                if self._operations.state not in {EngineState.IDLE, EngineState.STOPPING}:
+                    await self._operations.transition(EngineState.STOPPING, active_id)
+                if self._operations.state == EngineState.STOPPING:
+                    await self._operations.transition(EngineState.IDLE, active_id)
         return EmergencyStopResponse(
             operation_id=operation_id,
             state=self._operations.state,

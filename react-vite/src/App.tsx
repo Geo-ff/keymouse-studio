@@ -20,9 +20,24 @@ import { createEmptyScript, mockScripts } from './data/mockData';
 import { useToast } from './providers/ToastProvider';
 import { showSystemAlert } from './utils/systemAlert';
 import { formatErrorForDisplay } from './utils/errorMessages';
-import type { DesktopAboutInfo, DesktopUpdateState, Script, ScriptAction, AppSettings } from './types';
+import type { DesktopAboutInfo, DesktopUpdateState, ErrorDetail, Script, ScriptAction, AppSettings } from './types';
+import { ApiError } from './services/ApiClient';
 
 const MOCK_SCRIPT_IDS = new Set(mockScripts.map(script => script.id));
+
+function toErrorDetail(err: unknown): ErrorDetail {
+  if (err instanceof ApiError) return err.detail;
+  if (err && typeof err === 'object' && 'code' in err && 'message' in err) {
+    return err as ErrorDetail;
+  }
+  return {
+    code: 'ENGINE_INTERNAL_ERROR',
+    message: err instanceof Error ? err.message : '发生未知错误',
+    details: {},
+    retryable: true,
+    operationId: null,
+  };
+}
 
 export default function App() {
   const {
@@ -59,21 +74,28 @@ export default function App() {
     setSaved(true);
   }, [settings.serviceMode, currentScript.id]);
 
-  // Register business global hotkeys; suspend them while playback is active.
+  // Register global hotkeys. Emergency always stays registered (Electron path, not blocked by mouse flood).
   useEffect(() => {
     if (!window.desktop?.setGlobalHotkeys) return;
     const playbackActive =
       state.snapshot.operationType === 'playback' &&
       (state.runState === 'running' || state.runState === 'paused');
-    void window.desktop.setGlobalHotkeys(playbackActive ? {} : {
-      recordStart: settings.recordStartHotkey,
-      recordStop: settings.recordStopHotkey,
-      playbackStart: settings.playbackStartHotkey,
-      playbackStop: settings.playbackStopHotkey,
-    }).catch(() => undefined);
+    const bindings: Record<string, string> = {
+      emergency: settings.emergencyHotkey || 'F12',
+    };
+    if (!playbackActive) {
+      bindings.recordStart = settings.recordStartHotkey;
+      bindings.recordStop = settings.recordStopHotkey;
+      bindings.playbackStart = settings.playbackStartHotkey;
+      bindings.playbackStop = settings.playbackStopHotkey;
+    } else {
+      bindings.playbackStop = settings.playbackStopHotkey;
+    }
+    void window.desktop.setGlobalHotkeys(bindings).catch(() => undefined);
   }, [
     state.snapshot.operationType,
     state.runState,
+    settings.emergencyHotkey,
     settings.recordStartHotkey,
     settings.recordStopHotkey,
     settings.playbackStartHotkey,
@@ -83,8 +105,20 @@ export default function App() {
   useEffect(() => {
     if (!window.desktop?.onGlobalHotkey) return;
     return window.desktop.onGlobalHotkey(({ actionId }) => {
+      if (actionId === 'emergency') {
+        void emergencyStop()
+          .then(() => { void showSystemAlert('急停', '已紧急停止', '所有输入注入已中止'); })
+          .catch((err) => {
+            const friendly = formatErrorForDisplay(toErrorDetail(err));
+            toast.error(`${friendly.title}：${friendly.message}`);
+          });
+        return;
+      }
       if (actionId === 'recordStart') {
-        if (state.snapshot.operationType && state.runState !== 'idle') return;
+        if (state.snapshot.operationType && state.runState !== 'idle') {
+          toast.error('当前已有任务在运行，请先停止或急停后再开始录制');
+          return;
+        }
         setPage('recording');
         void startRecording({
           recordMouseMove: settings.recordMouseMove,
@@ -102,23 +136,39 @@ export default function App() {
           ].filter(Boolean),
         })
           .then(() => { void showSystemAlert('录制', '录制已开始', '正在记录键鼠操作'); })
-          .catch(() => undefined);
+          .catch((err) => {
+            const friendly = formatErrorForDisplay(toErrorDetail(err));
+            toast.error(`${friendly.title}：${friendly.message}`);
+          });
         return;
       }
       if (actionId === 'recordStop') {
         if (state.snapshot.operationType !== 'recording') return;
         void stopRecording()
           .then(() => { void showSystemAlert('录制', '录制已结束', '可保存为脚本，或丢弃本次录制结果'); })
-          .catch(() => undefined);
+          .catch((err) => {
+            const friendly = formatErrorForDisplay(toErrorDetail(err));
+            toast.error(`${friendly.title}：${friendly.message}`);
+          });
         return;
       }
       if (actionId === 'playbackStart') {
         const enabled = currentScript.actions.filter(a => a.enabled);
-        if (enabled.length === 0 || (state.runState !== 'idle' && state.snapshot.operationType === 'playback')) return;
-        if (state.runState !== 'idle' && state.snapshot.operationType) return;
+        if (enabled.length === 0) {
+          toast.error('当前脚本没有可回放的动作');
+          return;
+        }
+        if (state.runState !== 'idle' && state.snapshot.operationType === 'playback') return;
+        if (state.runState !== 'idle' && state.snapshot.operationType) {
+          toast.error('当前已有任务在运行，请先停止或急停后再开始回放');
+          return;
+        }
         setPage('script');
         void (async () => {
-          await window.desktop?.setGlobalHotkeys?.({}).catch(() => undefined);
+          await window.desktop?.setGlobalHotkeys?.({
+            emergency: settings.emergencyHotkey || 'F12',
+            playbackStop: settings.playbackStopHotkey,
+          }).catch(() => undefined);
           await playback(
             { ...currentScript, actions: enabled },
             {
@@ -130,8 +180,11 @@ export default function App() {
             },
           );
           void showSystemAlert('回放', '回放已开始', currentScript.name.trim() ? `脚本：${currentScript.name.trim()}` : undefined);
-        })().catch(() => {
+        })().catch((err) => {
+          const friendly = formatErrorForDisplay(toErrorDetail(err));
+          toast.error(`${friendly.title}：${friendly.message}`);
           void window.desktop?.setGlobalHotkeys?.({
+            emergency: settings.emergencyHotkey || 'F12',
             recordStart: settings.recordStartHotkey,
             recordStop: settings.recordStopHotkey,
             playbackStart: settings.playbackStartHotkey,
@@ -141,16 +194,21 @@ export default function App() {
         return;
       }
       if (actionId === 'playbackStop') {
-        if (state.snapshot.operationType !== 'playback') return;
+        if (state.snapshot.operationType !== 'playback' && state.runState === 'idle') return;
         void stopPlayback()
           .then(() => {
             void showSystemAlert('回放', '回放已结束', currentScript.name.trim() ? `脚本：${currentScript.name.trim()}` : undefined);
           })
-          .catch(() => undefined);
+          .catch((err) => {
+            const friendly = formatErrorForDisplay(toErrorDetail(err));
+            if (!/不匹配|idle|没有活动/i.test(friendly.message)) {
+              toast.error(`${friendly.title}：${friendly.message}`);
+            }
+          });
       }
     });
   }, [
-    state, settings, currentScript, startRecording, stopRecording, playback, stopPlayback,
+    state, settings, currentScript, startRecording, stopRecording, playback, stopPlayback, emergencyStop, toast,
   ]);
 
   // Apply theme to document and native window chrome

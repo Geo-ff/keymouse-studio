@@ -568,7 +568,26 @@ export class RealAutomationService extends AutomationServiceBase {
   async stopPlayback(): Promise<OperationTransition> { return this.stopOperation(); }
   private async pauseOperation(): Promise<OperationTransition> { return this.call(async () => this.applyTransition(await this.api().post(this.operationPath('pause')))); }
   private async resumeOperation(): Promise<OperationTransition> { return this.call(async () => this.applyTransition(await this.api().post(this.operationPath('resume')))); }
-  private async stopOperation(): Promise<OperationTransition> { return this.call(async () => this.applyTransition(await this.api().post(this.operationPath('stop')))); }
+  private async stopOperation(): Promise<OperationTransition> {
+    return this.call(async () => {
+      const id = this.currentState.snapshot.operationId;
+      if (!id || this.currentState.snapshot.state === 'idle') {
+        const snapshot = { ...this.currentState.snapshot, state: 'idle' as const, operationId: null, operationType: null };
+        this.applySnapshot(snapshot);
+        return { operationId: id ?? '', state: 'idle' as const, snapshot };
+      }
+      try {
+        return this.applyTransition(await this.api().post(this.operationPath('stop')));
+      } catch (error) {
+        if (error instanceof ApiError && error.detail.code === 'OPERATION_CONFLICT') {
+          await this.alignState();
+          const snapshot = this.currentState.snapshot;
+          return { operationId: id, state: snapshot.state, snapshot };
+        }
+        throw error;
+      }
+    });
+  }
   async emergencyStop(): Promise<EmergencyStopResponse> {
     return this.call(async () => {
       const result = await this.api().post<EmergencyStopResponse>('/api/v1/emergency-stop');

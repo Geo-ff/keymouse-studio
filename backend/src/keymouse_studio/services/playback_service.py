@@ -174,6 +174,14 @@ class PlaybackService:
         current_index: int | None = None
         total_actions = len(enabled) * loop_count if loop_mode == LoopMode.COUNT else None
         natural_completion = False
+        self._progress_ctx = {
+            "operation_id": operation_id,
+            "completed_loops": completed_loops,
+            "completed_actions": completed_actions,
+            "total_actions": total_actions,
+            "current_index": current_index,
+            "duration_ns": duration_ns,
+        }
         try:
             if countdown_ms:
                 await self._wait_countdown(countdown_ms, operation_id)
@@ -211,6 +219,13 @@ class PlaybackService:
                         break
                     current_index = index
                     completed_actions += 1
+                    self._progress_ctx.update(
+                        {
+                            "completed_loops": completed_loops,
+                            "completed_actions": completed_actions,
+                            "current_index": current_index,
+                        }
+                    )
                     await self._publish_progress(
                         operation_id,
                         completed_loops,
@@ -223,6 +238,7 @@ class PlaybackService:
                     break
                 completed_loops += 1
                 natural_completion = loop_mode == LoopMode.COUNT and completed_loops >= loop_count
+                self._progress_ctx["completed_loops"] = completed_loops
                 await self._publish_progress(
                     operation_id,
                     completed_loops,
@@ -304,6 +320,8 @@ class PlaybackService:
         duration_ns: int | None,
     ) -> bool:
         remaining_ns = int(duration_ms * 1_000_000 / speed)
+        last_progress_ns = 0
+        progress_interval_ns = 150_000_000  # ~150ms heartbeat during long waits
         while remaining_ns > 0:
             self._raise_if_cancelled()
             await self._running.wait()
@@ -320,6 +338,22 @@ class PlaybackService:
             elapsed = min(max(0, self._clock.now_ns() - before), budget_ns)
             remaining_ns -= elapsed
             self._refresh_elapsed()
+            ctx = getattr(self, "_progress_ctx", None)
+            if (
+                isinstance(ctx, dict)
+                and ctx.get("operation_id") is not None
+                and self._elapsed_ns - last_progress_ns >= progress_interval_ns
+            ):
+                last_progress_ns = self._elapsed_ns
+                with suppress(Exception):
+                    await self._publish_progress(
+                        ctx["operation_id"],
+                        int(ctx.get("completed_loops") or 0),
+                        int(ctx.get("completed_actions") or 0),
+                        ctx.get("total_actions"),
+                        ctx.get("current_index"),
+                        ctx.get("duration_ns"),
+                    )
         return not self._duration_reached(duration_ns)
 
     async def _wait_countdown(self, duration_ms: int, operation_id: UUID) -> None:

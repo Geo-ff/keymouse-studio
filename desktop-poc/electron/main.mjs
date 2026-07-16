@@ -36,6 +36,7 @@ let mainWindow
 let ipcRegistered = false
 
 const ACTION_LABELS = {
+  emergency: '急停',
   recordStart: '开始录制',
   recordStop: '停止录制',
   playbackStart: '开始回放',
