@@ -7,6 +7,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { Layout, type PageId } from './components/Layout';
 import { AboutDialog } from './components/AboutDialog';
 import { UpdateProgressBar } from './components/UpdateProgressBar';
+import { AlertDialog } from './components/ui';
 import { Dashboard } from './pages/Dashboard';
 import { AutoClicker } from './pages/AutoClicker';
 import { TimedClick } from './pages/TimedClick';
@@ -17,6 +18,8 @@ import { Settings } from './pages/Settings';
 import { useService } from './hooks/useService';
 import { createEmptyScript, mockScripts } from './data/mockData';
 import { useToast } from './providers/ToastProvider';
+import { showSystemAlert } from './utils/systemAlert';
+import { formatErrorForDisplay } from './utils/errorMessages';
 import type { DesktopAboutInfo, DesktopUpdateState, Script, ScriptAction, AppSettings } from './types';
 
 const MOCK_SCRIPT_IDS = new Set(mockScripts.map(script => script.id));
@@ -34,6 +37,17 @@ export default function App() {
   const [updateState, setUpdateState] = useState<DesktopUpdateState | null>(null);
   const [updateBannerDismissed, setUpdateBannerDismissed] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [privilegeDialog, setPrivilegeDialog] = useState<{ title: string; description: string } | null>(null);
+
+  useEffect(() => {
+    if (!error || error.code !== 'INPUT_PERMISSION_DENIED') return;
+    setPrivilegeDialog({
+      title: '无法向当前窗口注入输入',
+      description: error.message,
+    });
+    void showSystemAlert('权限限制', '无法向当前窗口注入输入', error.message);
+    clearError();
+  }, [error, clearError]);
 
   useEffect(() => {
     if (settings.serviceMode !== 'real') return;
@@ -219,19 +233,17 @@ export default function App() {
 
   return (
     <>
-      {error && (
-        <div role="alert" style={{ position: 'fixed', top: 48, left: 64, right: 0, zIndex: 1001, padding: '8px 16px', background: 'var(--color-danger-bg)', color: 'var(--color-danger)', borderBottom: '1px solid var(--color-danger)', display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-            <span><strong>{error.code}</strong> · {error.message}{error.operationId ? ` · 操作 ${error.operationId}` : ''}{error.retryable ? ' · 可重试' : ''}</span>
-            {Object.keys(error.details).length > 0 && (
-              <span className="text-sm" style={{ opacity: 0.85, fontFamily: 'var(--font-mono)', wordBreak: 'break-all' }}>
-                {JSON.stringify(error.details)}
-              </span>
-            )}
+      {error && (() => {
+        const friendly = formatErrorForDisplay(error);
+        return (
+          <div role="alert" style={{ position: 'fixed', top: 48, left: 64, right: 0, zIndex: 1001, padding: '8px 16px', background: 'var(--color-danger-bg)', color: 'var(--color-danger)', borderBottom: '1px solid var(--color-danger)', display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+              <span><strong>{friendly.title}</strong> · {friendly.message}{error.retryable ? ' · 可重试' : ''}</span>
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={clearError}>关闭</button>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={clearError}>关闭</button>
-        </div>
-      )}
+        );
+      })()}
       {!updateBannerDismissed && (
         <UpdateProgressBar
           update={updateState}
@@ -259,6 +271,14 @@ export default function App() {
        data-qoder-id="qel-layout-c21360f5" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-layout-c21360f5&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;layout&quot;,&quot;loc&quot;:{&quot;line&quot;:117,&quot;column&quot;:7}}">
         {renderPage()}
       </Layout>
+
+      <AlertDialog
+        open={privilegeDialog !== null}
+        title={privilegeDialog?.title ?? ''}
+        description={privilegeDialog?.description ?? ''}
+        confirmLabel="知道了"
+        onClose={() => setPrivilegeDialog(null)}
+      />
       <AboutDialog
         open={aboutOpen}
         onClose={() => setAboutOpen(false)}

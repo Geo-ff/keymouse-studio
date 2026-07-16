@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from keymouse_studio.api.schemas.events import EventEnvelope
-from keymouse_studio.api.schemas.operations import EventPayload
+from keymouse_studio.api.schemas.operations import EventPayload, StateSnapshot
 
 
 class EventService:
@@ -23,7 +23,6 @@ class EventService:
         event_type: str,
         payload: EventPayload,
         operation_id: UUID | None = None,
-
     ) -> EventEnvelope:
         return await self._build(event_type, payload, operation_id, broadcast=True)
 
@@ -45,6 +44,9 @@ class EventService:
     ) -> EventEnvelope:
         async with self._lock:
             self._sequence += 1
+            # Embed sequence into StateSnapshot before broadcast so clients do not drop progress.
+            if isinstance(payload, StateSnapshot):
+                payload = payload.model_copy(update={"sequence": self._sequence})
             event = EventEnvelope(
                 protocol_version=self._protocol_version,
                 event_id=uuid4(),

@@ -31,7 +31,7 @@ class OperationStateMachine:
         if target not in _ALLOWED_TRANSITIONS[self._state]:
             raise AppError(
                 ErrorCode.INVALID_STATE_TRANSITION,
-                f"Cannot transition from {self._state} to {target}",
+                f"无法从 {self._state} 切换到 {target}",
                 status_code=409,
                 details={"currentState": self._state, "targetState": target},
             )
@@ -46,7 +46,7 @@ class OperationStateMachine:
         if self._state != EngineState.PAUSED or self._paused_from is None:
             raise AppError(
                 ErrorCode.INVALID_STATE_TRANSITION,
-                "Operation is not paused",
+                "当前任务未处于暂停状态",
                 status_code=409,
             )
         target = self._paused_from

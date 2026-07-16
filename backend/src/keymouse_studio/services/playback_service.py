@@ -20,6 +20,11 @@ from keymouse_studio.domain.enums import EngineState, LoopMode, OperationType
 from keymouse_studio.domain.errors import AppError, ErrorCode
 from keymouse_studio.infrastructure.input.adapter import InputWorker, ReleaseResult
 from keymouse_studio.infrastructure.system.clock import Clock
+from keymouse_studio.infrastructure.system.privilege import (
+    AlwaysAllowPrivilegeChecker,
+    PrivilegeChecker,
+)
+from keymouse_studio.services.clicker_service import PRIVILEGE_BLOCK_MESSAGE
 from keymouse_studio.services.operation_service import OperationService
 from keymouse_studio.services.script_service import ScriptService
 
@@ -32,12 +37,14 @@ class PlaybackService:
         input_worker: InputWorker,
         clock: Clock,
         poll_interval_ms: int = 25,
+        privilege_checker: PrivilegeChecker | None = None,
     ) -> None:
         self._operations = operations
         self._scripts = scripts
         self._input = input_worker
         self._clock = clock
         self._poll_seconds = poll_interval_ms / 1000
+        self._privilege = privilege_checker or AlwaysAllowPrivilegeChecker()
         self._running = asyncio.Event()
         self._running.set()
         self._cancelled = asyncio.Event()
@@ -60,7 +67,7 @@ class PlaybackService:
         if not playable:
             raise AppError(
                 ErrorCode.VALIDATION_ERROR,
-                "Playback script must contain at least one executable action",
+                "回放脚本至少需要一个可执行动作",
                 status_code=422,
             )
         countdown_ms = request.countdown_ms
@@ -184,6 +191,16 @@ class PlaybackService:
                 for index, action in enumerate(enabled):
                     self._raise_if_cancelled()
                     await self._running.wait()
+                    if not await self._ensure_injectable(
+                        operation_id,
+                        completed_loops,
+                        completed_actions,
+                        total_actions,
+                        current_index,
+                        duration_ns,
+                    ):
+                        await self._running.wait()
+                        self._raise_if_cancelled()
                     if not await self._wait(action.delay_before_ms, speed, duration_ns):
                         completed_round = False
                         natural_completion = True
@@ -324,6 +341,57 @@ class PlaybackService:
                 operation_id=operation_id,
             )
 
+    async def _ensure_injectable(
+        self,
+        operation_id: UUID,
+        completed_loops: int,
+        completed_actions: int,
+        total_actions: int | None,
+        current_index: int | None,
+        duration_ns: int | None,
+    ) -> bool:
+        cursor = await self._cursor_point()
+        result = self._privilege.check(x=cursor[0], y=cursor[1])
+        if result.can_inject:
+            return True
+        if self._operations.state == EngineState.PAUSED:
+            return False
+        await self._publish_progress(
+            operation_id,
+            completed_loops,
+            completed_actions,
+            total_actions,
+            current_index,
+            duration_ns,
+        )
+        self._running.clear()
+        self._pause_started_ns = self._clock.now_ns()
+        await self._operations.transition(EngineState.PAUSED, operation_id)
+        await self._operations.publish_error(
+            code=ErrorCode.INPUT_PERMISSION_DENIED,
+            message=PRIVILEGE_BLOCK_MESSAGE,
+            details={
+                "processIntegrity": result.process_integrity.value,
+                "foregroundIntegrity": (
+                    result.foreground_integrity.value if result.foreground_integrity else None
+                ),
+                "targetIntegrity": (
+                    result.target_integrity.value if result.target_integrity else None
+                ),
+                "reason": result.reason or "target_integrity_higher",
+            },
+            retryable=True,
+            operation_id=operation_id,
+        )
+        return False
+
+    async def _cursor_point(self) -> tuple[int | None, int | None]:
+        try:
+            x, y = await self._input.get_position()
+            return x, y
+        except Exception:
+            return None, None
+
     async def _publish_progress(
         self,
         operation_id: UUID,
@@ -334,7 +402,7 @@ class PlaybackService:
         duration_ns: int | None,
     ) -> None:
         progress = completed_actions / total_actions if total_actions else None
-        if duration_ns is not None:
+        if duration_ns is not None and duration_ns > 0:
             duration_progress = min(1.0, self._elapsed_ns / duration_ns)
             progress = max(progress or 0.0, duration_progress)
         await self._operations.update_progress(

@@ -1,9 +1,9 @@
 # KeyMouse Studio V1 项目跟踪
 
 > 状态：V1 开发基线
-> 更新日期：2026-07-15
+> 更新日期：2026-07-16
 > 目标平台：Windows 10/11
-> 当前阶段：阶段 D 集成与发布进行中（打包与更新链路已接入，实机安装/升级待人工验收）
+> 当前阶段：阶段 D 集成与发布接近完成（干净环境安装/卸载与正式 Release 更新链路已人工验收；代码签名与发布矩阵复验仍待处理）
 > GitHub 仓库：`https://github.com/Geo-ff/keymouse-studio`（已公开）
 > 后端设计：`docs/backend-design.md`
 > 技术验证：`docs/technical-validation-a.md`
@@ -261,8 +261,8 @@ V1 采用以下结构，详细后端基线见 `docs/backend-design.md`：
 - [x] 使用 `electron-builder` 和 NSIS 生成 Windows 安装包（本地已生成未签名测试包）。
 - [x] 将 Python/FastAPI 后端打包为 Windows sidecar 可执行文件，并由 Electron 在发布态管理生命周期。
 - [x] 配置安装包产品名称、发布者、版本、图标、安装路径和卸载信息。
-- [ ] 验证中文路径、无 Python 环境、普通用户权限和干净 Windows 10/11 环境下的安装、启动、升级与卸载。
-- [ ] 正式发布前配置 Windows 代码签名；未签名测试包会触发 SmartScreen 警告（见下文已知限制）。
+- [x] 验证中文路径、无 Python 环境、普通用户权限和干净 Windows 10/11 环境下的安装、启动、升级与卸载（2026-07-16 人工验收完成）。
+- [ ] 正式发布前配置 Windows 代码签名；未签名包会触发 SmartScreen 警告（见下文已知限制）。
 
 #### D3：GitHub 仓库与 Release 更新
 
@@ -272,10 +272,10 @@ V1 采用以下结构，详细后端基线见 `docs/backend-design.md`：
 - [x] 展示“已是最新版本、发现新版本、下载进度、下载失败、下载完成”等状态；下载完成后允许“立即重启安装”或“稍后安装”。
 - [x] 使用 GitHub Actions 构建 Windows 安装包，并在 Release 中发布安装程序、`latest.yml`、校验文件和发布说明（工作流已添加；需推送 `vX.Y.Z` 标签触发）。
 - [x] 客户端不内置 GitHub Token；公开仓库后由客户端直连 GitHub Releases。
-- [ ] 验证版本比较、重复检查、网络失败、下载中断、安装失败和更新后版本显示（需真实 Release 与实机安装验证）。
+- [x] 验证版本比较、重复检查、网络失败、下载中断、安装失败和更新后版本显示（2026-07-16 基于真实 GitHub Release 与实机安装验收完成）。
 - [x] 编写发布说明、构建命令、更新机制与风险提示（见本节“发布与构建记录”）。
 
-### 发布与构建记录（2026-07-15）
+### 发布与构建记录（2026-07-15；验收状态更新于 2026-07-16）
 
 **版本规则**
 
@@ -338,11 +338,15 @@ npx electron-builder --win nsis --config electron-builder.yml --publish never
 5. 等待 GitHub Actions 生成 Release 与安装包。
 6. 在干净 Windows 上安装、启动、检查关于菜单版本、检查更新、卸载。
 
-**已知限制（未完成 / 需人工）**
+**人工验收记录（2026-07-16）**
 
-- 未签名安装包会触发 Windows SmartScreen；正式发布前配置代码签名（`CSC_LINK` / `CSC_KEY_PASSWORD`，工作流中已预留注释位置，勿提交证书）。
-- 中文安装路径、无 Python 环境、干净机安装/升级/卸载尚未在本机自动化验收中标记完成。
-- 端到端自动更新需先有公开 Release 资产后再验证。
+- 干净环境安装：已在无系统 Python、普通用户权限、含中文路径的 Windows 10/11 环境下完成安装、启动、升级与卸载验收。
+- 正式 Release 更新：已基于公开 GitHub Releases 完成版本比较、重复检查、网络失败/下载中断相关场景，以及更新后关于页版本显示验收。
+
+**已知限制（仍待处理）**
+
+- 未签名安装包会触发 Windows SmartScreen；正式对外发布前配置代码签名（`CSC_LINK` / `CSC_KEY_PASSWORD`，工作流中已预留注释位置，勿提交证书）。
+- 发布矩阵复验（DPI 缩放、多显示器坐标、管理员目标窗口、F12 延迟、sidecar 异常回收等）见 `docs/technical-validation-a.md` §5，仍建议在正式对外前按清单手工复验。
 - sidecar 使用 PyInstaller onefile，冷启动握手超时放宽至 15s。
 
 ## 9. V1 验收标准
@@ -364,8 +368,9 @@ npx electron-builder --win nsis --config electron-builder.yml --publish never
 - [已确定] 官方仓库为 `https://github.com/Geo-ff/keymouse-studio`（已公开）。
 - [已确定] Windows 安装包采用 Electron + `electron-builder` + NSIS，自动更新采用 `electron-updater` + GitHub Releases。
 - [已确定] 客户端不内置 GitHub Token；公开仓库使用客户端直连 Releases。
-- [风险] 未签名测试包触发 SmartScreen；需后续接入 Windows 代码签名证书。
-- [待人工] 干净环境安装/卸载、中文路径、无 Python 环境、真实 Release 升级链路。
+- [风险] 未签名安装包触发 SmartScreen；需后续接入 Windows 代码签名证书。
+- [已完成] 干净环境安装/卸载、中文路径、无 Python 环境、真实 Release 升级链路（2026-07-16 人工验收）。
+- [待人工] 发布矩阵复验：DPI 缩放命中、多显示器布局变化提示、管理员目标窗口警告、F12 延迟、sidecar 异常回收（见 `docs/technical-validation-a.md` §5）。
 - [已确定] V1 桌面外壳使用 Electron 37；选择理由和验证证据见 `docs/technical-validation-a.md`。
 - [已确定] V1 使用桌面外壳启动 FastAPI 子进程；REST 处理命令与资源，WebSocket 推送状态。
 - [已确定] 后端仅监听 `127.0.0.1`，使用进程级一次性会话令牌鉴权。

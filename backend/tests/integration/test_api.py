@@ -25,7 +25,7 @@ async def test_protected_routes_require_session_token(client: httpx.AsyncClient,
     assert response.json() == {
         "error": {
             "code": "UNAUTHORIZED_LOCAL_CLIENT",
-            "message": "Invalid or missing local session token",
+            "message": "本地会话无效或缺失, 请重启应用",
             "details": {},
             "retryable": False,
             "operationId": None,

@@ -18,13 +18,13 @@ class ScriptMigrator:
         if not isinstance(version, int) or isinstance(version, bool) or version < 1:
             raise AppError(
                 ErrorCode.SCRIPT_VERSION_UNSUPPORTED,
-                "Script schemaVersion must be a positive integer",
+                "脚本 schemaVersion 必须是正整数",
                 status_code=422,
             )
         if version > CURRENT_SCHEMA_VERSION:
             raise AppError(
                 ErrorCode.SCRIPT_VERSION_UNSUPPORTED,
-                f"Script schemaVersion {version} is not supported",
+                f"脚本 schemaVersion {version} 不受支持",
                 status_code=422,
                 details={"schemaVersion": version, "supportedVersion": CURRENT_SCHEMA_VERSION},
             )
@@ -34,7 +34,7 @@ class ScriptMigrator:
             if migrator is None:
                 raise AppError(
                     ErrorCode.SCRIPT_VERSION_UNSUPPORTED,
-                    f"No migration available for schemaVersion {version}",
+                    f"没有可用的 schemaVersion {version} 迁移",
                     status_code=422,
                 )
             migrated = migrator(migrated)
@@ -45,7 +45,7 @@ class ScriptMigrator:
         except ValidationError as exc:
             raise AppError(
                 ErrorCode.VALIDATION_ERROR,
-                "Script validation failed",
+                "脚本校验失败",
                 status_code=422,
                 details={"errors": _serializable_errors(exc)},
             ) from exc

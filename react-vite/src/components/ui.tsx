@@ -168,6 +168,60 @@ export function ConfirmDialog({ open, title, description, confirmLabel = '确认
   );
 }
 
+interface AlertDialogProps {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel?: string;
+  onClose(): void;
+}
+
+export function AlertDialog({ open, title, description, confirmLabel = '知道了', onClose }: AlertDialogProps) {
+  const [visible, setVisible] = React.useState(open);
+  const [leaving, setLeaving] = React.useState(false);
+
+  React.useEffect(() => {
+    if (open) {
+      setVisible(true);
+      setLeaving(false);
+      return;
+    }
+    if (!visible) return;
+    setLeaving(true);
+    const timer = window.setTimeout(() => {
+      setVisible(false);
+      setLeaving(false);
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [open, visible]);
+
+  React.useEffect(() => {
+    if (!open || leaving) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' || event.key === 'Enter') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, leaving, onClose]);
+
+  if (!visible) return null;
+  return createPortal(
+    <div
+      className={`dialog-backdrop${leaving ? ' dialog-leave' : ' dialog-enter'}`}
+      onMouseDown={event => { if (event.target === event.currentTarget && !leaving) onClose(); }}
+    >
+      <div className={`confirm-dialog${leaving ? ' dialog-panel-leave' : ' dialog-panel-enter'}`} role="alertdialog" aria-modal="true" aria-labelledby="alert-title" aria-describedby="alert-description">
+        <h2 id="alert-title">{title}</h2>
+        <p id="alert-description" style={{ whiteSpace: 'pre-wrap' }}>{description}</p>
+        <div className="confirm-dialog-actions">
+          <Button variant="primary" onClick={onClose} disabled={leaving} autoFocus>{confirmLabel}</Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 /* --- Select --- */
 interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   children: ReactNode;

@@ -43,7 +43,7 @@ function createState(snapshot: StateSnapshot = INITIAL_SNAPSHOT): ServiceState {
     recordingState: snapshot.operationType === 'recording' ? (snapshot.state === 'paused' ? 'paused' : snapshot.state === 'recording' ? 'recording' : 'stopped') : 'idle',
     clickerCount: snapshot.operationType === 'clicker' ? snapshot.completedCount : 0,
     clickerRunningTime: snapshot.operationType === 'clicker' ? snapshot.elapsedMs : 0,
-    nextClickCountdown: 0,
+    nextClickCountdown: snapshot.operationType === 'clicker' ? snapshot.countdownRemainingMs : 0,
     recordingTime: snapshot.operationType === 'recording' ? snapshot.elapsedMs : 0,
     recordingActionCount: snapshot.operationType === 'recording' ? snapshot.completedCount : 0,
     recordingActions: [],
@@ -410,7 +410,8 @@ export class RealAutomationService extends AutomationServiceBase {
     if (activeOperation && activeOperationId && envelope.operationId && envelope.operationId !== activeOperationId) return;
     this.lastSequence = envelope.sequence;
     if (envelope.type === 'engine.state_snapshot' || envelope.type === 'operation.state_changed' || envelope.type === 'operation.progress') {
-      const snapshot = envelope.payload as StateSnapshot;
+      const raw = envelope.payload as StateSnapshot;
+      const snapshot = { ...raw, sequence: Math.max(raw.sequence ?? 0, envelope.sequence) };
       if (snapshot.sequence < this.currentState.snapshot.sequence) return;
       this.applySnapshot(snapshot);
     } else if (envelope.type === 'recording.action_captured') {

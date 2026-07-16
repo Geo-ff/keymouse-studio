@@ -39,6 +39,7 @@ from keymouse_studio.infrastructure.system.capabilities import (
     SystemCapabilityDetector,
 )
 from keymouse_studio.infrastructure.system.clock import MonotonicClock
+from keymouse_studio.infrastructure.system.privilege import create_privilege_checker
 from keymouse_studio.security import LoopbackCorsMiddleware
 from keymouse_studio.services.automation_coordinator import AutomationCoordinator
 from keymouse_studio.services.clicker_service import ClickerService
@@ -116,13 +117,20 @@ def create_app(
     bridge = InputEventBridge(input_listener or PynputInputListener())
     script_service = ScriptService(JsonScriptRepository(app_settings.script_directory))
     clock = MonotonicClock()
-    clicker_service = ClickerService(operation_service, input_worker, clock)
+    privilege_checker = create_privilege_checker()
+    clicker_service = ClickerService(
+        operation_service,
+        input_worker,
+        clock,
+        privilege_checker=privilege_checker,
+    )
     recording_service = RecordingService(operation_service, event_service, bridge)
     playback_service = PlaybackService(
         operation_service,
         script_service,
         input_worker,
         clock,
+        privilege_checker=privilege_checker,
     )
     coordinator = AutomationCoordinator(
         operation_service,
@@ -170,7 +178,7 @@ def create_app(
         return _error_response(
             ErrorDetail(
                 code=ErrorCode.VALIDATION_ERROR,
-                message="Request validation failed",
+                message="请求参数校验失败",
                 details={
                     "errors": [
                         {
@@ -204,7 +212,7 @@ def create_app(
         return _error_response(
             ErrorDetail(
                 code=ErrorCode.ENGINE_INTERNAL_ERROR,
-                message="Internal engine error",
+                message="引擎内部错误",
             ),
             500,
         )

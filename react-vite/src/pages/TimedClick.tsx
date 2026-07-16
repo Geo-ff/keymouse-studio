@@ -3,34 +3,53 @@
    设定等待时间后执行点击，支持循环和坐标记录
    ========================================================================= */
 
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 import { Play, Square, Crosshair, MousePointer, Timer } from 'lucide-react';
 import { useService } from '../hooks/useService';
 import { Button, Toggle, Input, NumericInput, Select, IconButton } from '../components/ui';
 import type { TimedClickConfig, MouseButton } from '../types';
 import { formatTime } from '../data/mockData';
+import { showSystemAlert } from '../utils/systemAlert';
+import { usePersistedFormState } from '../utils/formPersistence';
+
+interface TimedFormState {
+  hours: number;
+  minutes: number;
+  seconds: number;
+  loop: boolean;
+  button: MouseButton;
+  useCurrentPos: boolean;
+  posX: number;
+  posY: number;
+}
+
+const TIMED_DEFAULTS: TimedFormState = {
+  hours: 0,
+  minutes: 30,
+  seconds: 0,
+  loop: false,
+  button: 'left',
+  useCurrentPos: true,
+  posX: 960,
+  posY: 540,
+};
 
 export function TimedClick(qoderProps: Record<string, any>) {
   const { startTimedClick, stopTimedClick, getMousePosition, state } = useService();
-
-  const [hours, setHours] = useState(0);
-  const [minutes, setMinutes] = useState(30);
-  const [seconds, setSeconds] = useState(0);
-  const [loop, setLoop] = useState(false);
-  const [button, setButton] = useState<MouseButton>('left');
-  const [useCurrentPos, setUseCurrentPos] = useState(true);
-  const [posX, setPosX] = useState(960);
-  const [posY, setPosY] = useState(540);
+  const [form, setForm] = usePersistedFormState('timed', TIMED_DEFAULTS);
+  const { hours, minutes, seconds, loop, button, useCurrentPos, posX, posY } = form;
 
   const isRunning = state.snapshot.operationType === 'timed_click' && (state.runState === 'running' || state.runState === 'paused');
   const waitMs = hours * 3600000 + minutes * 60000 + seconds * 1000;
 
   const handleStart = useCallback(() => {
+    const delayMs = Math.max(1000, waitMs);
     const config: TimedClickConfig = {
-      delayMs: Math.max(1000, waitMs),
+      delayMs,
       button,
       clickCount: 1,
-      intervalMs: 100,
+      // Loop rounds must use the same wait as the first delay (not a hard-coded 100ms).
+      intervalMs: delayMs,
       repeatMode: loop ? 'infinite' : 'count',
       repeatCount: 1,
       positionMode: useCurrentPos ? 'current' : 'fixed',
@@ -38,7 +57,11 @@ export function TimedClick(qoderProps: Record<string, any>) {
       y: useCurrentPos ? null : posY,
       countdownMs: 0,
     };
-    void startTimedClick(config).catch(() => undefined);
+    void startTimedClick(config)
+      .then(() => {
+        void showSystemAlert('定时点击', '定时点击已开始', `等待 ${formatTime(delayMs)} 后执行`);
+      })
+      .catch(() => undefined);
   }, [startTimedClick, waitMs, loop, useCurrentPos, posX, posY, button]);
 
   const handleStop = useCallback(() => {
@@ -58,15 +81,15 @@ export function TimedClick(qoderProps: Record<string, any>) {
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 'var(--space-sm)' }} data-qoder-id="qel-div-f295344c" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-f295344c&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:53,&quot;column&quot;:11}}">
             <div className="field-group" style={{ width: 80 }} data-qoder-id="qel-field-group-1fdc6bc4" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-group-1fdc6bc4&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;field-group&quot;,&quot;loc&quot;:{&quot;line&quot;:54,&quot;column&quot;:13}}">
               <label className="field-label" data-qoder-id="qel-field-label-51e1f757" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-label-51e1f757&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;field-label&quot;,&quot;loc&quot;:{&quot;line&quot;:55,&quot;column&quot;:15}}">小时</label>
-               <NumericInput value={hours} onValueChange={setHours} disabled={isRunning} min={0} max={23}  data-qoder-id="qel-input-e9e9871e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-e9e9871e&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:56,&quot;column&quot;:15}}"/>
+               <NumericInput value={hours} onValueChange={v => setForm(f => ({ ...f, hours: v }))} disabled={isRunning} min={0} max={23}  data-qoder-id="qel-input-e9e9871e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-e9e9871e&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:56,&quot;column&quot;:15}}"/>
             </div>
             <div className="field-group" style={{ width: 80 }} data-qoder-id="qel-field-group-b0ebff8a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-group-b0ebff8a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;field-group&quot;,&quot;loc&quot;:{&quot;line&quot;:58,&quot;column&quot;:13}}">
               <label className="field-label" data-qoder-id="qel-field-label-dba43bf7" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-label-dba43bf7&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;field-label&quot;,&quot;loc&quot;:{&quot;line&quot;:59,&quot;column&quot;:15}}">分钟</label>
-               <NumericInput value={minutes} onValueChange={setMinutes} disabled={isRunning} min={0} max={59}  data-qoder-id="qel-input-e8e9858b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-e8e9858b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:60,&quot;column&quot;:15}}"/>
+               <NumericInput value={minutes} onValueChange={v => setForm(f => ({ ...f, minutes: v }))} disabled={isRunning} min={0} max={59}  data-qoder-id="qel-input-e8e9858b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-e8e9858b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:60,&quot;column&quot;:15}}"/>
             </div>
             <div className="field-group" style={{ width: 80 }} data-qoder-id="qel-field-group-adebfad1" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-group-adebfad1&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;field-group&quot;,&quot;loc&quot;:{&quot;line&quot;:62,&quot;column&quot;:13}}">
               <label className="field-label" data-qoder-id="qel-field-label-d8a4373e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-label-d8a4373e&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;field-label&quot;,&quot;loc&quot;:{&quot;line&quot;:63,&quot;column&quot;:15}}">秒</label>
-               <NumericInput value={seconds} onValueChange={setSeconds} disabled={isRunning} min={0} max={59}  data-qoder-id="qel-input-ebe98a44" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-ebe98a44&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:64,&quot;column&quot;:15}}"/>
+               <NumericInput value={seconds} onValueChange={v => setForm(f => ({ ...f, seconds: v }))} disabled={isRunning} min={0} max={59}  data-qoder-id="qel-input-ebe98a44" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-ebe98a44&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:64,&quot;column&quot;:15}}"/>
             </div>
             <span className="text-sm text-tertiary" style={{ paddingBottom: '6px' }} data-qoder-id="qel-text-sm-dfa08dcf" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-dfa08dcf&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:66,&quot;column&quot;:13}}">
               = {formatTime(waitMs)}
@@ -82,7 +105,7 @@ export function TimedClick(qoderProps: Record<string, any>) {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-xl)', rowGap: 'var(--space-md)' }} data-qoder-id="qel-div-c9d9fc06" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-c9d9fc06&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:77,&quot;column&quot;:11}}">
             <div className="field-group" data-qoder-id="qel-field-group-15eedd20" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-group-15eedd20&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;field-group&quot;,&quot;loc&quot;:{&quot;line&quot;:78,&quot;column&quot;:13}}">
               <label className="field-label" data-qoder-id="qel-field-label-42a71cb3" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-label-42a71cb3&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;field-label&quot;,&quot;loc&quot;:{&quot;line&quot;:79,&quot;column&quot;:15}}">鼠标按键</label>
-              <Select value={button} onChange={e => setButton(e.target.value as MouseButton)} disabled={isRunning} data-qoder-id="qel-select-5d254e39" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-select-5d254e39&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;select&quot;,&quot;loc&quot;:{&quot;line&quot;:80,&quot;column&quot;:15}}">
+              <Select value={button} onChange={e => setForm(f => ({ ...f, button: e.target.value as MouseButton }))} disabled={isRunning} data-qoder-id="qel-select-5d254e39" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-select-5d254e39&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;select&quot;,&quot;loc&quot;:{&quot;line&quot;:80,&quot;column&quot;:15}}">
                 <option value="left" data-qoder-id="qel-option-a6e47ecc" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-option-a6e47ecc&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;option&quot;,&quot;loc&quot;:{&quot;line&quot;:81,&quot;column&quot;:17}}">左键</option>
                 <option value="right" data-qoder-id="qel-option-a9e48385" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-option-a9e48385&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;option&quot;,&quot;loc&quot;:{&quot;line&quot;:82,&quot;column&quot;:17}}">右键</option>
                 <option value="middle" data-qoder-id="qel-option-a8e481f2" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-option-a8e481f2&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;option&quot;,&quot;loc&quot;:{&quot;line&quot;:83,&quot;column&quot;:17}}">中键</option>
@@ -91,7 +114,7 @@ export function TimedClick(qoderProps: Record<string, any>) {
             <div className="field-group" style={{ justifyContent: 'center' }} data-qoder-id="qel-field-group-1feeecde" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-group-1feeecde&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;field-group&quot;,&quot;loc&quot;:{&quot;line&quot;:86,&quot;column&quot;:13}}">
               <label className="field-label" data-qoder-id="qel-field-label-4ca72c71" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-label-4ca72c71&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;field-label&quot;,&quot;loc&quot;:{&quot;line&quot;:87,&quot;column&quot;:15}}">循环执行</label>
               <div style={{ paddingTop: '2px' }} data-qoder-id="qel-div-c4d7b590" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-c4d7b590&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:88,&quot;column&quot;:15}}">
-                <Toggle checked={loop} onChange={setLoop} label={loop ? '已开启' : '已关闭'} disabled={isRunning}  data-qoder-id="qel-toggle-e99f730b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toggle-e99f730b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;toggle&quot;,&quot;loc&quot;:{&quot;line&quot;:89,&quot;column&quot;:17}}"/>
+                <Toggle checked={loop} onChange={v => setForm(f => ({ ...f, loop: v }))} label={loop ? '已开启' : '已关闭'} disabled={isRunning}  data-qoder-id="qel-toggle-e99f730b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toggle-e99f730b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;toggle&quot;,&quot;loc&quot;:{&quot;line&quot;:89,&quot;column&quot;:17}}"/>
               </div>
             </div>
           </div>
@@ -105,18 +128,18 @@ export function TimedClick(qoderProps: Record<string, any>) {
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xl)', flexWrap: 'wrap', rowGap: 'var(--space-sm)' }} data-qoder-id="qel-div-cad7bf02" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-cad7bf02&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:102,&quot;column&quot;:11}}">
-            <Toggle checked={useCurrentPos} onChange={setUseCurrentPos} label="使用当前鼠标位置" disabled={isRunning}  data-qoder-id="qel-toggle-ef9f7c7d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toggle-ef9f7c7d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;toggle&quot;,&quot;loc&quot;:{&quot;line&quot;:103,&quot;column&quot;:13}}"/>
+            <Toggle checked={useCurrentPos} onChange={v => setForm(f => ({ ...f, useCurrentPos: v }))} label="使用当前鼠标位置" disabled={isRunning}  data-qoder-id="qel-toggle-ef9f7c7d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toggle-ef9f7c7d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;toggle&quot;,&quot;loc&quot;:{&quot;line&quot;:103,&quot;column&quot;:13}}"/>
             {!useCurrentPos && (
               <div className="field-row" data-qoder-id="qel-field-row-85d6788a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-row-85d6788a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;field-row&quot;,&quot;loc&quot;:{&quot;line&quot;:105,&quot;column&quot;:15}}">
                 <div className="field-inline" data-qoder-id="qel-field-inline-7543b94c" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-inline-7543b94c&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;field-inline&quot;,&quot;loc&quot;:{&quot;line&quot;:106,&quot;column&quot;:17}}">
                   <span className="text-sm text-secondary" data-qoder-id="qel-text-sm-6a9919db" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-6a9919db&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:107,&quot;column&quot;:19}}">X</span>
-                  <Input type="number" variant="number" value={posX} onChange={e => setPosX(+e.target.value)} disabled={isRunning} style={{ width: 80 }}  data-qoder-id="qel-input-56e1e3f0" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-56e1e3f0&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:108,&quot;column&quot;:19}}"/>
+                  <Input type="number" variant="number" value={posX} onChange={e => setForm(f => ({ ...f, posX: +e.target.value }))} disabled={isRunning} style={{ width: 80 }}  data-qoder-id="qel-input-56e1e3f0" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-56e1e3f0&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:108,&quot;column&quot;:19}}"/>
                 </div>
                 <div className="field-inline" data-qoder-id="qel-field-inline-763271be" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-inline-763271be&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;field-inline&quot;,&quot;loc&quot;:{&quot;line&quot;:110,&quot;column&quot;:17}}">
                   <span className="text-sm text-secondary" data-qoder-id="qel-text-sm-6b991b6e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-6b991b6e&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:111,&quot;column&quot;:19}}">Y</span>
-                  <Input type="number" variant="number" value={posY} onChange={e => setPosY(+e.target.value)} disabled={isRunning} style={{ width: 80 }}  data-qoder-id="qel-input-5be1ebcf" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-5be1ebcf&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:112,&quot;column&quot;:19}}"/>
+                  <Input type="number" variant="number" value={posY} onChange={e => setForm(f => ({ ...f, posY: +e.target.value }))} disabled={isRunning} style={{ width: 80 }}  data-qoder-id="qel-input-5be1ebcf" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-5be1ebcf&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:112,&quot;column&quot;:19}}"/>
                 </div>
-                <IconButton tooltip="拾取当前鼠标坐标" onClick={() => { void getMousePosition().then(p => { setPosX(p.x); setPosY(p.y); }).catch(() => undefined); }} data-qoder-id="qel-iconbutton-d31de59a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-iconbutton-d31de59a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;iconbutton&quot;,&quot;loc&quot;:{&quot;line&quot;:114,&quot;column&quot;:17}}">
+                <IconButton tooltip="拾取当前鼠标坐标" onClick={() => { void getMousePosition().then(p => { setForm(f => ({ ...f, posX: p.x, posY: p.y })); }).catch(() => undefined); }} data-qoder-id="qel-iconbutton-d31de59a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-iconbutton-d31de59a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;iconbutton&quot;,&quot;loc&quot;:{&quot;line&quot;:114,&quot;column&quot;:17}}">
                   <MousePointer size={14}  data-qoder-id="qel-mousepointer-2009d4e1" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-mousepointer-2009d4e1&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;mousepointer&quot;,&quot;loc&quot;:{&quot;line&quot;:115,&quot;column&quot;:19}}"/>
                 </IconButton>
               </div>
@@ -130,6 +153,7 @@ export function TimedClick(qoderProps: Record<string, any>) {
         <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }} data-qoder-id="qel-panel-58d884d0" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-panel-58d884d0&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;panel&quot;,&quot;loc&quot;:{&quot;line&quot;:125,&quot;column&quot;:9}}">
           <div className="panel-title" data-qoder-id="qel-panel-title-f7a2ab42" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-panel-title-f7a2ab42&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;panel-title&quot;,&quot;loc&quot;:{&quot;line&quot;:126,&quot;column&quot;:11}}">运行状态</div>
           <StatRow label="已执行次数" value={String(state.timedClickCount)}  data-qoder-id="qel-statrow-c48b6406" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-statrow-c48b6406&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;statrow&quot;,&quot;loc&quot;:{&quot;line&quot;:127,&quot;column&quot;:11}}"/>
+          <StatRow label="运行时长" value={formatTime(state.snapshot.operationType === 'timed_click' ? state.snapshot.elapsedMs : 0)} />
           <StatRow label="下次点击" value={state.timedClickCountdown > 0 ? `${(state.timedClickCountdown / 1000).toFixed(1)}s` : '—'} highlight={isRunning}  data-qoder-id="qel-statrow-c58b6599" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-statrow-c58b6599&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;statrow&quot;,&quot;loc&quot;:{&quot;line&quot;:128,&quot;column&quot;:11}}"/>
         </div>
         <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }} data-qoder-id="qel-panel-64dad64b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-panel-64dad64b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/TimedClick.tsx&quot;,&quot;componentName&quot;:&quot;TimedClick&quot;,&quot;elementRole&quot;:&quot;panel&quot;,&quot;loc&quot;:{&quot;line&quot;:130,&quot;column&quot;:9}}">

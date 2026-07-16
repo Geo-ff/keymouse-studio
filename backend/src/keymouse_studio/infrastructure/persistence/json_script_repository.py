@@ -34,7 +34,7 @@ class JsonScriptRepository:
             if path.exists():
                 raise AppError(
                     ErrorCode.OPERATION_CONFLICT,
-                    "Script already exists",
+                    "脚本已存在",
                     status_code=409,
                     details={"scriptId": str(script.id)},
                 )
@@ -65,14 +65,14 @@ class JsonScriptRepository:
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise AppError(
                 ErrorCode.VALIDATION_ERROR,
-                "Stored script is invalid",
+                "本地脚本文件无效",
                 status_code=422,
                 details={"file": path.name},
             ) from exc
         if not isinstance(data, dict):
             raise AppError(
                 ErrorCode.VALIDATION_ERROR,
-                "Stored script must be a JSON object",
+                "本地脚本必须是 JSON 对象",
                 status_code=422,
             )
         return self._migrator.load(data)
@@ -99,7 +99,7 @@ class JsonScriptRepository:
 def _not_found(script_id: UUID) -> AppError:
     return AppError(
         ErrorCode.SCRIPT_NOT_FOUND,
-        "Script not found",
+        "未找到对应脚本",
         status_code=404,
         details={"scriptId": str(script_id)},
     )

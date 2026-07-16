@@ -43,6 +43,6 @@ class UnauthorizedError(AppError):
     def __init__(self) -> None:
         super().__init__(
             ErrorCode.UNAUTHORIZED_LOCAL_CLIENT,
-            "Invalid or missing local session token",
+            "本地会话无效或缺失, 请重启应用",
             status_code=401,
         )

@@ -145,7 +145,7 @@ class RecordingService:
         except KeyError as exc:
             raise AppError(
                 ErrorCode.SCRIPT_NOT_FOUND,
-                "Recording result not found",
+                "未找到录制结果",
                 status_code=404,
             ) from exc
 

@@ -54,7 +54,7 @@ class OperationService:
             if self._machine.state != EngineState.IDLE:
                 raise AppError(
                     ErrorCode.OPERATION_CONFLICT,
-                    "Another operation is already active",
+                    "当前已有任务在运行, 请先停止后再开始",
                     status_code=409,
                     operation_id=str(self._operation_id) if self._operation_id else None,
                 )
@@ -117,13 +117,38 @@ class OperationService:
                     "error.raised",
                     {
                         "code": ErrorCode.ENGINE_INTERNAL_ERROR,
-                        "message": "Input operation failed",
+                        "message": "输入操作失败",
                         "details": {"exceptionType": type(exc).__name__},
                     },
                     operation_id,
                 )
             await self._publish("operation.state_changed")
             return self.snapshot()
+
+    async def publish_error(
+        self,
+        *,
+        code: ErrorCode,
+        message: str,
+        details: dict[str, object] | None = None,
+        retryable: bool = True,
+        operation_id: UUID | None = None,
+    ) -> None:
+        async with self._lock:
+            self._require_operation(operation_id)
+            active_id = self._operation_id
+            with suppress(Exception):
+                await self._events.create(
+                    "error.raised",
+                    {
+                        "code": code,
+                        "message": message,
+                        "details": details or {},
+                        "retryable": retryable,
+                        "operationId": str(active_id) if active_id else None,
+                    },
+                    active_id,
+                )
 
     async def snapshot_event(self) -> EventEnvelope:
         snapshot = self.snapshot()
@@ -149,7 +174,7 @@ class OperationService:
         if operation_id is not None and operation_id != self._operation_id:
             raise AppError(
                 ErrorCode.OPERATION_CONFLICT,
-                "Operation id does not match the active operation",
+                "操作编号与当前任务不匹配",
                 status_code=409,
                 operation_id=str(self._operation_id) if self._operation_id else None,
             )

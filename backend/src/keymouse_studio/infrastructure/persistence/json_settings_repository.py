@@ -33,7 +33,7 @@ class JsonSettingsRepository:
         except (OSError, UnicodeError, json.JSONDecodeError, ValidationError) as exc:
             raise AppError(
                 ErrorCode.SETTINGS_INVALID,
-                "Stored settings are invalid",
+                "本地设置文件无效",
                 status_code=422,
                 details={"file": self._path.name},
             ) from exc

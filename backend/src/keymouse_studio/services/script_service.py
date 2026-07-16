@@ -39,7 +39,7 @@ class ScriptService:
         if request.id != script_id:
             raise AppError(
                 ErrorCode.VALIDATION_ERROR,
-                "Path and body script IDs must match",
+                "路径与请求体中的脚本 ID 不一致",
                 status_code=422,
             )
         existing = await self._repository.get(script_id)

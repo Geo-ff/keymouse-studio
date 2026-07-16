@@ -3,27 +3,47 @@
    完整参数配置：按键、模式、间隔、次数、坐标、启停控制
    ========================================================================= */
 
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 import { Play, Pause, Square, MousePointer, Crosshair, Clock } from 'lucide-react';
 import { useService } from '../hooks/useService';
 import { Button, RadioGroup, Toggle, Input, NumericInput, Select, IconButton } from '../components/ui';
 import type { ClickerConfig, MouseButton, ClickMode } from '../types';
 import { formatTime } from '../data/mockData';
+import { showSystemAlert } from '../utils/systemAlert';
+import { usePersistedFormState } from '../utils/formPersistence';
+
+interface ClickerFormState {
+  button: MouseButton;
+  clickMode: ClickMode;
+  hours: number;
+  minutes: number;
+  seconds: number;
+  millis: number;
+  timesMode: 'fixed' | 'continuous';
+  times: number;
+  useCurrentPos: boolean;
+  posX: number;
+  posY: number;
+}
+
+const CLICKER_DEFAULTS: ClickerFormState = {
+  button: 'left',
+  clickMode: 'single',
+  hours: 0,
+  minutes: 0,
+  seconds: 0,
+  millis: 500,
+  timesMode: 'continuous',
+  times: 10,
+  useCurrentPos: true,
+  posX: 960,
+  posY: 540,
+};
 
 export function AutoClicker(qoderProps: Record<string, any>) {
   const { startClicker, pauseClicker, resumeClicker, stopClicker, getMousePosition, state } = useService();
-
-  const [button, setButton] = useState<MouseButton>('left');
-  const [clickMode, setClickMode] = useState<ClickMode>('single');
-  const [hours, setHours] = useState(0);
-  const [minutes, setMinutes] = useState(0);
-  const [seconds, setSeconds] = useState(0);
-  const [millis, setMillis] = useState(500);
-  const [timesMode, setTimesMode] = useState<'fixed' | 'continuous'>('continuous');
-  const [times, setTimes] = useState(10);
-  const [useCurrentPos, setUseCurrentPos] = useState(true);
-  const [posX, setPosX] = useState(960);
-  const [posY, setPosY] = useState(540);
+  const [form, setForm] = usePersistedFormState('clicker', CLICKER_DEFAULTS);
+  const { button, clickMode, hours, minutes, seconds, millis, timesMode, times, useCurrentPos, posX, posY } = form;
 
   const isRunning = state.snapshot.operationType === 'clicker' && (state.runState === 'running' || state.runState === 'paused');
   const isPaused = state.snapshot.operationType === 'clicker' && state.runState === 'paused';
@@ -42,7 +62,11 @@ export function AutoClicker(qoderProps: Record<string, any>) {
       y: useCurrentPos ? null : posY,
       countdownMs: 0,
     };
-    void startClicker(config).catch(() => undefined);
+    void startClicker(config)
+      .then(() => {
+        void showSystemAlert('连点器', '连点已开始', '正在按设定间隔执行点击');
+      })
+      .catch(() => undefined);
   }, [startClicker, button, clickMode, intervalMs, timesMode, times, useCurrentPos, posX, posY]);
 
   const handlePause = useCallback(() => {
@@ -66,7 +90,7 @@ export function AutoClicker(qoderProps: Record<string, any>) {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-xl)', rowGap: 'var(--space-md)' }} data-qoder-id="qel-div-f6b3164b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-f6b3164b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:64,&quot;column&quot;:11}}">
             <div className="field-group" data-qoder-id="qel-field-group-059cc0d5" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-group-059cc0d5&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;field-group&quot;,&quot;loc&quot;:{&quot;line&quot;:65,&quot;column&quot;:13}}">
               <label className="field-label" data-qoder-id="qel-field-label-92a5ac80" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-label-92a5ac80&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;field-label&quot;,&quot;loc&quot;:{&quot;line&quot;:66,&quot;column&quot;:15}}">鼠标按键</label>
-              <Select value={button} onChange={e => setButton(e.target.value as MouseButton)} disabled={isRunning} data-qoder-id="qel-select-4a2f3926" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-select-4a2f3926&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;select&quot;,&quot;loc&quot;:{&quot;line&quot;:67,&quot;column&quot;:15}}">
+              <Select value={button} onChange={e => setForm(f => ({ ...f, button: e.target.value as MouseButton }))} disabled={isRunning} data-qoder-id="qel-select-4a2f3926" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-select-4a2f3926&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;select&quot;,&quot;loc&quot;:{&quot;line&quot;:67,&quot;column&quot;:15}}">
                 <option value="left" data-qoder-id="qel-option-aa519064" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-option-aa519064&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;option&quot;,&quot;loc&quot;:{&quot;line&quot;:68,&quot;column&quot;:17}}">左键</option>
                 <option value="right" data-qoder-id="qel-option-ab5191f7" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-option-ab5191f7&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;option&quot;,&quot;loc&quot;:{&quot;line&quot;:69,&quot;column&quot;:17}}">右键</option>
                 <option value="middle" data-qoder-id="qel-option-ac51938a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-option-ac51938a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;option&quot;,&quot;loc&quot;:{&quot;line&quot;:70,&quot;column&quot;:17}}">中键</option>
@@ -76,7 +100,7 @@ export function AutoClicker(qoderProps: Record<string, any>) {
               <label className="field-label" data-qoder-id="qel-field-label-a4e4c84d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-label-a4e4c84d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;field-label&quot;,&quot;loc&quot;:{&quot;line&quot;:74,&quot;column&quot;:15}}">点击模式</label>
               <RadioGroup
                 value={clickMode}
-                onChange={(v) => setClickMode(v as ClickMode)}
+                onChange={(v) => setForm(f => ({ ...f, clickMode: v as ClickMode }))}
                 options={[
                   { value: 'single', label: '单击' },
                   { value: 'double', label: '双击' },
@@ -96,19 +120,19 @@ export function AutoClicker(qoderProps: Record<string, any>) {
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 'var(--space-sm)', flexWrap: 'wrap' }} data-qoder-id="qel-div-4ef61ae5" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-4ef61ae5&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:94,&quot;column&quot;:11}}">
             <div className="field-group" style={{ width: 72 }} data-qoder-id="qel-field-group-bdb6e145" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-group-bdb6e145&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;field-group&quot;,&quot;loc&quot;:{&quot;line&quot;:95,&quot;column&quot;:13}}">
               <label className="field-label" data-qoder-id="qel-field-label-a4e706e4" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-label-a4e706e4&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;field-label&quot;,&quot;loc&quot;:{&quot;line&quot;:96,&quot;column&quot;:15}}">小时</label>
-               <NumericInput value={hours} onValueChange={setHours} disabled={isRunning} min={0} max={23}  data-qoder-id="qel-input-75796278" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-75796278&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:97,&quot;column&quot;:15}}"/>
+               <NumericInput value={hours} onValueChange={v => setForm(f => ({ ...f, hours: v }))} disabled={isRunning} min={0} max={23}  data-qoder-id="qel-input-75796278" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-75796278&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:97,&quot;column&quot;:15}}"/>
             </div>
             <div className="field-group" style={{ width: 72 }} data-qoder-id="qel-field-group-b8b6d966" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-group-b8b6d966&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;field-group&quot;,&quot;loc&quot;:{&quot;line&quot;:99,&quot;column&quot;:13}}">
               <label className="field-label" data-qoder-id="qel-field-label-a3e70551" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-label-a3e70551&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;field-label&quot;,&quot;loc&quot;:{&quot;line&quot;:100,&quot;column&quot;:15}}">分钟</label>
-               <NumericInput value={minutes} onValueChange={setMinutes} disabled={isRunning} min={0} max={59}  data-qoder-id="qel-input-7a796a57" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-7a796a57&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:101,&quot;column&quot;:15}}"/>
+               <NumericInput value={minutes} onValueChange={v => setForm(f => ({ ...f, minutes: v }))} disabled={isRunning} min={0} max={59}  data-qoder-id="qel-input-7a796a57" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-7a796a57&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:101,&quot;column&quot;:15}}"/>
             </div>
             <div className="field-group" style={{ width: 72 }} data-qoder-id="qel-field-group-b7b6d7d3" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-group-b7b6d7d3&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;field-group&quot;,&quot;loc&quot;:{&quot;line&quot;:103,&quot;column&quot;:13}}">
               <label className="field-label" data-qoder-id="qel-field-label-9ee6fd72" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-label-9ee6fd72&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;field-label&quot;,&quot;loc&quot;:{&quot;line&quot;:104,&quot;column&quot;:15}}">秒</label>
-               <NumericInput value={seconds} onValueChange={setSeconds} disabled={isRunning} min={0} max={59}  data-qoder-id="qel-input-6f795906" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-6f795906&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:105,&quot;column&quot;:15}}"/>
+               <NumericInput value={seconds} onValueChange={v => setForm(f => ({ ...f, seconds: v }))} disabled={isRunning} min={0} max={59}  data-qoder-id="qel-input-6f795906" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-6f795906&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:105,&quot;column&quot;:15}}"/>
             </div>
             <div className="field-group" style={{ width: 80 }} data-qoder-id="qel-field-group-42b9f13b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-group-42b9f13b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;field-group&quot;,&quot;loc&quot;:{&quot;line&quot;:107,&quot;column&quot;:13}}">
               <label className="field-label" data-qoder-id="qel-field-label-0be9e7a0" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-label-0be9e7a0&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;field-label&quot;,&quot;loc&quot;:{&quot;line&quot;:108,&quot;column&quot;:15}}">毫秒</label>
-              <NumericInput value={millis} onValueChange={setMillis} disabled={isRunning} min={0} max={999}  data-qoder-id="qel-input-7477224e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-7477224e&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:109,&quot;column&quot;:15}}"/>
+              <NumericInput value={millis} onValueChange={v => setForm(f => ({ ...f, millis: v }))} disabled={isRunning} min={0} max={999}  data-qoder-id="qel-input-7477224e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-7477224e&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:109,&quot;column&quot;:15}}"/>
             </div>
             <span className="text-sm text-tertiary" style={{ paddingBottom: '6px' }} data-qoder-id="qel-text-sm-25a33b11" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-25a33b11&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:111,&quot;column&quot;:13}}">
               = {formatTime(intervalMs)}
@@ -126,7 +150,7 @@ export function AutoClicker(qoderProps: Record<string, any>) {
               <label className="field-label" data-qoder-id="qel-field-label-13e9f438" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-label-13e9f438&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;field-label&quot;,&quot;loc&quot;:{&quot;line&quot;:124,&quot;column&quot;:15}}">执行模式</label>
               <RadioGroup
                 value={timesMode}
-                onChange={(v) => setTimesMode(v as 'fixed' | 'continuous')}
+                onChange={(v) => setForm(f => ({ ...f, timesMode: v as 'fixed' | 'continuous' }))}
                 options={[
                   { value: 'continuous', label: '持续运行' },
                   { value: 'fixed', label: '固定次数' },
@@ -136,7 +160,7 @@ export function AutoClicker(qoderProps: Record<string, any>) {
             {timesMode === 'fixed' && (
               <div className="field-group" style={{ width: 120 }} data-qoder-id="qel-field-group-49bc3ad7" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-group-49bc3ad7&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;field-group&quot;,&quot;loc&quot;:{&quot;line&quot;:135,&quot;column&quot;:15}}">
                 <label className="field-label" data-qoder-id="qel-field-label-14ec3462" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-label-14ec3462&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;field-label&quot;,&quot;loc&quot;:{&quot;line&quot;:136,&quot;column&quot;:17}}">次数</label>
-                <Input type="number" variant="number" value={times} onChange={e => setTimes(Math.max(1, +e.target.value))} disabled={isRunning} min={1}  data-qoder-id="qel-input-7d88799a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-7d88799a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:137,&quot;column&quot;:17}}"/>
+                <Input type="number" variant="number" value={times} onChange={e => setForm(f => ({ ...f, times: Math.max(1, +e.target.value) }))} disabled={isRunning} min={1}  data-qoder-id="qel-input-7d88799a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-7d88799a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:137,&quot;column&quot;:17}}"/>
               </div>
             )}
           </div>
@@ -150,18 +174,18 @@ export function AutoClicker(qoderProps: Record<string, any>) {
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xl)', flexWrap: 'wrap', rowGap: 'var(--space-sm)' }} data-qoder-id="qel-div-caf0cdeb" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-caf0cdeb&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:150,&quot;column&quot;:11}}">
-            <Toggle checked={useCurrentPos} onChange={setUseCurrentPos} label="使用当前鼠标位置" disabled={isRunning}  data-qoder-id="qel-toggle-b8bfa740" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toggle-b8bfa740&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;toggle&quot;,&quot;loc&quot;:{&quot;line&quot;:151,&quot;column&quot;:13}}"/>
+            <Toggle checked={useCurrentPos} onChange={v => setForm(f => ({ ...f, useCurrentPos: v }))} label="使用当前鼠标位置" disabled={isRunning}  data-qoder-id="qel-toggle-b8bfa740" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toggle-b8bfa740&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;toggle&quot;,&quot;loc&quot;:{&quot;line&quot;:151,&quot;column&quot;:13}}"/>
             {!useCurrentPos && (
               <div className="field-row" data-qoder-id="qel-field-row-093a74f0" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-row-093a74f0&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;field-row&quot;,&quot;loc&quot;:{&quot;line&quot;:153,&quot;column&quot;:15}}">
                 <div className="field-inline" data-qoder-id="qel-field-inline-9489d402" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-inline-9489d402&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;field-inline&quot;,&quot;loc&quot;:{&quot;line&quot;:154,&quot;column&quot;:17}}">
                   <span className="text-sm text-secondary" data-qoder-id="qel-text-sm-24b24408" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-24b24408&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:155,&quot;column&quot;:19}}">X</span>
-                  <Input type="number" variant="number" value={posX} onChange={e => setPosX(+e.target.value)} disabled={isRunning} style={{ width: 80 }}  data-qoder-id="qel-input-f58564eb" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-f58564eb&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:156,&quot;column&quot;:19}}"/>
+                  <Input type="number" variant="number" value={posX} onChange={e => setForm(f => ({ ...f, posX: +e.target.value }))} disabled={isRunning} style={{ width: 80 }}  data-qoder-id="qel-input-f58564eb" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-f58564eb&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:156,&quot;column&quot;:19}}"/>
                 </div>
                 <div className="field-inline" data-qoder-id="qel-field-inline-9189cf49" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-field-inline-9189cf49&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;field-inline&quot;,&quot;loc&quot;:{&quot;line&quot;:158,&quot;column&quot;:17}}">
                   <span className="text-sm text-secondary" data-qoder-id="qel-text-sm-2bb24f0d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-2bb24f0d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:159,&quot;column&quot;:19}}">Y</span>
-                  <Input type="number" variant="number" value={posY} onChange={e => setPosY(+e.target.value)} disabled={isRunning} style={{ width: 80 }}  data-qoder-id="qel-input-f88569a4" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-f88569a4&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:160,&quot;column&quot;:19}}"/>
+                  <Input type="number" variant="number" value={posY} onChange={e => setForm(f => ({ ...f, posY: +e.target.value }))} disabled={isRunning} style={{ width: 80 }}  data-qoder-id="qel-input-f88569a4" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-f88569a4&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:160,&quot;column&quot;:19}}"/>
                 </div>
-                <IconButton tooltip="拾取当前鼠标坐标" onClick={() => { void getMousePosition().then(p => { setPosX(p.x); setPosY(p.y); }).catch(() => undefined); }} data-qoder-id="qel-iconbutton-ee43b539" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-iconbutton-ee43b539&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;iconbutton&quot;,&quot;loc&quot;:{&quot;line&quot;:162,&quot;column&quot;:17}}">
+                <IconButton tooltip="拾取当前鼠标坐标" onClick={() => { void getMousePosition().then(p => { setForm(f => ({ ...f, posX: p.x, posY: p.y })); }).catch(() => undefined); }} data-qoder-id="qel-iconbutton-ee43b539" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-iconbutton-ee43b539&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;iconbutton&quot;,&quot;loc&quot;:{&quot;line&quot;:162,&quot;column&quot;:17}}">
                   <MousePointer size={14}  data-qoder-id="qel-mousepointer-d86c1bda" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-mousepointer-d86c1bda&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/AutoClicker.tsx&quot;,&quot;componentName&quot;:&quot;AutoClicker&quot;,&quot;elementRole&quot;:&quot;mousepointer&quot;,&quot;loc&quot;:{&quot;line&quot;:163,&quot;column&quot;:19}}"/>
                 </IconButton>
               </div>
