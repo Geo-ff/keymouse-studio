@@ -12,6 +12,7 @@ files:
   - auto-updater.mjs
   - constants.mjs
   - sidecar-manager.mjs
+  - global-hotkeys.mjs
   - package.json
   - assets/**
   - "!**/*.map"

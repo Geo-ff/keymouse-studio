@@ -91,6 +91,15 @@ jobs:
           # CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: npx electron-builder --win nsis --config electron-builder.yml --publish never
 
+      - name: Verify packaged main-process modules
+        working-directory: desktop-poc/electron
+        shell: pwsh
+        run: |
+          $asarFiles = npx --no-install asar list "dist/win-unpacked/resources/app.asar"
+          if ($asarFiles -notcontains "\global-hotkeys.mjs") {
+            throw "app.asar is missing global-hotkeys.mjs"
+          }
+
       - name: List dist artifacts
         working-directory: desktop-poc/electron
         shell: bash
