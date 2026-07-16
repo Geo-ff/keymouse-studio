@@ -22,7 +22,8 @@ const fallbackState: ServiceState = {
   snapshot: INITIAL_SNAPSHOT, runState: 'idle', recordingState: 'idle', clickerCount: 0, clickerRunningTime: 0,
   nextClickCountdown: 0, recordingTime: 0, recordingActionCount: 0, recordingActions: [], playbackProgress: 0,
   playbackCurrentIndex: -1, playbackCurrentLoop: 0, playbackLoopRemainingMs: 0, mousePos: { x: 960, y: 540 },
-  keyboardListening: false, countdownRemaining: 0, timedClickCount: 0, timedClickCountdown: 0,
+  keyboardListening: false, countdownRemaining: 0, timedClickCount: 0, timedClickRunningTime: 0,
+  timedClickCountdown: 0,
 };
 
 const AutomationContext = createContext<AutomationContextValue | null>(null);

@@ -75,11 +75,14 @@ def test_events_allow_query_token_for_loopback_browser(app: FastAPI) -> None:
             assert websocket.receive_json()["type"] == "engine.state_snapshot"
 
 
-def test_events_allow_query_token_for_electron_file_origin(app: FastAPI) -> None:
+@pytest.mark.parametrize("origin", ["null", "file://"])
+def test_events_allow_query_token_for_electron_file_origin(
+    app: FastAPI, origin: str
+) -> None:
     with TestClient(with_client_host(app, "127.0.0.1")) as client:
         with client.websocket_connect(
             f"/api/v1/events?token={SESSION_TOKEN}",
-            headers={"Origin": "null"},
+            headers={"Origin": origin},
         ) as websocket:
             assert websocket.receive_json()["type"] == "engine.state_snapshot"
 

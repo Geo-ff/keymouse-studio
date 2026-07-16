@@ -3,7 +3,9 @@ from contextlib import suppress
 from secrets import compare_digest
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+from starlette.types import Message
 
+from keymouse_studio.api.schemas.events import EventEnvelope
 from keymouse_studio.config import Settings
 from keymouse_studio.security import is_allowed_browser_origin, is_loopback_host
 from keymouse_studio.services.event_service import EventService
@@ -41,27 +43,33 @@ async def events(websocket: WebSocket) -> None:
     operations: OperationService = websocket.app.state.operation_service
     event_service: EventService = websocket.app.state.event_service
     queue = event_service.subscribe()
+    receive_task: asyncio.Task[Message] | None = None
+    event_task: asyncio.Task[EventEnvelope] | None = None
     try:
         snapshot = await operations.snapshot_event()
         await websocket.send_json(snapshot.model_dump(mode="json", by_alias=True))
+        receive_task = asyncio.create_task(websocket.receive())
+        event_task = asyncio.create_task(queue.get())
         while True:
-            receive_task = asyncio.create_task(websocket.receive())
-            event_task = asyncio.create_task(queue.get())
-            done, pending = await asyncio.wait(
+            done, _ = await asyncio.wait(
                 {receive_task, event_task}, return_when=asyncio.FIRST_COMPLETED
             )
-            for task in pending:
-                task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await task
             if receive_task in done:
                 message = receive_task.result()
                 if message["type"] == "websocket.disconnect":
                     break
+                receive_task = asyncio.create_task(websocket.receive())
             if event_task in done:
                 event = event_task.result()
                 await websocket.send_json(event.model_dump(mode="json", by_alias=True))
+                event_task = asyncio.create_task(queue.get())
     except WebSocketDisconnect:
         pass
     finally:
+        for task in (receive_task, event_task):
+            if task is None or task.done():
+                continue
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
         event_service.unsubscribe(queue)

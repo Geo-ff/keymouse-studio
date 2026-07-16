@@ -257,3 +257,33 @@ async def test_timed_click_runs_startup_countdown_before_scheduled_delay() -> No
     assert adapter.actions.count(("down", MouseButton.LEFT)) == 1
     await service.shutdown()
     events.unsubscribe(queue)
+
+
+@pytest.mark.asyncio
+async def test_timed_click_publishes_remaining_time_between_repeats() -> None:
+    service, operations, _adapter, events = create_service(
+        progress_publish_interval_ms=10
+    )
+    queue = events.subscribe()
+    await service.start_timed_click(
+        TimedClickConfig(
+            delay_ms=60,
+            interval_ms=60,
+            repeat_count=3,
+            countdown_ms=0,
+        )
+    )
+    await wait_until_idle(service, operations)
+
+    repeated_waits = []
+    while not queue.empty():
+        event = queue.get_nowait()
+        if event.type != "operation.progress":
+            continue
+        snapshot = event.payload
+        if snapshot.completed_count >= 1 and snapshot.countdown_remaining_ms > 0:
+            repeated_waits.append(snapshot)
+    assert repeated_waits
+    assert max(snapshot.countdown_remaining_ms for snapshot in repeated_waits) <= 60
+    await service.shutdown()
+    events.unsubscribe(queue)

@@ -58,6 +58,7 @@ function createState(snapshot: StateSnapshot = INITIAL_SNAPSHOT): ServiceState {
     keyboardListening: snapshot.operationType === 'recording' && activeState(snapshot.state),
     countdownRemaining: Math.ceil(snapshot.countdownRemainingMs / 1000),
     timedClickCount: snapshot.operationType === 'timed_click' ? snapshot.completedCount : 0,
+    timedClickRunningTime: snapshot.operationType === 'timed_click' ? snapshot.elapsedMs : 0,
     timedClickCountdown: snapshot.operationType === 'timed_click' ? snapshot.countdownRemainingMs : 0,
   };
 }
@@ -102,6 +103,19 @@ abstract class AutomationServiceBase implements IAutomationService {
       };
     }
     const next = { ...createState(merged), recordingActions: actions, mousePos };
+    if (merged.operationType !== 'clicker') {
+      next.clickerCount = previous.clickerCount;
+      next.clickerRunningTime = previous.clickerRunningTime;
+    }
+    if (merged.operationType !== 'timed_click') {
+      next.timedClickCount = previous.timedClickCount;
+      next.timedClickRunningTime = previous.timedClickRunningTime;
+    }
+    if (merged.operationType !== 'playback') {
+      next.playbackProgress = previous.playbackProgress;
+      next.playbackCurrentIndex = previous.playbackCurrentIndex;
+      next.playbackCurrentLoop = previous.playbackCurrentLoop;
+    }
     if (merged.operationType === 'recording' && actions.length > next.recordingActionCount) {
       next.recordingActionCount = actions.length;
     }
@@ -387,10 +401,10 @@ export class RealAutomationService extends AutomationServiceBase {
       this.client = new ApiClient(baseUrl, this.connection.token);
       this.capabilities = await this.api().get<Capabilities>('/api/v1/capabilities');
       await this.alignState();
-      await this.connectEvents();
       await this.refreshMousePosition();
       this.startMousePositionPolling();
       this.startStateAlignmentPolling();
+      void this.connectEvents().catch(() => undefined);
       this.clearError();
     } catch (error) { this.report(error); }
   }
@@ -532,9 +546,8 @@ export class RealAutomationService extends AutomationServiceBase {
       try {
         await this.alignState();
         await this.connectEvents();
-      } catch (error) {
-        const detail = error instanceof ApiError ? error.detail : { code: 'CONNECTION_ERROR' as const, message: error instanceof Error ? error.message : '重连失败', details: {}, retryable: true, operationId: null };
-        this.currentError = detail; this.errorListeners.forEach(listener => listener(detail)); this.scheduleReconnect();
+      } catch {
+        this.scheduleReconnect();
       }
     }, delay);
   }
@@ -579,9 +592,10 @@ export class RealAutomationService extends AutomationServiceBase {
   private startStateAlignmentPolling(): void {
     if (this.stateAlignmentTimer) clearInterval(this.stateAlignmentTimer);
     this.stateAlignmentTimer = setInterval(() => {
-      if (this.disposed || !activeState(this.currentState.snapshot.state)) return;
+      if (this.disposed) return;
+      if (this.socketReady && !activeState(this.currentState.snapshot.state)) return;
       void this.alignState().catch(() => undefined);
-    }, 1000);
+    }, 500);
   }
 
   async getMousePosition(): Promise<MousePosition> {

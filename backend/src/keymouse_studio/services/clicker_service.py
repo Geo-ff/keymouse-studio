@@ -197,7 +197,12 @@ class ClickerService:
                 progress = completed / total if total is not None else None
                 await self._publish_progress(completed, progress, force=True)
                 if total is None or completed < total:
-                    await self._wait(config.interval_ms, completed, total)
+                    await self._wait(
+                        config.interval_ms,
+                        completed,
+                        total,
+                        publish_remaining=delay_ms > 0,
+                    )
         except asyncio.CancelledError:
             self._cancelled.set()
             raise

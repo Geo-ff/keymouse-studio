@@ -311,6 +311,7 @@ export interface ServiceState {
   keyboardListening: boolean;
   countdownRemaining: number;
   timedClickCount: number;
+  timedClickRunningTime: number;
   timedClickCountdown: number;
 }
 

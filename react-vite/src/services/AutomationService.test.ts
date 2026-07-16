@@ -87,7 +87,7 @@ class MockWebSocket {
   readyState = MockWebSocket.CONNECTING;
   onmessage: ((event: MessageEvent) => void) | null = null;
   onerror: (() => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((event: CloseEvent) => void) | null = null;
 
   constructor(readonly url: string) {
     MockWebSocket.instances.push(this);
@@ -96,6 +96,11 @@ class MockWebSocket {
   emit(envelope: EventEnvelope): void {
     this.readyState = MockWebSocket.OPEN;
     this.onmessage?.({ data: JSON.stringify(envelope) } as MessageEvent);
+  }
+
+  fail(code = 1008, reason = 'Origin not allowed'): void {
+    this.readyState = MockWebSocket.CLOSED;
+    this.onclose?.({ code, reason, wasClean: false } as CloseEvent);
   }
 
   close(): void {
@@ -117,6 +122,8 @@ describe('RealAutomationService state synchronization', () => {
       },
       setTimeout,
       clearTimeout,
+      setInterval,
+      clearInterval,
     });
   });
 
@@ -125,25 +132,33 @@ describe('RealAutomationService state synchronization', () => {
     vi.restoreAllMocks();
   });
 
-  it('waits for the first websocket snapshot before initialization completes', async () => {
+  it('initializes with REST when websocket closes before the first snapshot', async () => {
+    let stateReads = 0;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname;
       if (path === '/api/v1/capabilities') return response(capabilities);
-      if (path === '/api/v1/state') return response(snapshot(1, 'idle'));
+      if (path === '/api/v1/state') {
+        stateReads += 1;
+        return response(
+          stateReads === 1
+            ? snapshot(1, 'idle')
+            : snapshot(2, 'countdown', 'operation-1', 'clicker', 2500),
+        );
+      }
       if (path === '/api/v1/mouse-position') return response({ x: 10, y: 20 });
       throw new Error(`Unexpected request: ${path}`);
     }));
     const service = new RealAutomationService();
-    let initialized = false;
 
-    const initialization = service.initialize().then(() => { initialized = true; });
-    await vi.waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
-    expect(initialized).toBe(false);
+    await service.initialize();
+    expect(MockWebSocket.instances).toHaveLength(1);
+    MockWebSocket.instances[0].fail();
+    await vi.waitFor(async () => {
+      const state = await service.getState();
+      expect(state.snapshot.state).toBe('countdown');
+      expect(state.countdownRemaining).toBe(3);
+    }, { timeout: 1500 });
 
-    MockWebSocket.instances[0].emit(event(snapshot(1, 'idle')));
-    await initialization;
-
-    expect(initialized).toBe(true);
     await service.dispose();
   });
 
@@ -186,6 +201,43 @@ describe('RealAutomationService state synchronization', () => {
     expect(state.snapshot.sequence).toBe(4);
     expect(state.snapshot.state).toBe('idle');
     expect(state.countdownRemaining).toBe(0);
+    await service.dispose();
+  });
+
+  it('keeps the last clicker and timed click statistics after completion', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input)).pathname;
+      if (path === '/api/v1/capabilities') return response(capabilities);
+      if (path === '/api/v1/state') return response(snapshot(1, 'idle'));
+      if (path === '/api/v1/mouse-position') return response({ x: 10, y: 20 });
+      throw new Error(`Unexpected request: ${path}`);
+    }));
+    const service = new RealAutomationService();
+    await service.initialize();
+    const socket = MockWebSocket.instances[0];
+    socket.emit(event(snapshot(1, 'idle')));
+
+    socket.emit(event({
+      ...snapshot(2, 'running', 'clicker-1', 'clicker'),
+      completedCount: 7,
+      elapsedMs: 1500,
+    }));
+    socket.emit(event(snapshot(3, 'idle')));
+    let state = await service.getState();
+    expect(state.clickerCount).toBe(7);
+    expect(state.clickerRunningTime).toBe(1500);
+
+    socket.emit(event({
+      ...snapshot(4, 'running', 'timed-1', 'timed_click'),
+      completedCount: 3,
+      elapsedMs: 2500,
+    }));
+    socket.emit(event(snapshot(5, 'idle')));
+    state = await service.getState();
+    expect(state.clickerCount).toBe(7);
+    expect(state.timedClickCount).toBe(3);
+    expect(state.timedClickRunningTime).toBe(2500);
+
     await service.dispose();
   });
 });

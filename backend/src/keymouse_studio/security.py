@@ -20,7 +20,7 @@ def is_loopback_host(host: str | None) -> bool:
 
 
 def is_allowed_browser_origin(origin: str | None) -> bool:
-    if origin is None or origin == "null":
+    if origin is None or origin in {"null", "file://"}:
         return True
     try:
         parsed = urlsplit(origin)
