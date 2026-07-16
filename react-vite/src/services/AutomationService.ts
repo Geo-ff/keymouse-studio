@@ -31,6 +31,8 @@ import type {
 import { DEFAULT_SETTINGS, INITIAL_SNAPSHOT } from '../types';
 import { generateRandomAction, mockScripts } from '../data/mockData';
 import { resolveServiceMode } from '../utils/runtime';
+import { hotkeyToBackend } from '../utils/hotkey';
+import { resolveCountdownMs } from '../utils/countdown';
 import { ApiClient, ApiError } from './ApiClient';
 
 const genId = () => crypto.randomUUID();
@@ -525,7 +527,7 @@ export class RealAutomationService extends AutomationServiceBase {
       loopMode: options.loopMode === 'duration' ? 'infinite' : options.loopMode,
       loopCount: options.loopMode === 'count' ? options.times : 1,
       loopDurationMs: options.loopMode === 'duration' ? (options.loopDurationMs ?? null) : null,
-      countdownMs: script.settings.countdownMs,
+      countdownMs: options.countdownMs ?? resolveCountdownMs(this.settings),
     };
     return this.call(async () => this.applyTransition(await this.api().post('/api/v1/playback/start', request)));
   }
@@ -569,8 +571,14 @@ export class RealAutomationService extends AutomationServiceBase {
         if (lower === 'win' || lower === 'cmd' || lower === 'meta') return 'Win';
         if (lower === 'esc' || lower === 'escape') return 'Esc';
         if (lower === 'space') return 'Space';
+        if (lower === 'page_up' || lower === 'pageup') return 'PageUp';
+        if (lower === 'page_down' || lower === 'pagedown') return 'PageDown';
+        if (lower === 'up' || lower === 'arrowup') return 'Up';
+        if (lower === 'down' || lower === 'arrowdown') return 'Down';
+        if (lower === 'left' || lower === 'arrowleft') return 'Left';
+        if (lower === 'right' || lower === 'arrowright') return 'Right';
         if (/^f\d+$/.test(lower)) return lower.toUpperCase();
-        return lower.length === 1 ? lower.toUpperCase() : part;
+        return lower.length === 1 ? lower.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1);
       })
       .join('+');
   }
@@ -597,11 +605,11 @@ export class RealAutomationService extends AutomationServiceBase {
       defaultLoopMode: 'count',
       defaultLoopCount: settings.defaultLoopTimes,
       defaultCountdownMs: settings.countdownEnabled ? Math.round(settings.countdownSeconds * 1000) : 0,
-      emergencyStopHotkey: settings.emergencyHotkey,
-      recordStartHotkey: settings.recordStartHotkey,
-      recordStopHotkey: settings.recordStopHotkey,
-      playbackStartHotkey: settings.playbackStartHotkey,
-      playbackStopHotkey: settings.playbackStopHotkey,
+      emergencyStopHotkey: hotkeyToBackend(settings.emergencyHotkey),
+      recordStartHotkey: hotkeyToBackend(settings.recordStartHotkey),
+      recordStopHotkey: hotkeyToBackend(settings.recordStopHotkey),
+      playbackStartHotkey: hotkeyToBackend(settings.playbackStartHotkey),
+      playbackStopHotkey: hotkeyToBackend(settings.playbackStopHotkey),
     };
   }
   async getSettings(): Promise<AppSettings> {
@@ -615,10 +623,20 @@ export class RealAutomationService extends AutomationServiceBase {
       if (!(field in updates)) continue;
       const value = updates[field] ?? '';
       if (!value.trim()) {
+        if (field === 'emergencyHotkey') {
+          throw new ApiError({
+            code: 'VALIDATION_ERROR',
+            message: '急停热键不能为空',
+            details: {},
+            retryable: false,
+            operationId: null,
+          });
+        }
         next[field] = '';
         continue;
       }
-      const validation = await this.call(() => this.api().post<HotkeyValidationResponse>('/api/v1/hotkeys/validate', { hotkey: value }));
+      const backendHotkey = hotkeyToBackend(value);
+      const validation = await this.call(() => this.api().post<HotkeyValidationResponse>('/api/v1/hotkeys/validate', { hotkey: backendHotkey }));
       next[field] = this.formatHotkeyFromBackend(validation.normalizedHotkey);
     }
     const backend = await this.call(() => this.api().put<BackendSettings>('/api/v1/settings', this.toBackendSettings(next)));
@@ -627,8 +645,15 @@ export class RealAutomationService extends AutomationServiceBase {
   }
   async getCapabilities(): Promise<Capabilities> { return this.capabilities ? clone(this.capabilities) : this.call(() => this.api().get('/api/v1/capabilities')); }
   async getHotkeyStatus(): Promise<HotkeyStatus> {
-    const validation = await this.call(() => this.api().post<HotkeyValidationResponse>('/api/v1/hotkeys/validate', { hotkey: this.settings.emergencyHotkey }));
-    return { key: validation.normalizedHotkey.toUpperCase(), available: validation.availability === 'available', registered: true, reason: validation.reason };
+    const validation = await this.call(() => this.api().post<HotkeyValidationResponse>('/api/v1/hotkeys/validate', {
+      hotkey: hotkeyToBackend(this.settings.emergencyHotkey || 'f12'),
+    }));
+    return {
+      key: this.formatHotkeyFromBackend(validation.normalizedHotkey),
+      available: validation.availability === 'available',
+      registered: true,
+      reason: validation.reason,
+    };
   }
   async dispose(): Promise<void> { this.disposed = true; if (this.reconnectTimer) clearTimeout(this.reconnectTimer); this.reconnectTimer = null; if (this.mousePositionTimer) clearInterval(this.mousePositionTimer); this.mousePositionTimer = null; if (this.socket) { this.socket.onclose = null; this.socket.close(); } this.socket = null; this.listeners.clear(); this.errorListeners.clear(); }
 }

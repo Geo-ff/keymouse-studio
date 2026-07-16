@@ -21,6 +21,7 @@ import {
   GITHUB_REPO_URL,
 } from './constants.mjs'
 import { startSidecar, stopSidecar } from './sidecar-manager.mjs'
+import { setGlobalHotkeys, unregisterAll as unregisterGlobalHotkeys } from './global-hotkeys.mjs'
 
 const directory = path.dirname(fileURLToPath(import.meta.url))
 const productionEntry = path.resolve(directory, '../../react-vite/dist/index.html')
@@ -34,6 +35,13 @@ let sidecarDetach = () => {}
 let mainWindow
 let ipcRegistered = false
 
+const ACTION_LABELS = {
+  recordStart: '开始录制',
+  recordStop: '停止录制',
+  playbackStart: '开始回放',
+  playbackStop: '停止回放',
+}
+
 const IPC_HANDLERS = [
   'connection:get',
   'theme:set',
@@ -45,6 +53,7 @@ const IPC_HANDLERS = [
   'update:getState',
   'update:download',
   'update:install',
+  'hotkeys:set',
 ]
 
 function applyNativeTheme(theme) {
@@ -193,6 +202,27 @@ function registerIpcHandlers() {
     assertTrusted(event)
     return quitAndInstallUpdate()
   })
+  ipcMain.handle('hotkeys:set', (event, bindings = {}) => {
+    assertTrusted(event)
+    const result = setGlobalHotkeys(bindings, (actionId) => {
+      sendToRenderer('hotkeys:action', { actionId })
+    })
+    if (!result.ok && result.failed.length > 0 && mainWindow && !mainWindow.isDestroyed()) {
+      const lines = result.failed.map((item) => {
+        const label = ACTION_LABELS[item.actionId] || item.actionId
+        return `${label}: ${item.hotkey || item.accelerator || '未知'}`
+      })
+      void dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        title: '全局快捷键注册失败',
+        message: '以下快捷键无法注册为全局快捷键, 可能与其它程序冲突',
+        detail: lines.join('\n'),
+        buttons: ['知道了'],
+        defaultId: 0,
+      })
+    }
+    return result
+  })
 }
 
 function removeIpcHandlers() {
@@ -320,7 +350,11 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => app.quit())
+app.on('will-quit', () => {
+  unregisterGlobalHotkeys()
+})
 app.on('before-quit', async (event) => {
+  unregisterGlobalHotkeys()
   if (quitting || !sidecar || (sidecar.child.exitCode !== null || sidecar.child.signalCode !== null)) {
     return
   }

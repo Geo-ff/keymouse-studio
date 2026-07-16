@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { useService } from '../hooks/useService';
 import { usePageHotkeys } from '../hooks/usePageHotkeys';
+import { resolveCountdownMs } from '../utils/countdown';
 import { Button, IconButton, Toggle, Input, Select, RadioGroup, EmptyState, ProgressBar } from '../components/ui';
 import { formatDuration, formatTime, createAction, createEmptyScript } from '../data/mockData';
 import type { ScriptAction, ActionType, MouseButton, Script, PlaybackOptions, EditorLoopMode } from '../types';
@@ -256,13 +257,21 @@ export function ScriptEditor({ script, onScriptChange, onScriptSave, onNavigate,
       loop: loopMode === 'infinite',
       loopMode,
       loopDurationMs: loopMode === 'duration' ? (loopDurationMin * 60 + loopDurationSec) * 1000 : undefined,
+      countdownMs: resolveCountdownMs(settings),
     };
-    void playback({ ...script, actions: enabledActions }, options)
-      .then(() => {
-        void showSystemAlert('回放', '回放已开始', script.name.trim() ? `脚本：${script.name.trim()}` : undefined);
-      })
-      .catch(() => undefined);
-  }, [actions, script, playback, loopMode, loopCount, loopDurationMin, loopDurationSec, speedMultiplier]);
+    void (async () => {
+      await window.desktop?.setGlobalHotkeys?.({}).catch(() => undefined);
+      await playback({ ...script, actions: enabledActions }, options);
+      void showSystemAlert('回放', '回放已开始', script.name.trim() ? `脚本：${script.name.trim()}` : undefined);
+    })().catch(() => {
+      void window.desktop?.setGlobalHotkeys?.({
+        recordStart: settings.recordStartHotkey,
+        recordStop: settings.recordStopHotkey,
+        playbackStart: settings.playbackStartHotkey,
+        playbackStop: settings.playbackStopHotkey,
+      }).catch(() => undefined);
+    });
+  }, [actions, script, playback, loopMode, loopCount, loopDurationMin, loopDurationSec, speedMultiplier, settings]);
 
   const handlePause = useCallback(() => {
     if (isPaused) void resumePlayback().catch(() => undefined);
@@ -288,18 +297,36 @@ export function ScriptEditor({ script, onScriptChange, onScriptSave, onNavigate,
     void onScriptSave({ ...script, name: script.name.trim(), actions });
   }, [onScriptSave, script, actions]);
 
-  usePageHotkeys(useMemo(() => [
-    {
-      hotkey: settings.playbackStartHotkey,
-      enabled: !isPlaying && actions.some(a => a.enabled),
-      handler: handleRun,
-    },
-    {
-      hotkey: settings.playbackStopHotkey,
-      enabled: isPlaying || isPaused,
-      handler: handleStop,
-    },
-  ], [settings.playbackStartHotkey, settings.playbackStopHotkey, isPlaying, isPaused, actions, handleRun, handleStop]));
+  usePageHotkeys(useMemo(() => {
+    if (typeof window !== 'undefined' && window.desktop?.setGlobalHotkeys) return [];
+    return [
+      {
+        hotkey: settings.playbackStartHotkey,
+        enabled: !isPlaying && actions.some(a => a.enabled),
+        handler: handleRun,
+      },
+      {
+        hotkey: settings.playbackStopHotkey,
+        enabled: isPlaying || isPaused,
+        handler: handleStop,
+      },
+    ];
+  }, [settings.playbackStartHotkey, settings.playbackStopHotkey, isPlaying, isPaused, actions, handleRun, handleStop]));
+
+  useEffect(() => {
+    const onGlobal = (event: Event) => {
+      const actionId = (event as CustomEvent<{ actionId: string }>).detail?.actionId;
+      if (actionId === 'playbackStart') {
+        if (!isPlaying && actions.some(a => a.enabled)) handleRun();
+        return;
+      }
+      if (actionId === 'playbackStop') {
+        if (isPlaying || isPaused) handleStop();
+      }
+    };
+    window.addEventListener('keymouse-global-hotkey', onGlobal);
+    return () => window.removeEventListener('keymouse-global-hotkey', onGlobal);
+  }, [isPlaying, isPaused, actions, handleRun, handleStop]);
 
   return (
     <div style={{ ...({ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }), ...((qoderProps as any)?.style) }} className={(qoderProps as any)?.className} data-qoder-id={(qoderProps as any)?.["data-qoder-id"]} data-qoder-source={(qoderProps as any)?.["data-qoder-source"]}>

@@ -11,6 +11,7 @@ import type { ClickerConfig, MouseButton, ClickMode } from '../types';
 import { formatTime } from '../data/mockData';
 import { showSystemAlert } from '../utils/systemAlert';
 import { usePersistedFormState } from '../utils/formPersistence';
+import { resolveCountdownMs } from '../utils/countdown';
 
 interface ClickerFormState {
   button: MouseButton;
@@ -41,7 +42,7 @@ const CLICKER_DEFAULTS: ClickerFormState = {
 };
 
 export function AutoClicker(qoderProps: Record<string, any>) {
-  const { startClicker, pauseClicker, resumeClicker, stopClicker, getMousePosition, state } = useService();
+  const { startClicker, pauseClicker, resumeClicker, stopClicker, getMousePosition, state, settings } = useService();
   const [form, setForm] = usePersistedFormState('clicker', CLICKER_DEFAULTS);
   const { button, clickMode, hours, minutes, seconds, millis, timesMode, times, useCurrentPos, posX, posY } = form;
 
@@ -60,14 +61,14 @@ export function AutoClicker(qoderProps: Record<string, any>) {
       positionMode: useCurrentPos ? 'current' : 'fixed',
       x: useCurrentPos ? null : posX,
       y: useCurrentPos ? null : posY,
-      countdownMs: 0,
+      countdownMs: resolveCountdownMs(settings),
     };
     void startClicker(config)
       .then(() => {
         void showSystemAlert('连点器', '连点已开始', '正在按设定间隔执行点击');
       })
       .catch(() => undefined);
-  }, [startClicker, button, clickMode, intervalMs, timesMode, times, useCurrentPos, posX, posY]);
+  }, [startClicker, button, clickMode, intervalMs, timesMode, times, useCurrentPos, posX, posY, settings]);
 
   const handlePause = useCallback(() => {
     if (isPaused) void resumeClicker().catch(() => undefined);

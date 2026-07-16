@@ -26,6 +26,7 @@ import type { PageId } from '../components/Layout';
 import { useToast } from '../providers/ToastProvider';
 import { showSystemAlert } from '../utils/systemAlert';
 import { formatHotkeyLabel } from '../utils/hotkey';
+import { resolveCountdownMs } from '../utils/countdown';
 
 const ACTION_ICONS: Record<ActionType, typeof MousePointer> = {
   mouse_move: MousePointer,
@@ -115,12 +116,31 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
       setScriptName(`录制脚本 ${new Date().toLocaleString('zh-CN')}`);
       displayTimeRef.current = 0;
       setDisplayTime(0);
-      await startRecording({ recordMouseMove: settings.recordMouseMove, minMoveSampleMs: settings.minRecordInterval, moveErrorPx: 2, recordWheel: true, recordMouse: true, recordKeyboard: true });
+      const countdownMs = resolveCountdownMs(settings);
+      if (countdownMs > 0) {
+        void showSystemAlert('录制', '倒计时开始', `${Math.round(countdownMs / 1000)} 秒后开始录制`);
+        await new Promise<void>(resolve => { window.setTimeout(resolve, countdownMs); });
+      }
+      await startRecording({
+        recordMouseMove: settings.recordMouseMove,
+        minMoveSampleMs: settings.minRecordInterval,
+        moveErrorPx: 2,
+        recordWheel: true,
+        recordMouse: true,
+        recordKeyboard: true,
+        controlHotkeys: [
+          settings.emergencyHotkey,
+          settings.recordStartHotkey,
+          settings.recordStopHotkey,
+          settings.playbackStartHotkey,
+          settings.playbackStopHotkey,
+        ].filter(Boolean),
+      });
       void showSystemAlert('录制', '录制已开始', '正在记录键鼠操作');
     } finally {
       setPending(false);
     }
-  }, [pending, startRecording, settings.recordMouseMove, settings.minRecordInterval]);
+  }, [pending, startRecording, settings]);
 
   const handlePause = useCallback(async () => {
     if (pending) return;
@@ -179,18 +199,41 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
     }
   }, [pending, discardRecording, toast]);
 
-  usePageHotkeys(useMemo(() => [
-    {
-      hotkey: settings.recordStartHotkey,
-      enabled: !pending && (state.recordingState === 'idle' || state.recordingState === 'stopped'),
-      handler: () => { void handleStart(); },
-    },
-    {
-      hotkey: settings.recordStopHotkey,
-      enabled: !pending && (isRecording || isPaused),
-      handler: () => { void handleStop(); },
-    },
-  ], [settings.recordStartHotkey, settings.recordStopHotkey, pending, state.recordingState, isRecording, isPaused, handleStart, handleStop]));
+  // Window-local fallback when Electron global shortcuts are unavailable
+  usePageHotkeys(useMemo(() => {
+    if (typeof window !== 'undefined' && window.desktop?.setGlobalHotkeys) return [];
+    return [
+      {
+        hotkey: settings.recordStartHotkey,
+        enabled: !pending && (state.recordingState === 'idle' || state.recordingState === 'stopped'),
+        handler: () => { void handleStart(); },
+      },
+      {
+        hotkey: settings.recordStopHotkey,
+        enabled: !pending && (isRecording || isPaused),
+        handler: () => { void handleStop(); },
+      },
+    ];
+  }, [settings.recordStartHotkey, settings.recordStopHotkey, pending, state.recordingState, isRecording, isPaused, handleStart, handleStop]));
+
+  useEffect(() => {
+    const onGlobal = (event: Event) => {
+      const actionId = (event as CustomEvent<{ actionId: string }>).detail?.actionId;
+      if (actionId === 'recordStart') {
+        if (!pending && (state.recordingState === 'idle' || state.recordingState === 'stopped')) {
+          void handleStart();
+        }
+        return;
+      }
+      if (actionId === 'recordStop') {
+        if (!pending && (isRecording || isPaused)) {
+          void handleStop();
+        }
+      }
+    };
+    window.addEventListener('keymouse-global-hotkey', onGlobal);
+    return () => window.removeEventListener('keymouse-global-hotkey', onGlobal);
+  }, [pending, state.recordingState, isRecording, isPaused, handleStart, handleStop]);
 
   // Type distribution
   const typeCounts: Partial<Record<ActionType, number>> = {};

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import cast
 from uuid import uuid4
 
 from pydantic import TypeAdapter
@@ -12,7 +11,7 @@ from keymouse_studio.api.schemas.recording import RecordingConfig
 from keymouse_studio.domain.enums import MouseButton
 from keymouse_studio.infrastructure.input.listener import RawInputEvent
 
-_SCRIPT_ACTION = TypeAdapter(ScriptAction)
+_SCRIPT_ACTION: TypeAdapter[ScriptAction] = TypeAdapter(ScriptAction)
 _MODIFIERS = {
     "alt",
     "alt_l",
@@ -31,6 +30,42 @@ _MODIFIERS = {
 _ALT = {"alt", "alt_l", "alt_r"}
 _CTRL = {"ctrl", "ctrl_l", "ctrl_r"}
 _WIN = {"cmd", "cmd_l", "cmd_r", "win"}
+_MODIFIER_NAMES = {
+    "alt": "alt",
+    "alt_l": "alt",
+    "alt_r": "alt",
+    "ctrl": "ctrl",
+    "ctrl_l": "ctrl",
+    "ctrl_r": "ctrl",
+    "shift": "shift",
+    "shift_l": "shift",
+    "shift_r": "shift",
+    "cmd": "win",
+    "cmd_l": "win",
+    "cmd_r": "win",
+    "win": "win",
+}
+_MODIFIER_ORDER = ("ctrl", "alt", "shift", "win")
+
+
+def _hotkey_parts(value: str) -> frozenset[str]:
+    aliases = {
+        "control": "ctrl",
+        "meta": "win",
+        "cmd": "win",
+        "escape": "esc",
+        "arrowup": "up",
+        "arrowdown": "down",
+        "arrowleft": "left",
+        "arrowright": "right",
+        "pageup": "page_up",
+        "pagedown": "page_down",
+    }
+    return frozenset(
+        aliases.get(part.strip().lower().replace("-", "_"), part.strip().lower())
+        for part in value.split("+")
+        if part.strip()
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +132,14 @@ class ActionNormalizer:
     _pending_modifiers: dict[str, RawInputEvent] = field(default_factory=dict)
     _physical_buttons: set[MouseButton] = field(default_factory=set)
     _recorded_buttons: set[MouseButton] = field(default_factory=set)
+    _control_hotkeys: set[frozenset[str]] = field(init=False, default_factory=set)
+
+    def __post_init__(self) -> None:
+        self._control_hotkeys = {
+            parts
+            for value in self.config.control_hotkeys
+            if (parts := _hotkey_parts(value))
+        }
 
     def process(self, event: RawInputEvent) -> list[ScriptAction]:
         if event.type == "mouse_move":
@@ -168,15 +211,17 @@ class ActionNormalizer:
         self._suppressed_keys.intersection_update(self._physical_keys)
         self._pending_modifiers.clear()
         keys = set(self._physical_keys)
+        active_hotkey = frozenset(
+            _MODIFIER_NAMES.get(key, key) for key in keys
+        )
         reserved = bool(keys & _WIN or (keys & _ALT and "tab" in keys))
         reserved = reserved or bool(keys & _ALT and keys & _CTRL and "delete" in keys)
+        reserved = reserved or active_hotkey in self._control_hotkeys
         if not reserved:
             for key, event in sorted(
                 self._physical_keys.items(),
                 key=lambda item: item[1].monotonic_ns,
             ):
-                if key == "f12":
-                    continue
                 down = RawInputEvent(
                     "key_down",
                     monotonic_ns,
@@ -200,12 +245,22 @@ class ActionNormalizer:
             self._last_action_ns += shift
         self._moves = [TimedMove(move.monotonic_ns + shift, move.x, move.y) for move in self._moves]
 
+    def _current_hotkey(self, key: str) -> frozenset[str]:
+        parts = {
+            _MODIFIER_NAMES.get(pressed, pressed)
+            for pressed in self._physical_keys
+            if pressed in _MODIFIERS
+        }
+        parts.add(_MODIFIER_NAMES.get(key, key))
+        return frozenset(parts)
+
+    def _is_control_hotkey(self, key: str) -> bool:
+        return self._current_hotkey(key) in self._control_hotkeys
+
     def _process_key(self, event: RawInputEvent) -> list[ScriptAction]:
         if not self.config.record_keyboard or event.key_code is None:
             return []
         key = event.key_code.lower()
-        if key == "f12":
-            return []
         if event.type == "key_down":
             if key in self._physical_keys:
                 return []
@@ -215,6 +270,10 @@ class ActionNormalizer:
                 return []
             if key in _MODIFIERS:
                 self._pending_modifiers[key] = event
+                return []
+            if self._is_control_hotkey(key):
+                self._suppressed_keys.update(self._physical_keys)
+                self._pending_modifiers.clear()
                 return []
             if self._is_reserved(key):
                 self._suppressed_keys.update(self._physical_keys)
@@ -312,17 +371,14 @@ class ActionNormalizer:
         if self._last_action_ns is not None:
             delay = max(0, (monotonic_ns - self._last_action_ns) // 1_000_000)
         self._last_action_ns = monotonic_ns
-        action = cast(
-            ScriptAction,
-            _SCRIPT_ACTION.validate_python(
-                {
-                    "id": uuid4(),
-                    "type": event_type,
-                    "enabled": True,
-                    "delayBeforeMs": delay,
-                    "payload": payload,
-                }
-            ),
+        action = _SCRIPT_ACTION.validate_python(
+            {
+                "id": uuid4(),
+                "type": event_type,
+                "enabled": True,
+                "delayBeforeMs": delay,
+                "payload": payload,
+            }
         )
         self.actions.append(action)
         return action

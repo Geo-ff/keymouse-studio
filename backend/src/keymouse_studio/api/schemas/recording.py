@@ -15,6 +15,7 @@ class RecordingConfig(ApiModel):
     record_wheel: bool = True
     record_mouse: bool = True
     record_keyboard: bool = True
+    control_hotkeys: list[str] = Field(default_factory=lambda: ["f12"], max_length=5)
 
 
 class RecordingStartResponse(OperationTransition):

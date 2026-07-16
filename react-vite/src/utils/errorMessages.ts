@@ -54,14 +54,36 @@ const ENGLISH_HINTS: Array<[RegExp, string]> = [
   [/invalid or missing local session/i, '本地会话无效，请重启应用'],
 ];
 
+function messageFromDetails(details: Record<string, unknown>): string | null {
+  const errors = details.errors;
+  if (!Array.isArray(errors)) return null;
+  for (const item of errors) {
+    if (!item || typeof item !== 'object') continue;
+    const msg = String((item as { message?: string }).message ?? '');
+    if (/unique|duplicate|冲突|重复/i.test(msg)) {
+      return '快捷键不能重复配置, 请为不同功能设置不同按键';
+    }
+    if (/[\u4e00-\u9fff]/.test(msg)) return msg;
+  }
+  return null;
+}
+
 export function formatErrorForDisplay(error: ErrorDetail): { title: string; message: string } {
   const title = CODE_LABELS[error.code] ?? error.code;
   let message = (error.message || '').trim();
-  for (const [pattern, zh] of ENGLISH_HINTS) {
-    if (pattern.test(message)) {
-      message = zh;
-      break;
+  const fromDetails = messageFromDetails(error.details ?? {});
+  if (fromDetails) {
+    message = fromDetails;
+  } else {
+    for (const [pattern, zh] of ENGLISH_HINTS) {
+      if (pattern.test(message)) {
+        message = zh;
+        break;
+      }
     }
+  }
+  if (/unique|duplicate|hotkeys must be unique/i.test(message)) {
+    message = '快捷键不能重复配置, 请为不同功能设置不同按键';
   }
   const hasChinese = /[\u4e00-\u9fff]/.test(message);
   if (!message || !hasChinese) {

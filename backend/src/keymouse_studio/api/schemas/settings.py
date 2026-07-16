@@ -17,8 +17,25 @@ _MODIFIER_ALIASES = {
     "cmd": "win",
     "cmd_l": "win",
     "cmd_r": "win",
+    "meta": "win",
+    "os": "win",
 }
 _MODIFIERS = set(_MODIFIER_ORDER)
+# Browser / UI display names → canonical storage keys
+_KEY_ALIASES = {
+    "escape": "esc",
+    "arrowup": "up",
+    "arrowdown": "down",
+    "arrowleft": "left",
+    "arrowright": "right",
+    "pageup": "page_up",
+    "pagedown": "page_down",
+    "page_up": "page_up",
+    "page_down": "page_down",
+    " ": "space",
+    "spacebar": "space",
+    "return": "enter",
+}
 _NAMED_KEYS = {
     "backspace",
     "delete",
@@ -39,19 +56,34 @@ _NAMED_KEYS = {
 _NAMED_KEYS.update(f"f{number}" for number in range(1, 25))
 
 
+def _normalize_part(part: str) -> str:
+    raw = part.strip().lower().replace("-", "_")
+    if raw in _MODIFIER_ALIASES:
+        return _MODIFIER_ALIASES[raw]
+    if raw in _MODIFIERS:
+        return raw
+    # pageup / pagedown without underscore (from KeyboardEvent.key)
+    compact = raw.replace("_", "")
+    if compact in _KEY_ALIASES:
+        return _KEY_ALIASES[compact]
+    if raw in _KEY_ALIASES:
+        return _KEY_ALIASES[raw]
+    return raw
+
+
 def normalize_hotkey(value: str) -> str:
-    parts = [
-        _MODIFIER_ALIASES.get(part.strip().lower(), part.strip().lower())
-        for part in value.split("+")
-    ]
+    parts = [_normalize_part(part) for part in value.replace(" ", "").split("+") if part.strip()]
+    # Also accept spaced chords like "Ctrl + Shift + F11"
+    if not parts:
+        parts = [_normalize_part(part) for part in value.split("+")]
     if not parts or any(not part for part in parts) or len(set(parts)) != len(parts):
-        raise ValueError("hotkey must contain unique non-empty keys")
+        raise ValueError("快捷键格式无效")
     keys = [part for part in parts if part not in _MODIFIERS]
     if len(keys) != 1:
-        raise ValueError("hotkey must contain exactly one non-modifier key")
+        raise ValueError("快捷键必须包含且仅包含一个主键(可加修饰键)")
     key = keys[0]
     if not (len(key) == 1 and key.isalnum()) and key not in _NAMED_KEYS:
-        raise ValueError("hotkey contains an unsupported key")
+        raise ValueError("不支持的快捷键")
     modifiers = [modifier for modifier in _MODIFIER_ORDER if modifier in parts]
     return "+".join([*modifiers, key])
 
@@ -100,7 +132,7 @@ class ApplicationSettings(ApiModel):
         ]
         non_empty = [item for item in values if item]
         if len(non_empty) != len(set(non_empty)):
-            raise ValueError("hotkeys must be unique when configured")
+            raise ValueError("快捷键不能重复配置")
         return self
 
 
@@ -141,7 +173,7 @@ class ApplicationSettingsUpdate(ApiModel):
         ]
         non_empty = [item for item in values if item]
         if len(non_empty) != len(set(non_empty)):
-            raise ValueError("hotkeys must be unique when configured")
+            raise ValueError("快捷键不能重复配置")
         return self
 
     def to_settings(self) -> ApplicationSettings:

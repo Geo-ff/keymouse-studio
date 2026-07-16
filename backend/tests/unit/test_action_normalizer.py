@@ -35,6 +35,66 @@ def test_normalizer_filters_reserved_combinations_and_f12() -> None:
     assert normalizer.actions == []
 
 
+def test_normalizer_filters_configured_control_hotkeys_as_complete_chords() -> None:
+    normalizer = ActionNormalizer(
+        RecordingConfig(
+            record_mouse_move=False,
+            control_hotkeys=["f9", "f10", "ctrl+shift+f5", "f12"],
+        )
+    )
+    events = [
+        RawInputEvent("key_down", 0, key_code="f9"),
+        RawInputEvent("key_up", 1, key_code="f9"),
+        RawInputEvent("key_down", 2, key_code="f10"),
+        RawInputEvent("key_up", 3, key_code="f10"),
+        RawInputEvent("key_down", 4, key_code="ctrl"),
+        RawInputEvent("key_down", 5, key_code="shift"),
+        RawInputEvent("key_down", 6, key_code="f5"),
+        RawInputEvent("key_up", 7, key_code="f5"),
+        RawInputEvent("key_up", 8, key_code="shift"),
+        RawInputEvent("key_up", 9, key_code="ctrl"),
+        RawInputEvent("key_down", 10, key_code="a"),
+        RawInputEvent("key_up", 11, key_code="a"),
+    ]
+
+    for event in events:
+        normalizer.process(event)
+
+    assert [
+        (action.type, action.payload.key_code)
+        for action in normalizer.actions
+        if isinstance(action.payload, KeyPayload)
+    ] == [("key_down", "a"), ("key_up", "a")]
+
+
+def test_normalizer_only_filters_exact_control_hotkey_chord() -> None:
+    normalizer = ActionNormalizer(
+        RecordingConfig(record_mouse_move=False, control_hotkeys=["ctrl+f9"])
+    )
+
+    normalizer.process(RawInputEvent("key_down", 0, key_code="f9"))
+    normalizer.process(RawInputEvent("key_up", 1, key_code="f9"))
+
+    assert [
+        (action.type, action.payload.key_code)
+        for action in normalizer.actions
+        if isinstance(action.payload, KeyPayload)
+    ] == [("key_down", "f9"), ("key_up", "f9")]
+
+
+def test_normalizer_filters_control_hotkey_across_resume_boundary() -> None:
+    normalizer = ActionNormalizer(
+        RecordingConfig(record_mouse_move=False, control_hotkeys=["ctrl+f9"])
+    )
+    normalizer.observe_paused(RawInputEvent("key_down", 0, key_code="ctrl"))
+    normalizer.observe_paused(RawInputEvent("key_down", 1, key_code="f9"))
+
+    actions = normalizer.resume(2)
+
+    assert actions == []
+    assert normalizer.actions == []
+
+
 def test_normalizer_records_keyboard_mouse_and_wheel() -> None:
     normalizer = ActionNormalizer(RecordingConfig(record_mouse_move=False))
     events = [

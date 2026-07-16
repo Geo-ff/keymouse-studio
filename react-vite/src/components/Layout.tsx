@@ -234,9 +234,9 @@ function StatusBar({ scriptName, ...qoderProps }: { scriptName: string } & Recor
         <span className="text-mono">{state.mousePos.x}, {state.mousePos.y}</span>
       </div>
 
-      <div className="flex items-center gap-xs" title={hotkeyHint}>
-        <Keyboard size={12} />
-        <span className="statusbar-truncate">{hotkeyHint}</span>
+      <div className="flex items-center gap-xs" title={hotkeyHint} style={{ flex: '1 1 40%', minWidth: 0 }}>
+        <Keyboard size={12} style={{ flexShrink: 0 }} />
+        <span className="statusbar-hotkeys">{hotkeyHint}</span>
       </div>
 
       {isMockModeAllowed() && (

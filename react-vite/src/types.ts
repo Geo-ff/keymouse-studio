@@ -171,6 +171,7 @@ export interface RecordingConfig {
   recordWheel: boolean;
   recordMouse: boolean;
   recordKeyboard: boolean;
+  controlHotkeys?: string[];
 }
 
 export interface PlaybackRequest {
@@ -189,6 +190,7 @@ export interface PlaybackOptions {
   loop: boolean;
   loopMode: EditorLoopMode;
   loopDurationMs?: number;
+  countdownMs?: number;
 }
 
 export interface EmergencyStopResponse {
@@ -412,6 +414,11 @@ export interface DesktopApi {
   onUpdateState?(handler: (state: DesktopUpdateState) => void): () => void;
   onOpenAbout?(handler: () => void): () => void;
   onOpenUpdatePrompt?(handler: () => void): () => void;
+  setGlobalHotkeys?(bindings: Record<string, string>): Promise<{
+    ok: boolean;
+    failed: Array<{ actionId: string; hotkey: string; accelerator: string }>;
+  }>;
+  onGlobalHotkey?(handler: (payload: { actionId: string }) => void): () => void;
 }
 
 declare global {

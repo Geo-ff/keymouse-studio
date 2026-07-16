@@ -8,9 +8,44 @@ const KEY_ALIASES: Record<string, string> = {
   ArrowDown: 'Down',
   ArrowLeft: 'Left',
   ArrowRight: 'Right',
+  PageUp: 'PageUp',
+  PageDown: 'PageDown',
   Control: 'Ctrl',
   Meta: 'Win',
   OS: 'Win',
+};
+
+/** Canonical form expected by the backend (lowercase, underscore named keys). */
+const BACKEND_KEY_MAP: Record<string, string> = {
+  ctrl: 'ctrl',
+  control: 'ctrl',
+  alt: 'alt',
+  shift: 'shift',
+  win: 'win',
+  meta: 'win',
+  cmd: 'win',
+  esc: 'esc',
+  escape: 'esc',
+  space: 'space',
+  enter: 'enter',
+  tab: 'tab',
+  backspace: 'backspace',
+  delete: 'delete',
+  insert: 'insert',
+  home: 'home',
+  end: 'end',
+  up: 'up',
+  down: 'down',
+  left: 'left',
+  right: 'right',
+  arrowup: 'up',
+  arrowdown: 'down',
+  arrowleft: 'left',
+  arrowright: 'right',
+  pageup: 'page_up',
+  pagedown: 'page_down',
+  page_up: 'page_up',
+  page_down: 'page_down',
 };
 
 type HotkeyEvent = Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey'>;
@@ -72,4 +107,52 @@ export function matchesHotkey(event: HotkeyEvent, hotkey: string): boolean {
 
 export function formatHotkeyLabel(hotkey: string, fallback = '未设置'): string {
   return hotkey.trim() ? normalizeHotkeyDisplay(hotkey) : fallback;
+}
+
+export const HOTKEY_FIELD_LABELS: Record<string, string> = {
+  emergencyHotkey: '急停热键',
+  recordStartHotkey: '开始录制',
+  recordStopHotkey: '停止录制',
+  playbackStartHotkey: '开始回放',
+  playbackStopHotkey: '停止回放',
+};
+
+/** Find another configured field that shares the same chord (display form). */
+export function findHotkeyConflict(
+  field: string,
+  value: string,
+  all: Record<string, string>,
+): string | null {
+  const normalized = normalizeHotkeyDisplay(value);
+  if (!normalized) return null;
+  for (const [other, otherValue] of Object.entries(all)) {
+    if (other === field) continue;
+    if (!otherValue?.trim()) continue;
+    if (normalizeHotkeyDisplay(otherValue) === normalized) return other;
+  }
+  return null;
+}
+
+/** Convert UI/display hotkey (e.g. Ctrl+PageUp) to backend storage form (ctrl+page_up). */
+export function hotkeyToBackend(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const parts = trimmed
+    .split('+')
+    .map(part => part.trim())
+    .filter(Boolean)
+    .map(part => {
+      const lower = part.toLowerCase().replace(/-/g, '_');
+      const compact = lower.replace(/_/g, '');
+      if (BACKEND_KEY_MAP[lower]) return BACKEND_KEY_MAP[lower];
+      if (BACKEND_KEY_MAP[compact]) return BACKEND_KEY_MAP[compact];
+      if (/^f\d+$/.test(lower)) return lower;
+      if (lower.length === 1 && /[a-z0-9]/.test(lower)) return lower;
+      return lower;
+    });
+  const order = ['ctrl', 'alt', 'shift', 'win'];
+  const modifiers = order.filter(m => parts.includes(m));
+  const keys = parts.filter(p => !order.includes(p));
+  if (keys.length !== 1) return parts.join('+');
+  return [...modifiers, keys[0]].join('+');
 }

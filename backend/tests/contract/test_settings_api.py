@@ -125,6 +125,27 @@ async def test_hotkey_validate_normalizes_and_reports_unknown_occupancy(
 
 
 @pytest.mark.asyncio
+async def test_hotkey_validate_accepts_browser_key_names(
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    cases = [
+        ("PageUp", "page_up"),
+        ("ArrowUp", "up"),
+        ("Ctrl+PageDown", "ctrl+page_down"),
+        ("Escape", "esc"),
+    ]
+    for raw, expected in cases:
+        response = await client.post(
+            "/api/v1/hotkeys/validate",
+            headers=auth_headers,
+            json={"hotkey": raw},
+        )
+        assert response.status_code == 200, raw
+        assert response.json()["normalizedHotkey"] == expected
+
+
+@pytest.mark.asyncio
 async def test_hotkey_validate_rejects_invalid_chord(
     client: httpx.AsyncClient,
     auth_headers: dict[str, str],

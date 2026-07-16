@@ -8,8 +8,15 @@ import { Zap, Clock, Palette, Cpu, MousePointerClick, Play, Keyboard } from 'luc
 import { useService } from '../hooks/useService';
 import { Toggle, Input, Select, Button } from '../components/ui';
 import type { AppSettings } from '../types';
-import { eventToHotkey, formatHotkeyLabel, normalizeHotkeyDisplay } from '../utils/hotkey';
+import {
+  eventToHotkey,
+  findHotkeyConflict,
+  formatHotkeyLabel,
+  HOTKEY_FIELD_LABELS,
+  normalizeHotkeyDisplay,
+} from '../utils/hotkey';
 import { isMockModeAllowed } from '../utils/runtime';
+import { useToast } from '../providers/ToastProvider';
 
 interface SettingsProps {
   settings: AppSettings;
@@ -27,6 +34,7 @@ const HOTKEY_SUGGESTIONS = [
 
 export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & Record<string, any>) {
   const { mode, capabilities, hotkey } = useService();
+  const toast = useToast();
   const [hotkeyDrafts, setHotkeyDrafts] = useState<Record<HotkeyField, string>>({
     emergencyHotkey: settings.emergencyHotkey,
     recordStartHotkey: settings.recordStartHotkey,
@@ -54,6 +62,10 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
   const captureHotkey = (field: HotkeyField, e: React.KeyboardEvent) => {
     e.preventDefault();
     if (e.key === 'Backspace' || e.key === 'Delete') {
+      if (field === 'emergencyHotkey') {
+        toast.error('急停热键不能为空');
+        return;
+      }
       setHotkeyDrafts(prev => ({ ...prev, [field]: '' }));
       onUpdate({ [field]: '' });
       return;
@@ -61,22 +73,44 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
     const captured = eventToHotkey(e);
     if (!captured) return;
     const normalized = normalizeHotkeyDisplay(captured);
+    const conflictWith = findHotkeyConflict(field, normalized, {
+      ...hotkeyDrafts,
+      [field]: normalized,
+    });
+    if (conflictWith) {
+      toast.error(`与「${HOTKEY_FIELD_LABELS[conflictWith] ?? conflictWith}」冲突, 请更换按键`);
+      return;
+    }
     setHotkeyDrafts(prev => ({ ...prev, [field]: normalized }));
     onUpdate({ [field]: normalized });
   };
 
   const clearHotkey = (field: HotkeyField) => {
+    if (field === 'emergencyHotkey') {
+      toast.error('急停热键不能为空');
+      return;
+    }
     setHotkeyDrafts(prev => ({ ...prev, [field]: '' }));
     onUpdate({ [field]: '' });
   };
 
   const applySuggestions = () => {
-    const next = {
+    const next: Partial<Record<HotkeyField, string>> = {
       recordStartHotkey: 'F9',
       recordStopHotkey: 'F10',
       playbackStartHotkey: 'F5',
       playbackStopHotkey: 'F6',
     };
+    const merged: Record<string, string> = { ...hotkeyDrafts, ...next };
+    for (const field of Object.keys(next) as HotkeyField[]) {
+      const value = next[field];
+      if (!value) continue;
+      const conflictWith = findHotkeyConflict(field, value, merged);
+      if (conflictWith) {
+        toast.error(`推荐配置与「${HOTKEY_FIELD_LABELS[conflictWith] ?? conflictWith}」冲突`);
+        return;
+      }
+    }
     setHotkeyDrafts(prev => ({ ...prev, ...next }));
     onUpdate(next);
   };

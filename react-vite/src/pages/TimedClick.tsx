@@ -11,6 +11,7 @@ import type { TimedClickConfig, MouseButton } from '../types';
 import { formatTime } from '../data/mockData';
 import { showSystemAlert } from '../utils/systemAlert';
 import { usePersistedFormState } from '../utils/formPersistence';
+import { resolveCountdownMs } from '../utils/countdown';
 
 interface TimedFormState {
   hours: number;
@@ -35,7 +36,7 @@ const TIMED_DEFAULTS: TimedFormState = {
 };
 
 export function TimedClick(qoderProps: Record<string, any>) {
-  const { startTimedClick, stopTimedClick, getMousePosition, state } = useService();
+  const { startTimedClick, stopTimedClick, getMousePosition, state, settings } = useService();
   const [form, setForm] = usePersistedFormState('timed', TIMED_DEFAULTS);
   const { hours, minutes, seconds, loop, button, useCurrentPos, posX, posY } = form;
 
@@ -55,14 +56,14 @@ export function TimedClick(qoderProps: Record<string, any>) {
       positionMode: useCurrentPos ? 'current' : 'fixed',
       x: useCurrentPos ? null : posX,
       y: useCurrentPos ? null : posY,
-      countdownMs: 0,
+      countdownMs: resolveCountdownMs(settings),
     };
     void startTimedClick(config)
       .then(() => {
         void showSystemAlert('定时点击', '定时点击已开始', `等待 ${formatTime(delayMs)} 后执行`);
       })
       .catch(() => undefined);
-  }, [startTimedClick, waitMs, loop, useCurrentPos, posX, posY, button]);
+  }, [startTimedClick, waitMs, loop, useCurrentPos, posX, posY, button, settings]);
 
   const handleStop = useCallback(() => {
     void stopTimedClick().catch(() => undefined);

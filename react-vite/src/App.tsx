@@ -25,7 +25,10 @@ import type { DesktopAboutInfo, DesktopUpdateState, Script, ScriptAction, AppSet
 const MOCK_SCRIPT_IDS = new Set(mockScripts.map(script => script.id));
 
 export default function App() {
-  const { emergencyStop, state, settings, error, clearError, updateSettings, saveScript, refreshScripts } = useService();
+  const {
+    emergencyStop, state, settings, error, clearError, updateSettings, saveScript, refreshScripts,
+    startRecording, stopRecording, playback, stopPlayback,
+  } = useService();
   const toast = useToast();
 
   const [page, setPage] = useState<PageId>('dashboard');
@@ -56,6 +59,99 @@ export default function App() {
     setSaved(true);
   }, [settings.serviceMode, currentScript.id]);
 
+  // Register business global hotkeys; suspend them while playback is active.
+  useEffect(() => {
+    if (!window.desktop?.setGlobalHotkeys) return;
+    const playbackActive =
+      state.snapshot.operationType === 'playback' &&
+      (state.runState === 'running' || state.runState === 'paused');
+    void window.desktop.setGlobalHotkeys(playbackActive ? {} : {
+      recordStart: settings.recordStartHotkey,
+      recordStop: settings.recordStopHotkey,
+      playbackStart: settings.playbackStartHotkey,
+      playbackStop: settings.playbackStopHotkey,
+    }).catch(() => undefined);
+  }, [
+    state.snapshot.operationType,
+    state.runState,
+    settings.recordStartHotkey,
+    settings.recordStopHotkey,
+    settings.playbackStartHotkey,
+    settings.playbackStopHotkey,
+  ]);
+
+  useEffect(() => {
+    if (!window.desktop?.onGlobalHotkey) return;
+    return window.desktop.onGlobalHotkey(({ actionId }) => {
+      if (actionId === 'recordStart') {
+        if (state.snapshot.operationType && state.runState !== 'idle') return;
+        setPage('recording');
+        void startRecording({
+          recordMouseMove: settings.recordMouseMove,
+          minMoveSampleMs: settings.minRecordInterval,
+          moveErrorPx: 2,
+          recordWheel: true,
+          recordMouse: true,
+          recordKeyboard: true,
+          controlHotkeys: [
+            settings.emergencyHotkey,
+            settings.recordStartHotkey,
+            settings.recordStopHotkey,
+            settings.playbackStartHotkey,
+            settings.playbackStopHotkey,
+          ].filter(Boolean),
+        })
+          .then(() => { void showSystemAlert('录制', '录制已开始', '正在记录键鼠操作'); })
+          .catch(() => undefined);
+        return;
+      }
+      if (actionId === 'recordStop') {
+        if (state.snapshot.operationType !== 'recording') return;
+        void stopRecording()
+          .then(() => { void showSystemAlert('录制', '录制已结束', '可保存为脚本，或丢弃本次录制结果'); })
+          .catch(() => undefined);
+        return;
+      }
+      if (actionId === 'playbackStart') {
+        const enabled = currentScript.actions.filter(a => a.enabled);
+        if (enabled.length === 0 || (state.runState !== 'idle' && state.snapshot.operationType === 'playback')) return;
+        if (state.runState !== 'idle' && state.snapshot.operationType) return;
+        setPage('script');
+        void (async () => {
+          await window.desktop?.setGlobalHotkeys?.({}).catch(() => undefined);
+          await playback(
+            { ...currentScript, actions: enabled },
+            {
+              times: currentScript.settings.loopMode === 'count' ? Math.max(1, currentScript.settings.loopCount) : 1,
+              speedMultiplier: currentScript.settings.speedMultiplier,
+              loop: currentScript.settings.loopMode === 'infinite',
+              loopMode: currentScript.settings.loopMode === 'count' ? 'count' : 'infinite',
+              countdownMs: settings.countdownEnabled ? Math.round(settings.countdownSeconds * 1000) : 0,
+            },
+          );
+          void showSystemAlert('回放', '回放已开始', currentScript.name.trim() ? `脚本：${currentScript.name.trim()}` : undefined);
+        })().catch(() => {
+          void window.desktop?.setGlobalHotkeys?.({
+            recordStart: settings.recordStartHotkey,
+            recordStop: settings.recordStopHotkey,
+            playbackStart: settings.playbackStartHotkey,
+            playbackStop: settings.playbackStopHotkey,
+          }).catch(() => undefined);
+        });
+        return;
+      }
+      if (actionId === 'playbackStop') {
+        if (state.snapshot.operationType !== 'playback') return;
+        void stopPlayback()
+          .then(() => {
+            void showSystemAlert('回放', '回放已结束', currentScript.name.trim() ? `脚本：${currentScript.name.trim()}` : undefined);
+          })
+          .catch(() => undefined);
+      }
+    });
+  }, [
+    state, settings, currentScript, startRecording, stopRecording, playback, stopPlayback,
+  ]);
 
   // Apply theme to document and native window chrome
   useEffect(() => {

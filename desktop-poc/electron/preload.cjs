@@ -20,4 +20,6 @@ contextBridge.exposeInMainWorld('desktop', {
   onUpdateState: (handler) => subscribe('update:state', handler),
   onOpenAbout: (handler) => subscribe('ui:open-about', handler),
   onOpenUpdatePrompt: (handler) => subscribe('ui:open-update', handler),
+  setGlobalHotkeys: (bindings) => ipcRenderer.invoke('hotkeys:set', bindings),
+  onGlobalHotkey: (handler) => subscribe('hotkeys:action', handler),
 })
