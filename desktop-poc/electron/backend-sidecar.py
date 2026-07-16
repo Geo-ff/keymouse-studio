@@ -8,6 +8,10 @@ import threading
 
 import uvicorn
 
+from keymouse_studio.infrastructure.system.dpi import enable_per_monitor_dpi_awareness
+
+enable_per_monitor_dpi_awareness()
+
 from keymouse_studio.config import Settings
 from keymouse_studio.main import create_app
 

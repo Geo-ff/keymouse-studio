@@ -6,6 +6,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
+from keymouse_studio.infrastructure.system.dpi import enable_per_monitor_dpi_awareness
+
+enable_per_monitor_dpi_awareness()
+
 from keymouse_studio.api.routers import (
     capabilities,
     clicker,

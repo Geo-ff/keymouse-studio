@@ -91,6 +91,21 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
   const isRecording = state.snapshot.operationType === 'recording' && state.recordingState === 'recording';
   const isPaused = state.snapshot.operationType === 'recording' && state.recordingState === 'paused';
   const hasActions = state.recordingActions.length > 0;
+  const workspaceClearedRef = useRef(false);
+
+  useEffect(() => {
+    if (workspaceClearedRef.current) return;
+    workspaceClearedRef.current = true;
+    const recordingActive =
+      state.snapshot.operationType === 'recording' &&
+      (state.recordingState === 'recording' || state.recordingState === 'paused');
+    if (recordingActive) return;
+    if (state.recordingState === 'idle' && state.recordingActions.length === 0) return;
+    void discardRecording();
+    setScriptName('');
+    displayTimeRef.current = 0;
+    setDisplayTime(0);
+  }, [discardRecording, state.snapshot.operationType, state.recordingState, state.recordingActions.length]);
 
   useEffect(() => {
     if (state.recordingState === 'stopped') {

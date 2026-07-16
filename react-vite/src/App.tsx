@@ -277,6 +277,20 @@ export default function App() {
     setSaved(true);
   }, []);
 
+  const handleNewScript = useCallback(() => {
+    setCurrentScript(createEmptyScript());
+    setSaved(true);
+    setPage('script');
+  }, []);
+
+  const handleScriptDeleted = useCallback((id: string) => {
+    setCurrentScript(prev => {
+      if (prev.id !== id) return prev;
+      setSaved(true);
+      return createEmptyScript();
+    });
+  }, []);
+
   // Handle recorded actions
   const handleRecordedActions = useCallback(async (actions: ScriptAction[], name: string) => {
     const now = new Date().toISOString();
@@ -319,7 +333,7 @@ export default function App() {
            data-qoder-id="qel-scripteditor-9f5415e1" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-scripteditor-9f5415e1&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;scripteditor&quot;,&quot;loc&quot;:{&quot;line&quot;:99,&quot;column&quot;:11}}"/>
         );
       case 'manager':
-        return <ScriptManager onNavigate={setPage} onLoadScript={handleLoadScript}  data-qoder-id="qel-scriptmanager-6f7a5cc0" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-scriptmanager-6f7a5cc0&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;scriptmanager&quot;,&quot;loc&quot;:{&quot;line&quot;:107,&quot;column&quot;:16}}"/>;
+        return <ScriptManager onNavigate={setPage} onLoadScript={handleLoadScript} onNewScript={handleNewScript} onScriptDeleted={handleScriptDeleted}  data-qoder-id="qel-scriptmanager-6f7a5cc0" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-scriptmanager-6f7a5cc0&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;scriptmanager&quot;,&quot;loc&quot;:{&quot;line&quot;:107,&quot;column&quot;:16}}"/>;
       case 'settings':
         return <Settings settings={settings} onUpdate={handleUpdateSettings}  data-qoder-id="qel-settings-0722e165" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-settings-0722e165&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;settings&quot;,&quot;loc&quot;:{&quot;line&quot;:109,&quot;column&quot;:16}}"/>;
       default:

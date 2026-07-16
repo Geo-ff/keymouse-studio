@@ -89,8 +89,22 @@ class PynputInputListener:
         def on_release(key: keyboard.Key | keyboard.KeyCode) -> None:
             emit(RawInputEvent("key_up", time.monotonic_ns(), key_code=key_data(key)))
 
+        def cursor_pos(fallback_x: int, fallback_y: int) -> tuple[int, int]:
+            """Prefer GetCursorPos so coords match SendInput / virtual desktop."""
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                point = wintypes.POINT()
+                if ctypes.windll.user32.GetCursorPos(ctypes.byref(point)):
+                    return int(point.x), int(point.y)
+            except Exception:
+                pass
+            return int(fallback_x), int(fallback_y)
+
         def on_move(x: int, y: int) -> None:
-            emit(RawInputEvent("mouse_move", time.monotonic_ns(), x=x, y=y))
+            cx, cy = cursor_pos(x, y)
+            emit(RawInputEvent("mouse_move", time.monotonic_ns(), x=cx, y=cy))
 
         def on_click(x: int, y: int, button: mouse.Button, pressed: bool) -> None:
             mapped = {
@@ -100,15 +114,17 @@ class PynputInputListener:
             }.get(button)
             if mapped is not None:
                 event_type: RawEventType = "mouse_button_down" if pressed else "mouse_button_up"
-                emit(RawInputEvent(event_type, time.monotonic_ns(), x=x, y=y, button=mapped))
+                cx, cy = cursor_pos(x, y)
+                emit(RawInputEvent(event_type, time.monotonic_ns(), x=cx, y=cy, button=mapped))
 
         def on_scroll(x: int, y: int, dx: int, dy: int) -> None:
+            cx, cy = cursor_pos(x, y)
             emit(
                 RawInputEvent(
                     "mouse_wheel",
                     time.monotonic_ns(),
-                    x=x,
-                    y=y,
+                    x=cx,
+                    y=cy,
                     delta_x=dx,
                     delta_y=dy,
                 )

@@ -88,8 +88,24 @@ abstract class AutomationServiceBase implements IAutomationService {
     const previous = this.currentState;
     const actions = previous.recordingActions;
     const mousePos = previous.mousePos;
-    const next = { ...createState(snapshot), recordingActions: actions, mousePos };
-    if (snapshot.state === 'idle' && previous.recordingState === 'stopped') {
+    let merged = snapshot;
+    const sameOperation =
+      Boolean(previous.snapshot.operationId) &&
+      previous.snapshot.operationId === snapshot.operationId &&
+      previous.snapshot.operationType === snapshot.operationType;
+    if (sameOperation && activeState(snapshot.state) && activeState(previous.snapshot.state)) {
+      merged = {
+        ...snapshot,
+        completedCount: Math.max(snapshot.completedCount, previous.snapshot.completedCount),
+        elapsedMs: Math.max(snapshot.elapsedMs, previous.snapshot.elapsedMs),
+        sequence: Math.max(snapshot.sequence, previous.snapshot.sequence),
+      };
+    }
+    const next = { ...createState(merged), recordingActions: actions, mousePos };
+    if (merged.operationType === 'recording' && actions.length > next.recordingActionCount) {
+      next.recordingActionCount = actions.length;
+    }
+    if (merged.state === 'idle' && previous.recordingState === 'stopped') {
       next.recordingState = 'stopped';
       next.recordingTime = previous.recordingTime;
       next.recordingActionCount = previous.recordingActionCount;
@@ -420,12 +436,23 @@ export class RealAutomationService extends AutomationServiceBase {
     } else if (envelope.type === 'recording.action_captured') {
       const payload = envelope.payload as RecordingActionCapturedPayload;
       this.currentState.recordingActions = [...this.currentState.recordingActions, payload.action];
-      this.currentState.recordingActionCount = payload.actionCount;
+      this.currentState.recordingActionCount = Math.max(
+        payload.actionCount,
+        this.currentState.recordingActions.length,
+        this.currentState.recordingActionCount,
+      );
+      if (this.currentState.snapshot.operationType === 'recording') {
+        this.currentState.snapshot = {
+          ...this.currentState.snapshot,
+          completedCount: Math.max(this.currentState.snapshot.completedCount, this.currentState.recordingActionCount),
+          sequence: Math.max(this.currentState.snapshot.sequence, envelope.sequence),
+        };
+      }
       this.notify();
     } else if (envelope.type === 'recording.snapshot') {
       const result = envelope.payload as RecordingResult;
       this.currentState.recordingActions = result.actions;
-      this.currentState.recordingActionCount = result.actionCount;
+      this.currentState.recordingActionCount = Math.max(result.actionCount, result.actions.length);
       this.currentState.recordingTime = result.durationMs;
       this.notify();
     } else if (envelope.type === 'error.raised') {
@@ -448,7 +475,12 @@ export class RealAutomationService extends AutomationServiceBase {
     }, delay);
   }
 
-  private applyTransition(transition: OperationTransition): OperationTransition { this.applySnapshot(transition.snapshot); return transition; }
+  private applyTransition(transition: OperationTransition): OperationTransition {
+    const seq = Math.max(transition.snapshot.sequence ?? 0, this.lastSequence);
+    this.lastSequence = seq;
+    this.applySnapshot({ ...transition.snapshot, sequence: seq });
+    return transition;
+  }
   private operationPath(action: 'pause' | 'resume' | 'stop'): string {
     const id = this.currentState.snapshot.operationId;
     if (!id) throw new ApiError({ code: 'INVALID_STATE_TRANSITION', message: '当前没有活动操作', details: {}, retryable: false, operationId: null });

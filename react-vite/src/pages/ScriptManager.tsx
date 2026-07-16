@@ -25,9 +25,11 @@ import type { PageId } from '../components/Layout';
 interface ScriptManagerProps {
   onNavigate: (page: PageId) => void;
   onLoadScript: (script: Script) => void;
+  onNewScript: () => void;
+  onScriptDeleted?: (id: string) => void;
 }
 
-export function ScriptManager({ onNavigate, onLoadScript, ...qoderProps }: ScriptManagerProps & Record<string, any>) {
+export function ScriptManager({ onNavigate, onLoadScript, onNewScript, onScriptDeleted, ...qoderProps }: ScriptManagerProps & Record<string, any>) {
   const { loadScript, saveScript, deleteScript, duplicateScript, scripts: allScripts, refreshScripts } = useService();
   const toast = useToast();
   const [search, setSearch] = useState('');
@@ -64,15 +66,17 @@ export function ScriptManager({ onNavigate, onLoadScript, ...qoderProps }: Scrip
     if (!deleteTarget || deleting) return;
     setDeleting(true);
     try {
-      await deleteScript(deleteTarget.id);
+      const deletedId = deleteTarget.id;
+      await deleteScript(deletedId);
       await refreshScripts();
-      if (selectedId === deleteTarget.id) setSelectedId(null);
+      if (selectedId === deletedId) setSelectedId(null);
+      onScriptDeleted?.(deletedId);
       toast.success(`脚本“${deleteTarget.name}”已删除`);
       setDeleteTarget(null);
     } finally {
       setDeleting(false);
     }
-  }, [deleteTarget, deleting, deleteScript, refreshScripts, selectedId, toast]);
+  }, [deleteTarget, deleting, deleteScript, refreshScripts, selectedId, onScriptDeleted, toast]);
 
   const handleDuplicate = useCallback(async (script: Script) => {
     try {
@@ -148,7 +152,7 @@ export function ScriptManager({ onNavigate, onLoadScript, ...qoderProps }: Scrip
            data-qoder-id="qel-input-0a36b7b1" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-0a36b7b1&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:112,&quot;column&quot;:11}}"/>
         </div>
         <div className="toolbar-spacer"  data-qoder-id="qel-toolbar-spacer-8ff8e32f" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toolbar-spacer-8ff8e32f&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;toolbar-spacer&quot;,&quot;loc&quot;:{&quot;line&quot;:119,&quot;column&quot;:9}}"/>
-        <Button variant="primary" size="sm" icon={<FilePlus2 size={13}  data-qoder-id="qel-fileplus2-4e495f8a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-fileplus2-4e495f8a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;fileplus2&quot;,&quot;loc&quot;:{&quot;line&quot;:120,&quot;column&quot;:51}}"/>} onClick={() => onNavigate('script')} data-qoder-id="qel-button-0c0c810f" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-0c0c810f&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:120,&quot;column&quot;:9}}">
+        <Button variant="primary" size="sm" icon={<FilePlus2 size={13}  data-qoder-id="qel-fileplus2-4e495f8a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-fileplus2-4e495f8a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;fileplus2&quot;,&quot;loc&quot;:{&quot;line&quot;:120,&quot;column&quot;:51}}"/>} onClick={onNewScript} data-qoder-id="qel-button-0c0c810f" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-0c0c810f&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:120,&quot;column&quot;:9}}">
           新建脚本
         </Button>
       </div>
@@ -161,7 +165,7 @@ export function ScriptManager({ onNavigate, onLoadScript, ...qoderProps }: Scrip
             title={search ? '未找到匹配的脚本' : '暂无脚本'}
             description={search ? '尝试修改搜索关键词' : '录制或手动创建你的第一个脚本'}
             actions={!search ? (
-              <Button variant="primary" size="sm" icon={<FilePlus2 size={13} />} onClick={() => onNavigate('script')}>
+              <Button variant="primary" size="sm" icon={<FilePlus2 size={13} />} onClick={onNewScript}>
                 新建脚本
               </Button>
             ) : undefined}
