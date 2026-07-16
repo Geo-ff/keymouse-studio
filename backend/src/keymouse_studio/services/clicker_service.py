@@ -133,9 +133,13 @@ class ClickerService:
                 "当前已有任务在运行, 请先停止后再开始",
                 status_code=409,
             )
-        initial_wait_ms = config.countdown_ms + delay_ms
-        initial_state = EngineState.COUNTDOWN if initial_wait_ms else EngineState.RUNNING
-        snapshot = await self._operations.start(operation_type, initial_state)
+        startup_wait_ms = config.countdown_ms
+        initial_state = EngineState.COUNTDOWN if startup_wait_ms else EngineState.RUNNING
+        snapshot = await self._operations.start(
+            operation_type,
+            initial_state,
+            countdown_remaining_ms=startup_wait_ms,
+        )
         operation_id = snapshot.operation_id
         if operation_id is None:
             raise RuntimeError("Operation service did not create an operation id")
@@ -145,21 +149,36 @@ class ClickerService:
         self._last_operation_id = operation_id
         self._elapsed_ns = 0
         self._task = asyncio.create_task(
-            self._run(operation_id, config, initial_wait_ms),
+            self._run(operation_id, config, startup_wait_ms, delay_ms),
             name=f"{operation_type}-{operation_id}",
         )
         return OperationTransition(
             operation_id=operation_id, state=snapshot.state, snapshot=snapshot
         )
 
-    async def _run(self, operation_id: UUID, config: ClickerConfig, initial_wait_ms: int) -> None:
+    async def _run(
+        self,
+        operation_id: UUID,
+        config: ClickerConfig,
+        startup_wait_ms: int,
+        delay_ms: int,
+    ) -> None:
         completed = 0
         total = config.repeat_count if config.repeat_mode == LoopMode.COUNT else None
         try:
-            if initial_wait_ms:
-                await self._wait(initial_wait_ms, completed, total, initial_wait_ms)
+            if startup_wait_ms:
+                await self._wait(startup_wait_ms, completed, total, publish_remaining=True)
                 self._raise_if_cancelled()
+                await self._publish_progress(completed, None, force=True)
                 await self._operations.transition(EngineState.RUNNING, operation_id)
+            if delay_ms:
+                await self._wait(delay_ms, completed, total, publish_remaining=True)
+                self._raise_if_cancelled()
+                await self._publish_progress(
+                    completed,
+                    0.0 if total is not None else None,
+                    force=True,
+                )
             while total is None or completed < total:
                 self._raise_if_cancelled()
                 await self._running.wait()
@@ -178,8 +197,7 @@ class ClickerService:
                 progress = completed / total if total is not None else None
                 await self._publish_progress(completed, progress, force=True)
                 if total is None or completed < total:
-                    # Update countdownRemainingMs during interval waits.
-                    await self._wait(config.interval_ms, completed, total, config.interval_ms)
+                    await self._wait(config.interval_ms, completed, total)
         except asyncio.CancelledError:
             self._cancelled.set()
             raise
@@ -227,7 +245,8 @@ class ClickerService:
         duration_ms: int,
         completed: int,
         total: int | None,
-        countdown_ms: int,
+        *,
+        publish_remaining: bool = False,
     ) -> None:
         remaining_ns = duration_ms * 1_000_000
         progress = completed / total if total is not None else None
@@ -243,12 +262,11 @@ class ClickerService:
             elapsed = min(max(0, self._clock.now_ns() - before), remaining_ns)
             remaining_ns -= elapsed
             self._elapsed_ns += elapsed
-            if countdown_ms:
+            if publish_remaining:
                 await self._publish_progress(
                     completed,
                     None,
                     max(0, remaining_ns // 1_000_000),
-                    force=True,
                 )
             else:
                 await self._publish_progress(completed, progress)

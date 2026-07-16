@@ -297,3 +297,49 @@ async def test_release_failure_does_not_block_playback_state_cleanup(tmp_path: P
     assert release.failures == ("release_all:OSError",)
     assert operations.state == EngineState.IDLE
     worker.close()
+
+
+@pytest.mark.asyncio
+async def test_long_wait_publishes_smooth_progress_before_completion(
+    tmp_path: Path,
+) -> None:
+    worker = InputWorker(FakeInputAdapter())
+    events = EventService(1)
+    subscriber = events.subscribe()
+    operations = OperationService(events)
+    service = PlaybackService(
+        operations,
+        ScriptService(JsonScriptRepository(tmp_path / "scripts")),
+        worker,
+        MonotonicClock(),
+        5,
+    )
+    data = inline_script().model_dump(mode="json", by_alias=True)
+    data["actions"] = [
+        {
+            "id": "00000000-0000-0000-0000-000000000012",
+            "type": "wait",
+            "payload": {"durationMs": 500},
+        }
+    ]
+
+    await service.start(
+        PlaybackRequest(
+            inline_script=Script.model_validate(data),
+            loop_mode=LoopMode.COUNT,
+            loop_count=1,
+            countdown_ms=0,
+        )
+    )
+    await asyncio.wait_for(service.wait_finished(), timeout=1)
+
+    progress_values = []
+    while not subscriber.empty():
+        event = subscriber.get_nowait()
+        if event.type == "operation.progress" and event.payload.progress is not None:
+            progress_values.append(event.payload.progress)
+    intermediate = [value for value in progress_values if 0 < value < 1]
+    assert intermediate
+    assert intermediate == sorted(intermediate)
+    assert progress_values[-1] == 1.0
+    worker.close()

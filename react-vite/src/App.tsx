@@ -3,7 +3,7 @@
    状态管理（主题、当前页面、当前脚本）、页面路由、主题切换
    ========================================================================= */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Layout, type PageId } from './components/Layout';
 import { AboutDialog } from './components/AboutDialog';
 import { UpdateProgressBar } from './components/UpdateProgressBar';
@@ -56,6 +56,10 @@ export default function App() {
   const [updateBannerDismissed, setUpdateBannerDismissed] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [privilegeDialog, setPrivilegeDialog] = useState<{ title: string; description: string } | null>(null);
+  const pendingHotkeyActions = useRef(new Set<string>());
+  const playbackActive =
+    state.snapshot.operationType === 'playback' &&
+    (state.runState === 'running' || state.runState === 'paused');
 
   useEffect(() => {
     if (!error || error.code !== 'INPUT_PERMISSION_DENIED') return;
@@ -74,15 +78,9 @@ export default function App() {
     setSaved(true);
   }, [settings.serviceMode, currentScript.id]);
 
-  // Register global hotkeys. Emergency always stays registered (Electron path, not blocked by mouse flood).
   useEffect(() => {
     if (!window.desktop?.setGlobalHotkeys) return;
-    const playbackActive =
-      state.snapshot.operationType === 'playback' &&
-      (state.runState === 'running' || state.runState === 'paused');
-    const bindings: Record<string, string> = {
-      emergency: settings.emergencyHotkey || 'F12',
-    };
+    const bindings: Record<string, string> = {};
     if (!playbackActive) {
       bindings.recordStart = settings.recordStartHotkey;
       bindings.recordStop = settings.recordStopHotkey;
@@ -93,8 +91,7 @@ export default function App() {
     }
     void window.desktop.setGlobalHotkeys(bindings).catch(() => undefined);
   }, [
-    state.snapshot.operationType,
-    state.runState,
+    playbackActive,
     settings.emergencyHotkey,
     settings.recordStartHotkey,
     settings.recordStopHotkey,
@@ -105,13 +102,18 @@ export default function App() {
   useEffect(() => {
     if (!window.desktop?.onGlobalHotkey) return;
     return window.desktop.onGlobalHotkey(({ actionId }) => {
+      const runOnce = (task: () => Promise<unknown>) => {
+        if (pendingHotkeyActions.current.has(actionId)) return;
+        pendingHotkeyActions.current.add(actionId);
+        void task().finally(() => pendingHotkeyActions.current.delete(actionId));
+      };
       if (actionId === 'emergency') {
-        void emergencyStop()
+        runOnce(() => emergencyStop()
           .then(() => { void showSystemAlert('急停', '已紧急停止', '所有输入注入已中止'); })
           .catch((err) => {
             const friendly = formatErrorForDisplay(toErrorDetail(err));
             toast.error(`${friendly.title}：${friendly.message}`);
-          });
+          }));
         return;
       }
       if (actionId === 'recordStart') {
@@ -120,7 +122,7 @@ export default function App() {
           return;
         }
         setPage('recording');
-        void startRecording({
+        runOnce(() => startRecording({
           recordMouseMove: settings.recordMouseMove,
           minMoveSampleMs: settings.minRecordInterval,
           moveErrorPx: 2,
@@ -139,17 +141,17 @@ export default function App() {
           .catch((err) => {
             const friendly = formatErrorForDisplay(toErrorDetail(err));
             toast.error(`${friendly.title}：${friendly.message}`);
-          });
+          }));
         return;
       }
       if (actionId === 'recordStop') {
         if (state.snapshot.operationType !== 'recording') return;
-        void stopRecording()
+        runOnce(() => stopRecording()
           .then(() => { void showSystemAlert('录制', '录制已结束', '可保存为脚本，或丢弃本次录制结果'); })
           .catch((err) => {
             const friendly = formatErrorForDisplay(toErrorDetail(err));
             toast.error(`${friendly.title}：${friendly.message}`);
-          });
+          }));
         return;
       }
       if (actionId === 'playbackStart') {
@@ -164,38 +166,26 @@ export default function App() {
           return;
         }
         setPage('script');
-        void (async () => {
-          await window.desktop?.setGlobalHotkeys?.({
-            emergency: settings.emergencyHotkey || 'F12',
-            playbackStop: settings.playbackStopHotkey,
-          }).catch(() => undefined);
-          await playback(
-            { ...currentScript, actions: enabled },
-            {
-              times: currentScript.settings.loopMode === 'count' ? Math.max(1, currentScript.settings.loopCount) : 1,
-              speedMultiplier: currentScript.settings.speedMultiplier,
-              loop: currentScript.settings.loopMode === 'infinite',
-              loopMode: currentScript.settings.loopMode === 'count' ? 'count' : 'infinite',
-              countdownMs: settings.countdownEnabled ? Math.round(settings.countdownSeconds * 1000) : 0,
-            },
-          );
-          void showSystemAlert('回放', '回放已开始', currentScript.name.trim() ? `脚本：${currentScript.name.trim()}` : undefined);
-        })().catch((err) => {
-          const friendly = formatErrorForDisplay(toErrorDetail(err));
-          toast.error(`${friendly.title}：${friendly.message}`);
-          void window.desktop?.setGlobalHotkeys?.({
-            emergency: settings.emergencyHotkey || 'F12',
-            recordStart: settings.recordStartHotkey,
-            recordStop: settings.recordStopHotkey,
-            playbackStart: settings.playbackStartHotkey,
-            playbackStop: settings.playbackStopHotkey,
-          }).catch(() => undefined);
-        });
+        runOnce(() => playback(
+          { ...currentScript, actions: enabled },
+          {
+            times: currentScript.settings.loopMode === 'count' ? Math.max(1, currentScript.settings.loopCount) : 1,
+            speedMultiplier: currentScript.settings.speedMultiplier,
+            loop: currentScript.settings.loopMode === 'infinite',
+            loopMode: currentScript.settings.loopMode === 'count' ? 'count' : 'infinite',
+            countdownMs: settings.countdownEnabled ? Math.round(settings.countdownSeconds * 1000) : 0,
+          },
+        )
+          .then(() => { void showSystemAlert('回放', '回放已开始', currentScript.name.trim() ? `脚本：${currentScript.name.trim()}` : undefined); })
+          .catch((err) => {
+            const friendly = formatErrorForDisplay(toErrorDetail(err));
+            toast.error(`${friendly.title}：${friendly.message}`);
+          }));
         return;
       }
       if (actionId === 'playbackStop') {
         if (state.snapshot.operationType !== 'playback' && state.runState === 'idle') return;
-        void stopPlayback()
+        runOnce(() => stopPlayback()
           .then(() => {
             void showSystemAlert('回放', '回放已结束', currentScript.name.trim() ? `脚本：${currentScript.name.trim()}` : undefined);
           })
@@ -204,7 +194,7 @@ export default function App() {
             if (!/不匹配|idle|没有活动/i.test(friendly.message)) {
               toast.error(`${friendly.title}：${friendly.message}`);
             }
-          });
+          }));
       }
     });
   }, [
@@ -458,7 +448,7 @@ export default function App() {
         onInstall={() => { void handleInstallUpdate(); }}
       />
       {/* Countdown overlay */}
-      {state.countdownRemaining > 0 && (
+      {state.snapshot.state === 'countdown' && state.countdownRemaining > 0 && (
         <div className="countdown-overlay" onClick={handleEmergencyStop} data-qoder-id="qel-countdown-overlay-c389bc14" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-countdown-overlay-c389bc14&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;countdown-overlay&quot;,&quot;loc&quot;:{&quot;line&quot;:130,&quot;column&quot;:9}}">
           <div className="countdown-number" data-qoder-id="qel-countdown-number-5e575752" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-countdown-number-5e575752&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;countdown-number&quot;,&quot;loc&quot;:{&quot;line&quot;:131,&quot;column&quot;:11}}">{state.countdownRemaining}</div>
           <div style={{ color: 'white', fontSize: '16px', marginTop: '16px' }} data-qoder-id="qel-div-d0a9d045" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-d0a9d045&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:132,&quot;column&quot;:11}}">

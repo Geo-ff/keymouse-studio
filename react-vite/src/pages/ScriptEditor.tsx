@@ -259,22 +259,11 @@ export function ScriptEditor({ script, onScriptChange, onScriptSave, onNavigate,
       loopDurationMs: loopMode === 'duration' ? (loopDurationMin * 60 + loopDurationSec) * 1000 : undefined,
       countdownMs: resolveCountdownMs(settings),
     };
-    void (async () => {
-      await window.desktop?.setGlobalHotkeys?.({
-        emergency: settings.emergencyHotkey || 'F12',
-        playbackStop: settings.playbackStopHotkey,
-      }).catch(() => undefined);
-      await playback({ ...script, actions: enabledActions }, options);
-      void showSystemAlert('回放', '回放已开始', script.name.trim() ? `脚本：${script.name.trim()}` : undefined);
-    })().catch(() => {
-      void window.desktop?.setGlobalHotkeys?.({
-        emergency: settings.emergencyHotkey || 'F12',
-        recordStart: settings.recordStartHotkey,
-        recordStop: settings.recordStopHotkey,
-        playbackStart: settings.playbackStartHotkey,
-        playbackStop: settings.playbackStopHotkey,
-      }).catch(() => undefined);
-    });
+    void playback({ ...script, actions: enabledActions }, options)
+      .then(() => {
+        void showSystemAlert('回放', '回放已开始', script.name.trim() ? `脚本：${script.name.trim()}` : undefined);
+      })
+      .catch(() => undefined);
   }, [actions, script, playback, loopMode, loopCount, loopDurationMin, loopDurationSec, speedMultiplier, settings]);
 
   const handlePause = useCallback(() => {
@@ -317,20 +306,6 @@ export function ScriptEditor({ script, onScriptChange, onScriptSave, onNavigate,
     ];
   }, [settings.playbackStartHotkey, settings.playbackStopHotkey, isPlaying, isPaused, actions, handleRun, handleStop]));
 
-  useEffect(() => {
-    const onGlobal = (event: Event) => {
-      const actionId = (event as CustomEvent<{ actionId: string }>).detail?.actionId;
-      if (actionId === 'playbackStart') {
-        if (!isPlaying && actions.some(a => a.enabled)) handleRun();
-        return;
-      }
-      if (actionId === 'playbackStop') {
-        if (isPlaying || isPaused) handleStop();
-      }
-    };
-    window.addEventListener('keymouse-global-hotkey', onGlobal);
-    return () => window.removeEventListener('keymouse-global-hotkey', onGlobal);
-  }, [isPlaying, isPaused, actions, handleRun, handleStop]);
 
   return (
     <div style={{ ...({ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }), ...((qoderProps as any)?.style) }} className={(qoderProps as any)?.className} data-qoder-id={(qoderProps as any)?.["data-qoder-id"]} data-qoder-source={(qoderProps as any)?.["data-qoder-source"]}>

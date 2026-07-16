@@ -55,6 +55,10 @@ class PlaybackService:
         self._paused_ns = 0
         self._last_operation_id: UUID | None = None
         self._release_results: dict[UUID, ReleaseResult] = {}
+        self._planned_elapsed_ns = 0
+        self._round_duration_ns = 0
+        self._loop_mode = LoopMode.COUNT
+        self._loop_count = 1
 
     async def start(self, request: PlaybackRequest) -> OperationTransition:
         script = await self._resolve_script(request)
@@ -74,7 +78,11 @@ class PlaybackService:
         if countdown_ms is None:
             countdown_ms = script.settings.countdown_ms
         initial_state = EngineState.COUNTDOWN if countdown_ms else EngineState.RUNNING
-        snapshot = await self._operations.start(OperationType.PLAYBACK, initial_state)
+        snapshot = await self._operations.start(
+            OperationType.PLAYBACK,
+            initial_state,
+            countdown_remaining_ms=countdown_ms,
+        )
         operation_id = snapshot.operation_id
         if operation_id is None:
             raise RuntimeError("Operation service did not create an operation id")
@@ -85,6 +93,8 @@ class PlaybackService:
         self._playback_started_ns = None
         self._pause_started_ns = None
         self._paused_ns = 0
+        self._planned_elapsed_ns = 0
+        self._round_duration_ns = 0
         self._last_operation_id = operation_id
         self._task = asyncio.create_task(
             self._run(operation_id, enabled, script, request, countdown_ms),
@@ -169,6 +179,10 @@ class PlaybackService:
         duration_ns = (
             request.loop_duration_ms * 1_000_000 if request.loop_duration_ms is not None else None
         )
+        self._loop_mode = loop_mode
+        self._loop_count = loop_count
+        self._round_duration_ns = self._round_planned_duration_ns(enabled, speed)
+        self._planned_elapsed_ns = 0
         completed_loops = 0
         completed_actions = 0
         current_index: int | None = None
@@ -321,7 +335,7 @@ class PlaybackService:
     ) -> bool:
         remaining_ns = int(duration_ms * 1_000_000 / speed)
         last_progress_ns = 0
-        progress_interval_ns = 150_000_000  # ~150ms heartbeat during long waits
+        progress_interval_ns = 150_000_000
         while remaining_ns > 0:
             self._raise_if_cancelled()
             await self._running.wait()
@@ -337,6 +351,7 @@ class PlaybackService:
                 continue
             elapsed = min(max(0, self._clock.now_ns() - before), budget_ns)
             remaining_ns -= elapsed
+            self._planned_elapsed_ns += elapsed
             self._refresh_elapsed()
             ctx = getattr(self, "_progress_ctx", None)
             if (
@@ -426,6 +441,21 @@ class PlaybackService:
         except Exception:
             return None, None
 
+    def _action_planned_duration_ns(self, action: ScriptAction, speed: float) -> int:
+        duration_ms = action.delay_before_ms
+        if isinstance(action, MouseMoveAction):
+            duration_ms += action.payload.duration_ms
+        elif isinstance(action, MouseClickAction):
+            duration_ms += max(0, action.payload.click_count - 1) * action.payload.interval_ms
+        elif isinstance(action, WaitAction):
+            duration_ms += action.payload.duration_ms
+        return int(duration_ms * 1_000_000 / speed)
+
+    def _round_planned_duration_ns(
+        self, actions: list[ScriptAction], speed: float
+    ) -> int:
+        return sum(self._action_planned_duration_ns(action, speed) for action in actions)
+
     async def _publish_progress(
         self,
         operation_id: UUID,
@@ -436,6 +466,14 @@ class PlaybackService:
         duration_ns: int | None,
     ) -> None:
         progress = completed_actions / total_actions if total_actions else None
+        if self._round_duration_ns > 0:
+            if self._loop_mode == LoopMode.COUNT:
+                total_duration_ns = self._round_duration_ns * self._loop_count
+                progress = min(1.0, self._planned_elapsed_ns / total_duration_ns)
+            elif duration_ns is None:
+                progress = (
+                    self._planned_elapsed_ns % self._round_duration_ns
+                ) / self._round_duration_ns
         if duration_ns is not None and duration_ns > 0:
             duration_progress = min(1.0, self._elapsed_ns / duration_ns)
             progress = max(progress or 0.0, duration_progress)

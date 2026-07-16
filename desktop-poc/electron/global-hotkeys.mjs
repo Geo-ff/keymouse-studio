@@ -2,6 +2,8 @@ import { globalShortcut } from 'electron'
 
 /** @type {Map<string, string>} actionId -> accelerator */
 const registered = new Map()
+const attempted = new Map()
+const failures = new Map()
 
 /**
  * Convert UI/backend hotkey (Ctrl+F9, ctrl+shift+f12) to Electron accelerator.
@@ -54,26 +56,67 @@ export function toAccelerator(hotkey) {
  * @returns {{ ok: boolean, failed: Array<{ actionId: string, hotkey: string, accelerator: string }> }}
  */
 export function setGlobalHotkeys(bindings, onAction) {
-  unregisterAll()
+  const desired = new Map()
   const failed = []
-  for (const [actionId, hotkey] of Object.entries(bindings || {})) {
-    if (!hotkey || !String(hotkey).trim()) continue
-    const accelerator = toAccelerator(String(hotkey))
+  for (const [actionId, hotkeyValue] of Object.entries(bindings || {})) {
+    const hotkey = String(hotkeyValue || '').trim()
+    if (!hotkey) continue
+    const accelerator = toAccelerator(hotkey)
     if (!accelerator) {
-      failed.push({ actionId, hotkey: String(hotkey), accelerator: '' })
+      desired.set(actionId, '')
+      const failure = { actionId, hotkey, accelerator: '' }
+      failures.set(actionId, failure)
+      attempted.set(actionId, '')
+      failed.push(failure)
       continue
     }
+    desired.set(actionId, accelerator)
+  }
+
+  for (const [actionId, accelerator] of registered) {
+    if (desired.get(actionId) === accelerator) continue
+    try {
+      globalShortcut.unregister(accelerator)
+    } catch {
+      // ignore
+    }
+    registered.delete(actionId)
+    attempted.delete(actionId)
+    failures.delete(actionId)
+  }
+  for (const actionId of attempted.keys()) {
+    if (!desired.has(actionId)) {
+      attempted.delete(actionId)
+      failures.delete(actionId)
+    }
+  }
+
+  for (const [actionId, accelerator] of desired) {
+    if (!accelerator) continue
+    if (registered.get(actionId) === accelerator) continue
+    if (attempted.get(actionId) === accelerator) {
+      const failure = failures.get(actionId)
+      if (failure) failed.push(failure)
+      continue
+    }
+    attempted.set(actionId, accelerator)
+    const hotkey = String(bindings[actionId])
     try {
       const ok = globalShortcut.register(accelerator, () => {
         onAction(actionId)
       })
       if (!ok) {
-        failed.push({ actionId, hotkey: String(hotkey), accelerator })
+        const failure = { actionId, hotkey, accelerator }
+        failures.set(actionId, failure)
+        failed.push(failure)
         continue
       }
       registered.set(actionId, accelerator)
+      failures.delete(actionId)
     } catch {
-      failed.push({ actionId, hotkey: String(hotkey), accelerator })
+      const failure = { actionId, hotkey, accelerator }
+      failures.set(actionId, failure)
+      failed.push(failure)
     }
   }
   return { ok: failed.length === 0, failed }
@@ -88,4 +131,6 @@ export function unregisterAll() {
     }
   }
   registered.clear()
+  attempted.clear()
+  failures.clear()
 }

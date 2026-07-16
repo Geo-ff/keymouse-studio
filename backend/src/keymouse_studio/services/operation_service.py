@@ -48,7 +48,10 @@ class OperationService:
         )
 
     async def start(
-        self, operation_type: OperationType, initial_state: EngineState
+        self,
+        operation_type: OperationType,
+        initial_state: EngineState,
+        countdown_remaining_ms: int = 0,
     ) -> StateSnapshot:
         async with self._lock:
             if self._machine.state != EngineState.IDLE:
@@ -65,7 +68,7 @@ class OperationService:
             self._progress = None
             self._current_action_index = None
             self._completed_count = 0
-            self._countdown_remaining_ms = 0
+            self._countdown_remaining_ms = max(0, countdown_remaining_ms)
             self._machine.transition(initial_state)
             await self._publish("operation.state_changed")
             return self.snapshot()

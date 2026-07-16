@@ -189,6 +189,71 @@ async def test_elevated_foreground_auto_pauses_and_raises_permission_error() -> 
         {"countdownMs": 86_400_001},
     ],
 )
+
+
 def test_clicker_config_rejects_boundary_violations(values: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         ClickerConfig.model_validate(values)
+
+
+@pytest.mark.asyncio
+async def test_start_snapshot_contains_countdown_and_interval_clears_it() -> None:
+    service, operations, _adapter, events = create_service(
+        progress_publish_interval_ms=20
+    )
+    queue = events.subscribe()
+    transition = await service.start_clicker(
+        ClickerConfig(interval_ms=80, repeat_count=2, countdown_ms=40)
+    )
+
+    assert transition.state == EngineState.COUNTDOWN
+    assert transition.snapshot.countdown_remaining_ms == 40
+    await wait_until_idle(service, operations)
+
+    progress_snapshots = []
+    while not queue.empty():
+        event = queue.get_nowait()
+        if event.type == "operation.progress":
+            progress_snapshots.append(event.payload)
+    countdown_snapshots = [
+        snapshot
+        for snapshot in progress_snapshots
+        if snapshot.countdown_remaining_ms > 0
+    ]
+    assert countdown_snapshots
+    assert all(snapshot.state == EngineState.COUNTDOWN for snapshot in countdown_snapshots)
+    assert len(progress_snapshots) < 20
+    await service.shutdown()
+    events.unsubscribe(queue)
+
+
+@pytest.mark.asyncio
+async def test_timed_click_runs_startup_countdown_before_scheduled_delay() -> None:
+    service, operations, adapter, events = create_service(
+        progress_publish_interval_ms=10
+    )
+    queue = events.subscribe()
+    transition = await service.start_timed_click(
+        TimedClickConfig(
+            delay_ms=60,
+            interval_ms=50,
+            repeat_count=1,
+            countdown_ms=30,
+        )
+    )
+
+    assert transition.snapshot.countdown_remaining_ms == 30
+    await wait_until_idle(service, operations)
+
+    running_delay_seen = False
+    while not queue.empty():
+        event = queue.get_nowait()
+        if event.type != "operation.progress":
+            continue
+        snapshot = event.payload
+        if snapshot.state == EngineState.RUNNING and snapshot.countdown_remaining_ms > 0:
+            running_delay_seen = True
+    assert running_delay_seen
+    assert adapter.actions.count(("down", MouseButton.LEFT)) == 1
+    await service.shutdown()
+    events.unsubscribe(queue)

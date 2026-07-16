@@ -34,6 +34,7 @@ let quitting = false
 let sidecarDetach = () => {}
 let mainWindow
 let ipcRegistered = false
+let hotkeyFailureSignature = ''
 
 const ACTION_LABELS = {
   emergency: '急停',
@@ -208,7 +209,18 @@ function registerIpcHandlers() {
     const result = setGlobalHotkeys(bindings, (actionId) => {
       sendToRenderer('hotkeys:action', { actionId })
     })
-    if (!result.ok && result.failed.length > 0 && mainWindow && !mainWindow.isDestroyed()) {
+    const failureSignature = result.failed
+      .map((item) => `${item.actionId}:${item.accelerator || item.hotkey}`)
+      .sort()
+      .join('|')
+    if (result.ok) hotkeyFailureSignature = ''
+    if (
+      failureSignature &&
+      failureSignature !== hotkeyFailureSignature &&
+      mainWindow &&
+      !mainWindow.isDestroyed()
+    ) {
+      hotkeyFailureSignature = failureSignature
       const lines = result.failed.map((item) => {
         const label = ACTION_LABELS[item.actionId] || item.actionId
         return `${label}: ${item.hotkey || item.accelerator || '未知'}`
