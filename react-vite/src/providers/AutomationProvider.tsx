@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { AppSettings, Capabilities, ErrorDetail, HotkeyStatus, IAutomationService, Script, ServiceMode, ServiceState } from '../types';
 import { DEFAULT_SETTINGS, INITIAL_SNAPSHOT } from '../types';
 import { createService } from '../services/AutomationService';
+import { isMockModeAllowed, resolveServiceMode } from '../utils/runtime';
 
 interface AutomationContextValue {
   service: IAutomationService;
@@ -27,8 +28,13 @@ const fallbackState: ServiceState = {
 const AutomationContext = createContext<AutomationContextValue | null>(null);
 
 export function AutomationProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [service, setService] = useState<IAutomationService>(() => createService(DEFAULT_SETTINGS.serviceMode));
+  const [settings, setSettings] = useState<AppSettings>(() => ({
+    ...DEFAULT_SETTINGS,
+    serviceMode: resolveServiceMode(DEFAULT_SETTINGS.serviceMode),
+  }));
+  const [service, setService] = useState<IAutomationService>(() =>
+    createService(resolveServiceMode(DEFAULT_SETTINGS.serviceMode)),
+  );
   const [state, setState] = useState<ServiceState>(fallbackState);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const [hotkey, setHotkey] = useState<HotkeyStatus | null>(null);
@@ -94,9 +100,14 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
   }, [service]);
 
   const updateSettings = useCallback(async (updates: Partial<AppSettings>) => {
-    const requestedMode = updates.serviceMode;
+    const requestedMode = updates.serviceMode
+      ? resolveServiceMode(updates.serviceMode)
+      : undefined;
+    const safeUpdates =
+      requestedMode !== undefined ? { ...updates, serviceMode: requestedMode } : updates;
     if (requestedMode && requestedMode !== service.mode) {
-      const nextSettings = { ...settings, ...updates, serviceMode: requestedMode };
+      if (!isMockModeAllowed() && requestedMode === 'mock') return;
+      const nextSettings = { ...settings, ...safeUpdates, serviceMode: requestedMode };
       setSettings(nextSettings);
       setError(null);
       setReady(false);
@@ -104,8 +115,12 @@ export function AutomationProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
-      const next = await service.updateSettings(updates);
-      setSettings(previous => ({ ...previous, ...next, serviceMode: service.mode }));
+      const next = await service.updateSettings(safeUpdates);
+      setSettings(previous => ({
+        ...previous,
+        ...next,
+        serviceMode: resolveServiceMode(service.mode),
+      }));
       if (updates.emergencyHotkey) setHotkey(await service.getHotkeyStatus());
     } catch { }
   }, [service, settings]);

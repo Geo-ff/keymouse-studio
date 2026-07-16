@@ -26,6 +26,7 @@ import {
 import { useService } from '../hooks/useService';
 import type { OperationType, RunState } from '../types';
 import { formatHotkeyLabel, matchesHotkey } from '../utils/hotkey';
+import { isMockModeAllowed } from '../utils/runtime';
 
 export type PageId = 'dashboard' | 'clicker' | 'timed' | 'recording' | 'script' | 'manager' | 'settings';
 
@@ -40,7 +41,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'clicker', label: '连点器', icon: <MousePointerClick size={18}  data-qoder-id="qel-mousepointerclick-9b7b7bb1" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-mousepointerclick-9b7b7bb1&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Unknown&quot;,&quot;elementRole&quot;:&quot;mousepointerclick&quot;,&quot;loc&quot;:{&quot;line&quot;:38,&quot;column&quot;:40}}"/> },
   { id: 'timed', label: '定时', icon: <Timer size={18}  data-qoder-id="qel-timer-0f289056" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-timer-0f289056&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Unknown&quot;,&quot;elementRole&quot;:&quot;timer&quot;,&quot;loc&quot;:{&quot;line&quot;:39,&quot;column&quot;:37}}"/> },
   { id: 'recording', label: '录制', icon: <Circle size={18}  data-qoder-id="qel-circle-c471470b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-circle-c471470b&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Unknown&quot;,&quot;elementRole&quot;:&quot;circle&quot;,&quot;loc&quot;:{&quot;line&quot;:40,&quot;column&quot;:41}}"/> },
-  { id: 'script', label: '脚本', icon: <FileCode2 size={18}  data-qoder-id="qel-filecode2-de4d8be0" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-filecode2-de4d8be0&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Unknown&quot;,&quot;elementRole&quot;:&quot;filecode2&quot;,&quot;loc&quot;:{&quot;line&quot;:41,&quot;column&quot;:38}}"/> },
+  { id: 'manager', label: '脚本', icon: <FileCode2 size={18}  data-qoder-id="qel-filecode2-de4d8be0" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-filecode2-de4d8be0&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Unknown&quot;,&quot;elementRole&quot;:&quot;filecode2&quot;,&quot;loc&quot;:{&quot;line&quot;:41,&quot;column&quot;:38}}"/> },
   { id: 'settings', label: '设置', icon: <Settings size={18}  data-qoder-id="qel-settings-b1a4688f" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-settings-b1a4688f&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Unknown&quot;,&quot;elementRole&quot;:&quot;settings&quot;,&quot;loc&quot;:{&quot;line&quot;:42,&quot;column&quot;:40}}"/> },
 ];
 
@@ -57,19 +58,24 @@ function Sidebar({ activePage, onNavigate, ...qoderProps }: { activePage: PageId
         <img src="./keyboard-studio-logo.png" alt="" className="sidebar-brand-logo" draggable={false} />
       </button>
       <div className="sidebar-divider" />
-      {NAV_ITEMS.map(item => (
+      {NAV_ITEMS.map(item => {
+        const active =
+          activePage === item.id ||
+          (item.id === 'manager' && activePage === 'script');
+        return (
         <button
           key={item.id}
-          className={`nav-item ${activePage === item.id ? 'active' : ''}`}
+          className={`nav-item ${active ? 'active' : ''}`}
           onClick={() => onNavigate(item.id)}
           data-tooltip={item.label}
           aria-label={item.label}
-          aria-current={activePage === item.id ? 'page' : undefined}
+          aria-current={active ? 'page' : undefined}
          data-qoder-id="qel-button-d6b96ae9" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-d6b96ae9&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Sidebar&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:50,&quot;column&quot;:9}}">
           <span className="nav-item-icon" data-qoder-id="qel-nav-item-icon-8acdfb7b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-nav-item-icon-8acdfb7b&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Sidebar&quot;,&quot;elementRole&quot;:&quot;nav-item-icon&quot;,&quot;loc&quot;:{&quot;line&quot;:58,&quot;column&quot;:11}}">{item.icon}</span>
           <span className="nav-item-label" data-qoder-id="qel-nav-item-label-df57558e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-nav-item-label-df57558e&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Sidebar&quot;,&quot;elementRole&quot;:&quot;nav-item-label&quot;,&quot;loc&quot;:{&quot;line&quot;:59,&quot;column&quot;:11}}">{item.label}</span>
         </button>
-      ))}
+        );
+      })}
     </nav>
   );
 }
@@ -233,12 +239,14 @@ function StatusBar({ scriptName, ...qoderProps }: { scriptName: string } & Recor
         <span className="statusbar-truncate">{hotkeyHint}</span>
       </div>
 
-      <div className="flex items-center gap-xs">
-        <span>模式：</span>
-        <span style={{ color: mode === 'real' ? 'var(--color-running)' : 'var(--color-paused)', fontWeight: 600 }}>
-          {mode === 'real' ? 'Real' : 'Mock'}
-        </span>
-      </div>
+      {isMockModeAllowed() && (
+        <div className="flex items-center gap-xs">
+          <span>模式：</span>
+          <span style={{ color: mode === 'real' ? 'var(--color-running)' : 'var(--color-paused)', fontWeight: 600 }}>
+            {mode === 'real' ? 'Real' : 'Mock'}
+          </span>
+        </div>
+      )}
 
       {isActive && operationType && (
         <div className="flex items-center gap-xs">

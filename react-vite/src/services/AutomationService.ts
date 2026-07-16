@@ -30,6 +30,7 @@ import type {
 } from '../types';
 import { DEFAULT_SETTINGS, INITIAL_SNAPSHOT } from '../types';
 import { generateRandomAction, mockScripts } from '../data/mockData';
+import { resolveServiceMode } from '../utils/runtime';
 import { ApiClient, ApiError } from './ApiClient';
 
 const genId = () => crypto.randomUUID();
@@ -633,7 +634,8 @@ export class RealAutomationService extends AutomationServiceBase {
 }
 
 export function createService(mode: ServiceMode): IAutomationService {
-  return mode === 'real' ? new RealAutomationService() : new MockAutomationService();
+  const resolved = resolveServiceMode(mode);
+  return resolved === 'real' ? new RealAutomationService() : new MockAutomationService();
 }
 
 export { genId };
