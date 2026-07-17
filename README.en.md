@@ -27,20 +27,23 @@
 2. Download **`KeyMouse-Studio-Setup-*.exe`**
 3. Install and launch **KeyMouse Studio**
 
+If GitHub is slow, use the [domestic download mirror (Quark Drive)](./docs/domestic-download.en.md).
+
 **Requirements**: Windows 10 / 11 (x64)
 
 **Notes**:
 
 - The installer includes the runtime you need — **no** separate Python install
 - Builds may be **unsigned**; Windows SmartScreen may warn you — choose **More info** → **Run anyway**
-- Prefer downloads from this repository's GitHub Releases
+- Prefer this repository's GitHub Releases; use the Quark mirror when GitHub is hard to reach
+- **Official source**: GitHub user `Geo-ff` / repository `keymouse-studio`
 
 ## Quick start
 
 1. Install and open the app
 2. Use the sidebar: **Auto-clicker / Timed / Recording / Scripts**, etc.
 3. Configure and start; use **Emergency stop** when needed (default **F12**)
-4. **File → About KeyMouse Studio**, or the toolbar **ⓘ** button, for version, updates, and the official repository
+4. Menu **File → About & Check for Updates**, or the toolbar **About & Updates** button, for version, updates, and the official repository
 
 ## Features
 
