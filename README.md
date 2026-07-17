@@ -71,11 +71,26 @@
 - 脚本数据保存在本地，应用**不会**把你的脚本上传到云端
 - 急停快捷键可在设置中调整；执行重要操作前建议先确认急停可用
 
+## 支持项目
+
+本项目坚持免费开源，由个人利用业余时间持续开发和维护。制作不易，点个 [Star](https://github.com/Geo-ff/keymouse-studio) 就是对我努力最大的支持。
+
+## 社区认可
+
+感谢 [LINUX DO](https://linux.do) 社区为开源项目提供友好、开放的交流环境，也感谢社区成员对 KeyMouse Studio 的关注与支持。
+
 ## 反馈
 
-遇到问题或有建议，欢迎提交 Issue：
+遇到问题或有建议，欢迎通过以下方式反馈：
 
-https://github.com/Geo-ff/keymouse-studio/issues
+- 提交 [GitHub Issue](https://github.com/Geo-ff/keymouse-studio/issues)
+- 使用微信扫描下方二维码，加入 **KeyMouse Studio 使用反馈群**
+
+<p align="center">
+  <img src="docs/assets/wechat-feedback-group.png" alt="KeyMouse Studio 使用反馈微信群二维码" width="360" />
+</p>
+
+> 微信群二维码将在 **2026 年 7 月 24 日前**有效；若二维码失效，请通过 GitHub Issue 联系维护者更新。
 
 ## 开发者
 

@@ -485,6 +485,41 @@ input, select, textarea {
   flex: 1;
 }
 
+.about-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: max-content;
+  padding-inline: 10px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.about-trigger:hover {
+  color: var(--color-text-primary);
+}
+
+.about-trigger.has-update {
+  color: var(--color-action-primary);
+  background: var(--color-bg-active);
+}
+
+.about-update-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 1px 6px;
+  border-radius: var(--radius-control);
+  background: var(--color-action-primary);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 /* --- Status Indicators --- */
 .status-badge {
   display: inline-flex;
@@ -1664,6 +1699,14 @@ input, select, textarea {
 .about-github-external {
   color: var(--color-text-tertiary);
   flex-shrink: 0;
+}
+
+.about-support {
+  margin: -4px 2px 18px;
+  color: var(--color-text-secondary);
+  font-size: var(--fs-sm);
+  line-height: 1.7;
+  text-align: center;
 }
 
 .about-actions {

@@ -71,11 +71,26 @@
 - Scripts stay **local**; the app does not upload them to a cloud service
 - Emergency-stop hotkey is configurable; confirm it works before long runs
 
+## Support the project
+
+This project is free and open source, developed and maintained by an individual in their spare time. If you find it useful, giving it a [Star](https://github.com/Geo-ff/keymouse-studio) is the best way to support the work behind it.
+
+## Community acknowledgment
+
+Thanks to the [LINUX DO](https://linux.do) community for providing a friendly and open space for open-source projects, and to its members for their interest in and support for KeyMouse Studio.
+
 ## Feedback
 
-Bugs and ideas welcome via Issues:
+For bugs or suggestions, you can:
 
-https://github.com/Geo-ff/keymouse-studio/issues
+- Submit a [GitHub Issue](https://github.com/Geo-ff/keymouse-studio/issues)
+- Scan the QR code below with WeChat to join the **KeyMouse Studio Feedback Group**
+
+<p align="center">
+  <img src="docs/assets/wechat-feedback-group.png" alt="KeyMouse Studio WeChat feedback group QR code" width="360" />
+</p>
+
+> The WeChat group QR code is valid until **July 24, 2026**. If it expires, please ask the maintainer to update it through GitHub Issues.
 
 ## For developers
 

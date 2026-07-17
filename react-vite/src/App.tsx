@@ -423,6 +423,7 @@ export default function App() {
           void refreshAbout();
           setAboutOpen(true);
         }}
+        updateStatus={updateState?.status}
        data-qoder-id="qel-layout-c21360f5" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-layout-c21360f5&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;layout&quot;,&quot;loc&quot;:{&quot;line&quot;:117,&quot;column&quot;:7}}">
         {renderPage()}
       </Layout>

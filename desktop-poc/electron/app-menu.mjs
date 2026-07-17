@@ -23,7 +23,7 @@ export function createAppMenu() {
       label: '文件',
       submenu: [
         {
-          label: `关于 ${APP_TITLE}`,
+          label: `关于与检查更新`,
           click: () => openAbout(),
         },
         { type: 'separator' },

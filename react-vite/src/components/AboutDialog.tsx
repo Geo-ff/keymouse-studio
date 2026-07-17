@@ -165,6 +165,10 @@ export function AboutDialog({
           <ExternalLink size={14} className="about-github-external" />
         </button>
 
+        <p className="about-support">
+          本项目坚持免费开源，由个人利用业余时间持续开发和维护。制作不易，点个 Star 就是对我努力最大的支持。
+        </p>
+
         <div className="about-actions">
           <Button variant="ghost" onClick={onClose}>
             关闭

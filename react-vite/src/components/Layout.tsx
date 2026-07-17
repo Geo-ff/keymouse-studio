@@ -24,7 +24,7 @@ import {
   Info,
 } from 'lucide-react';
 import { useService } from '../hooks/useService';
-import type { OperationType, RunState } from '../types';
+import type { DesktopUpdateState, OperationType, RunState } from '../types';
 import { formatHotkeyLabel, matchesHotkey } from '../utils/hotkey';
 import { isMockModeAllowed } from '../utils/runtime';
 
@@ -89,11 +89,13 @@ interface ToolbarProps {
   onToggleTheme: () => void;
   onEmergencyStop: () => void;
   onOpenAbout?: () => void;
+  updateStatus?: DesktopUpdateState['status'];
   onQuickAction?: (action: 'run' | 'pause' | 'stop' | 'save') => void;
 }
 
-function Toolbar({ scriptName, saved, theme, onToggleTheme, onEmergencyStop, onOpenAbout, ...qoderProps }: ToolbarProps & Record<string, any>) {
+function Toolbar({ scriptName, saved, theme, onToggleTheme, onEmergencyStop, onOpenAbout, updateStatus, ...qoderProps }: ToolbarProps & Record<string, any>) {
   const { state, settings } = useService();
+  const updateAvailable = updateStatus === 'available' || updateStatus === 'downloading' || updateStatus === 'downloaded';
 
   const runStateMap: Record<RunState, 'idle' | 'running' | 'paused' | 'emergency'> = {
     idle: 'idle',
@@ -139,18 +141,6 @@ function Toolbar({ scriptName, saved, theme, onToggleTheme, onEmergencyStop, onO
 
       <div className="toolbar-divider toolbar-hide-mobile"  data-qoder-id="qel-toolbar-divider-641b9d58" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toolbar-divider-641b9d58&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;toolbar-divider&quot;,&quot;loc&quot;:{&quot;line&quot;:122,&quot;column&quot;:7}}"/>
 
-      {onOpenAbout && (
-        <button
-          className="btn btn-ghost btn-icon"
-          type="button"
-          onClick={onOpenAbout}
-          data-tooltip="关于 KeyMouse Studio"
-          aria-label="关于 KeyMouse Studio"
-        >
-          <Info size={16} />
-        </button>
-      )}
-
       {/* 主题切换 */}
       <button
         className="btn btn-ghost btn-icon"
@@ -160,6 +150,20 @@ function Toolbar({ scriptName, saved, theme, onToggleTheme, onEmergencyStop, onO
        data-qoder-id="qel-button-6c6127e7" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-6c6127e7&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:125,&quot;column&quot;:7}}">
         {theme === 'light' ? <Moon size={16}  data-qoder-id="qel-moon-910937cf" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-moon-910937cf&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;moon&quot;,&quot;loc&quot;:{&quot;line&quot;:131,&quot;column&quot;:30}}"/> : <Sun size={16}  data-qoder-id="qel-sun-c10184ee" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-sun-c10184ee&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;sun&quot;,&quot;loc&quot;:{&quot;line&quot;:131,&quot;column&quot;:51}}"/>}
       </button>
+
+      {onOpenAbout && (
+        <button
+          className={`btn btn-ghost about-trigger${updateAvailable ? ' has-update' : ''}`}
+          type="button"
+          onClick={onOpenAbout}
+          data-tooltip={updateAvailable ? '发现新版本，点击查看' : '查看版本信息与检查更新'}
+          aria-label={updateAvailable ? '关于与更新，有新版本' : '关于与更新'}
+        >
+          <Info size={16} />
+          <span>关于与更新</span>
+          {updateAvailable && <span className="about-update-badge">有更新</span>}
+        </button>
+      )}
 
       {/* 急停按钮 */}
       <button
@@ -294,6 +298,7 @@ interface LayoutProps {
   onToggleTheme: () => void;
   onEmergencyStop: () => void;
   onOpenAbout?: () => void;
+  updateStatus?: DesktopUpdateState['status'];
   children: ReactNode;
 }
 
@@ -324,6 +329,7 @@ export function Layout(props: LayoutProps & Record<string, any>) {
           onToggleTheme={props.onToggleTheme}
           onEmergencyStop={props.onEmergencyStop}
           onOpenAbout={props.onOpenAbout}
+          updateStatus={props.updateStatus}
          data-qoder-id="qel-toolbar-2d3b2fe7" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toolbar-2d3b2fe7&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Layout&quot;,&quot;elementRole&quot;:&quot;toolbar&quot;,&quot;loc&quot;:{&quot;line&quot;:251,&quot;column&quot;:9}}"/>
         <main className="app-content" data-component="app-content" data-qoder-id="qel-app-content-0d7793b6" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-app-content-0d7793b6&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Layout&quot;,&quot;elementRole&quot;:&quot;app-content&quot;,&quot;loc&quot;:{&quot;line&quot;:259,&quot;column&quot;:9}}">
           {props.children}
