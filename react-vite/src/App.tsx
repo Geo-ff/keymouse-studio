@@ -6,8 +6,16 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Layout, type PageId } from './components/Layout';
 import { AboutDialog } from './components/AboutDialog';
+import { UpdateAnnouncementDialog, type UpdateAnnouncementMode } from './components/UpdateAnnouncementDialog';
 import { UpdateProgressBar } from './components/UpdateProgressBar';
 import { AlertDialog } from './components/ui';
+import {
+  cacheReleaseNotes,
+  completeWhatsNew,
+  hasSeenUpdateAnnouncement,
+  markUpdateAnnouncementSeen,
+  shouldShowWhatsNew,
+} from './utils/updateAnnouncement';
 import { Dashboard } from './pages/Dashboard';
 import { AutoClicker } from './pages/AutoClicker';
 import { TimedClick } from './pages/TimedClick';
@@ -65,7 +73,12 @@ export default function App() {
   const [updateBannerDismissed, setUpdateBannerDismissed] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [privilegeDialog, setPrivilegeDialog] = useState<{ title: string; description: string } | null>(null);
+  const [announceOpen, setAnnounceOpen] = useState(false);
+  const [announceMode, setAnnounceMode] = useState<UpdateAnnouncementMode>('available');
+  const [whatsNewNotes, setWhatsNewNotes] = useState<string | null>(null);
+  const [whatsNewVersion, setWhatsNewVersion] = useState<string | null>(null);
   const pendingHotkeyActions = useRef(new Set<string>());
+  const autoAnnouncedVersionRef = useRef<string | null>(null);
   /** Latest options from ScriptEditor UI (loop/duration/speed); falls back to script.settings. */
   const playbackOptionsRef = useRef<PlaybackOptions | null>(null);
   const currentScriptRef = useRef(currentScript);
@@ -228,17 +241,45 @@ export default function App() {
     }
   }, []);
 
+  const openUpdateAnnouncement = useCallback((mode: UpdateAnnouncementMode = 'available') => {
+    setAnnounceMode(mode);
+    setAnnounceOpen(true);
+  }, []);
+
   useEffect(() => {
     void refreshAbout();
     void window.desktop?.getUpdateState?.().then((s) => {
       if (s) setUpdateState(s);
     }).catch(() => undefined);
 
+    // What's New after version bump (uses notes cached when user previously saw available update).
+    void (async () => {
+      try {
+        const version =
+          (await window.desktop?.getAppVersion?.()) ||
+          (await window.desktop?.getAboutInfo?.())?.version ||
+          null;
+        if (!version) return;
+        const result = shouldShowWhatsNew(version);
+        if (result.show) {
+          setWhatsNewVersion(version);
+          setWhatsNewNotes(result.notes);
+          setAnnounceMode('whats-new');
+          setAnnounceOpen(true);
+        }
+      } catch {
+        // ignore
+      }
+    })();
+
     const offState = window.desktop?.onUpdateState?.((next) => {
       setUpdateState(next);
       setCheckingUpdate(next.status === 'checking');
       if (next.status === 'available' || next.status === 'downloading' || next.status === 'downloaded') {
         setUpdateBannerDismissed(false);
+      }
+      if (next.version && next.releaseNotes) {
+        cacheReleaseNotes(next.version, next.releaseNotes);
       }
     });
     const offAbout = window.desktop?.onOpenAbout?.(() => {
@@ -247,14 +288,28 @@ export default function App() {
     });
     const offUpdate = window.desktop?.onOpenUpdatePrompt?.(() => {
       void refreshAbout();
-      setAboutOpen(true);
+      openUpdateAnnouncement('available');
     });
     return () => {
       offState?.();
       offAbout?.();
       offUpdate?.();
     };
-  }, [refreshAbout]);
+  }, [refreshAbout, openUpdateAnnouncement]);
+
+  // Auto-open update announcement once per remote version.
+  useEffect(() => {
+    const status = updateState?.status;
+    const version = updateState?.version;
+    if (!version) return;
+    if (status !== 'available' && status !== 'downloaded') return;
+    if (updateState?.releaseNotes) cacheReleaseNotes(version, updateState.releaseNotes);
+    if (hasSeenUpdateAnnouncement(version)) return;
+    if (autoAnnouncedVersionRef.current === version) return;
+    autoAnnouncedVersionRef.current = version;
+    setAnnounceMode('available');
+    setAnnounceOpen(true);
+  }, [updateState?.status, updateState?.version, updateState?.releaseNotes]);
 
   const handleCheckUpdate = useCallback(async () => {
     if (!window.desktop?.checkForUpdates) {
@@ -423,6 +478,7 @@ export default function App() {
             void refreshAbout();
             setAboutOpen(true);
           }}
+          onOpenAnnouncement={() => openUpdateAnnouncement('available')}
         />
       )}
       <Layout
@@ -458,6 +514,31 @@ export default function App() {
         onCheckUpdate={() => { void handleCheckUpdate(); }}
         onDownload={() => { void handleDownloadUpdate(); }}
         onInstall={() => { void handleInstallUpdate(); }}
+        onOpenAnnouncement={() => openUpdateAnnouncement('available')}
+      />
+      <UpdateAnnouncementDialog
+        open={announceOpen}
+        mode={announceMode}
+        update={updateState}
+        notes={announceMode === 'whats-new' ? whatsNewNotes : updateState?.releaseNotes}
+        version={announceMode === 'whats-new' ? whatsNewVersion : updateState?.version}
+        releaseDate={updateState?.releaseDate}
+        onClose={() => {
+          if (announceMode === 'whats-new') {
+            completeWhatsNew(whatsNewVersion);
+          } else {
+            markUpdateAnnouncementSeen(updateState?.version);
+          }
+          setAnnounceOpen(false);
+        }}
+        onDownload={() => {
+          markUpdateAnnouncementSeen(updateState?.version);
+          void handleDownloadUpdate();
+        }}
+        onInstall={() => {
+          markUpdateAnnouncementSeen(updateState?.version);
+          void handleInstallUpdate();
+        }}
       />
       {/* Countdown overlay */}
       {state.snapshot.state === 'countdown' && state.countdownRemaining > 0 && (

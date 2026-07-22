@@ -93,6 +93,41 @@ function releaseDateFromInfo(info) {
   }
 }
 
+/**
+ * electron-updater may return releaseNotes as string, ReleaseNoteInfo[], or null.
+ * @param {unknown} notes
+ * @returns {string | null}
+ */
+export function normalizeReleaseNotes(notes) {
+  if (notes == null) return null
+  if (typeof notes === 'string') {
+    const trimmed = notes.trim()
+    return trimmed || null
+  }
+  if (Array.isArray(notes)) {
+    const parts = notes
+      .map((item) => {
+        if (typeof item === 'string') return item.trim()
+        if (item && typeof item === 'object') {
+          const note = 'note' in item ? item.note : null
+          const version = 'version' in item ? item.version : null
+          const body = typeof note === 'string' ? note.trim() : ''
+          if (!body) return ''
+          return version ? `## ${version}\n${body}` : body
+        }
+        return ''
+      })
+      .filter(Boolean)
+    return parts.length ? parts.join('\n\n') : null
+  }
+  if (typeof notes === 'object' && notes !== null && 'note' in notes) {
+    const body = typeof notes.note === 'string' ? notes.note.trim() : ''
+    return body || null
+  }
+  const asString = String(notes).trim()
+  return asString || null
+}
+
 function isNewerVersion(remote, current) {
   const parse = (value) =>
     String(value)
@@ -148,7 +183,7 @@ export function configureAutoUpdater() {
       status: 'available',
       version: info.version,
       releaseDate: releaseDateFromInfo(info),
-      releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : null,
+      releaseNotes: normalizeReleaseNotes(info.releaseNotes),
       message: `发现新版本 v${info.version}`,
       percent: 0,
     })
@@ -191,6 +226,10 @@ export function configureAutoUpdater() {
       version: info.version,
       percent: 100,
       releaseDate: releaseDateFromInfo(info),
+      releaseNotes:
+        normalizeReleaseNotes(info.releaseNotes) ??
+        updateState.releaseNotes ??
+        null,
       message: `更新 v${info.version} 已下载完成`,
     })
   })
@@ -246,15 +285,13 @@ export async function checkForUpdates({ silent = false } = {}) {
     }
 
     updateAvailableInfo = result.updateInfo
+    const releaseNotes = normalizeReleaseNotes(result.updateInfo?.releaseNotes)
     setMenuStatus(`发现新版本 v${remoteVersion}`)
     emitState({
       status: 'available',
       version: remoteVersion,
       releaseDate: releaseDateFromInfo(result.updateInfo),
-      releaseNotes:
-        typeof result.updateInfo?.releaseNotes === 'string'
-          ? result.updateInfo.releaseNotes
-          : null,
+      releaseNotes,
       message: `发现新版本 v${remoteVersion}`,
       percent: 0,
     })
@@ -263,6 +300,7 @@ export async function checkForUpdates({ silent = false } = {}) {
       version: remoteVersion,
       silent,
       releaseDate: releaseDateFromInfo(result.updateInfo),
+      releaseNotes,
     }
   } catch (error) {
     checking = false

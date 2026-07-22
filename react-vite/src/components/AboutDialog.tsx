@@ -13,6 +13,7 @@ interface AboutDialogProps {
   onDownload(): void;
   onInstall(): void;
   checking?: boolean;
+  onOpenAnnouncement?(): void;
 }
 
 function formatReleaseDate(value?: string | null) {
@@ -37,6 +38,7 @@ export function AboutDialog({
   onDownload,
   onInstall,
   checking = false,
+  onOpenAnnouncement,
 }: AboutDialogProps) {
   const [visible, setVisible] = useState(open);
   const [leaving, setLeaving] = useState(false);
@@ -153,6 +155,13 @@ export function AboutDialog({
             <div className="about-progress-label">{percent}%</div>
           </div>
         )}
+
+        {(canDownload || canInstall || (update?.releaseNotes && (status === 'available' || status === 'downloaded'))) &&
+          onOpenAnnouncement && (
+            <button type="button" className="about-notes-link" onClick={onOpenAnnouncement}>
+              查看更新说明
+            </button>
+          )}
 
         <button type="button" className="about-github" onClick={openGithub}>
           <Github size={18} strokeWidth={1.75} />

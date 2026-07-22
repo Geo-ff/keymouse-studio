@@ -7,6 +7,7 @@ interface UpdateProgressBarProps {
   onInstall?(): void;
   onDismiss?(): void;
   onOpenAbout?(): void;
+  onOpenAnnouncement?(): void;
 }
 
 export function UpdateProgressBar({
@@ -15,6 +16,7 @@ export function UpdateProgressBar({
   onInstall,
   onDismiss,
   onOpenAbout,
+  onOpenAnnouncement,
 }: UpdateProgressBarProps) {
   if (!update) return null;
 
@@ -40,7 +42,14 @@ export function UpdateProgressBar({
     <div className="update-banner" role="status" aria-live="polite">
       <div className="update-banner-main">
         <Download size={14} className="update-banner-icon" />
-        <button type="button" className="update-banner-text" onClick={onOpenAbout}>
+        <button
+          type="button"
+          className="update-banner-text"
+          onClick={() => {
+            if (onOpenAnnouncement) onOpenAnnouncement();
+            else onOpenAbout?.();
+          }}
+        >
           {label}
         </button>
         {(status === 'downloading' || status === 'downloaded' || status === 'installing') && (
@@ -51,6 +60,11 @@ export function UpdateProgressBar({
         <span className="update-banner-pct text-mono">{status === 'available' ? '' : `${pct}%`}</span>
       </div>
       <div className="update-banner-actions">
+        {onOpenAnnouncement && (status === 'available' || status === 'downloaded') && (
+          <button type="button" className="btn btn-sm btn-ghost" onClick={onOpenAnnouncement}>
+            更新说明
+          </button>
+        )}
         {status === 'available' && onDownload && (
           <button type="button" className="btn btn-sm btn-primary" onClick={onDownload}>
             下载
