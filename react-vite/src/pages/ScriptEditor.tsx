@@ -32,13 +32,14 @@ import {
 } from 'lucide-react';
 import { useService } from '../hooks/useService';
 import { usePageHotkeys } from '../hooks/usePageHotkeys';
-import { resolveCountdownMs } from '../utils/countdown';
+
 import { Button, IconButton, Toggle, Input, Select, RadioGroup, EmptyState, ProgressBar } from '../components/ui';
 import { formatDuration, formatTime, createAction, createEmptyScript } from '../data/mockData';
 import type { ScriptAction, ActionType, MouseButton, Script, PlaybackOptions, EditorLoopMode } from '../types';
 import { genId } from '../services/AutomationService';
 import type { PageId } from '../components/Layout';
 import { showSystemAlert } from '../utils/systemAlert';
+import { buildPlaybackOptionsFromEditor } from '../utils/playbackOptions';
 
 const ACTION_ICONS: Record<ActionType, typeof MousePointer> = {
   mouse_move: MousePointer,
@@ -80,7 +81,8 @@ interface ScriptEditorProps {
   onScriptChange: (script: Script) => void;
   onScriptSave: (script: Script) => Promise<void>;
   onNavigate: (page: PageId) => void;
-
+  /** Keep latest editor playback options for global hotkeys outside this page. */
+  onPlaybackOptionsChange?: (options: PlaybackOptions) => void;
 }
 
 function summarizeAction(a: ScriptAction): string {
@@ -96,7 +98,14 @@ function summarizeAction(a: ScriptAction): string {
   }
 }
 
-export function ScriptEditor({ script, onScriptChange, onScriptSave, onNavigate, ...qoderProps }: ScriptEditorProps & Record<string, any>) {
+export function ScriptEditor({
+  script,
+  onScriptChange,
+  onScriptSave,
+  onNavigate,
+  onPlaybackOptionsChange,
+  ...qoderProps
+}: ScriptEditorProps & Record<string, any>) {
   const { playback, pausePlayback, resumePlayback, stopPlayback, state, settings } = useService();
   const [actions, setActions] = useState<ScriptAction[]>(script.actions);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -104,12 +113,15 @@ export function ScriptEditor({ script, onScriptChange, onScriptSave, onNavigate,
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
-  const [loopMode, setLoopMode] = useState<EditorLoopMode>('count');
-  const [loopCount, setLoopCount] = useState(1);
+  const [loopMode, setLoopMode] = useState<EditorLoopMode>(
+    script.settings.loopMode === 'infinite' ? 'infinite' : 'count',
+  );
+  const [loopCount, setLoopCount] = useState(Math.max(1, script.settings.loopCount || 1));
   const [loopDurationMin, setLoopDurationMin] = useState(1);
   const [loopDurationSec, setLoopDurationSec] = useState(0);
-  const [speedMultiplier, setSpeedMultiplier] = useState(1.0);
+  const [speedMultiplier, setSpeedMultiplier] = useState(script.settings.speedMultiplier || 1);
   const dragCounter = useRef(0);
+  const loadedScriptIdRef = useRef(script.id);
 
   const isPlaying = state.snapshot.operationType === 'playback' && (state.runState === 'running' || state.runState === 'paused');
   const isPaused = state.snapshot.operationType === 'playback' && state.runState === 'paused';
@@ -137,12 +149,68 @@ export function ScriptEditor({ script, onScriptChange, onScriptSave, onNavigate,
 
   // Sync with script prop
   const scriptRef = useRef(script);
-  if (scriptRef.current !== script && script.actions !== actions) {
+  if (scriptRef.current !== script) {
+    const prev = scriptRef.current;
     scriptRef.current = script;
-    setActions(script.actions);
-    setSelectedIds(new Set());
-    setEditingId(null);
+    if (prev.actions !== script.actions && script.actions !== actions) {
+      setActions(script.actions);
+      setSelectedIds(new Set());
+      setEditingId(null);
+    }
   }
+
+  // Reload loop/speed when switching scripts
+  useEffect(() => {
+    if (loadedScriptIdRef.current === script.id) return;
+    loadedScriptIdRef.current = script.id;
+    setLoopMode(script.settings.loopMode === 'infinite' ? 'infinite' : 'count');
+    setLoopCount(Math.max(1, script.settings.loopCount || 1));
+    setSpeedMultiplier(script.settings.speedMultiplier || 1);
+  }, [script.id, script.settings.loopMode, script.settings.loopCount, script.settings.speedMultiplier]);
+
+  // Persist count/infinite/speed into script.settings so global hotkeys match the UI.
+  // Duration mode is editor-session only (not in ScriptSettings schema).
+  useEffect(() => {
+    const latest = scriptRef.current;
+    const nextLoopMode = loopMode === 'duration' ? 'infinite' : loopMode;
+    const nextLoopCount = loopMode === 'count' ? Math.max(1, loopCount) : 1;
+    const nextSpeed = speedMultiplier > 0 ? speedMultiplier : 1;
+    if (
+      latest.settings.loopMode === nextLoopMode &&
+      latest.settings.loopCount === nextLoopCount &&
+      latest.settings.speedMultiplier === nextSpeed
+    ) {
+      return;
+    }
+    onScriptChange({
+      ...latest,
+      settings: {
+        ...latest.settings,
+        loopMode: nextLoopMode,
+        loopCount: nextLoopCount,
+        speedMultiplier: nextSpeed,
+      },
+      updatedAt: new Date().toISOString(),
+    });
+  }, [loopMode, loopCount, speedMultiplier, onScriptChange]);
+
+  useEffect(() => {
+    if (!onPlaybackOptionsChange) return;
+    onPlaybackOptionsChange(
+      buildPlaybackOptionsFromEditor(
+        { loopMode, loopCount, loopDurationMin, loopDurationSec, speedMultiplier },
+        settings,
+      ),
+    );
+  }, [
+    onPlaybackOptionsChange,
+    loopMode,
+    loopCount,
+    loopDurationMin,
+    loopDurationSec,
+    speedMultiplier,
+    settings,
+  ]);
 
   const updateActions = useCallback((newActions: ScriptAction[]) => {
     setActions(newActions);
@@ -251,14 +319,10 @@ export function ScriptEditor({ script, onScriptChange, onScriptSave, onNavigate,
   const handleRun = useCallback(() => {
     const enabledActions = actions.filter(a => a.enabled);
     if (enabledActions.length === 0) return;
-    const options: PlaybackOptions = {
-      times: loopMode === 'count' ? Math.max(1, loopCount) : 1,
-      speedMultiplier,
-      loop: loopMode === 'infinite',
-      loopMode,
-      loopDurationMs: loopMode === 'duration' ? (loopDurationMin * 60 + loopDurationSec) * 1000 : undefined,
-      countdownMs: resolveCountdownMs(settings),
-    };
+    const options = buildPlaybackOptionsFromEditor(
+      { loopMode, loopCount, loopDurationMin, loopDurationSec, speedMultiplier },
+      settings,
+    );
     void playback({ ...script, actions: enabledActions }, options)
       .then(() => {
         void showSystemAlert('回放', '回放已开始', script.name.trim() ? `脚本：${script.name.trim()}` : undefined);
@@ -287,8 +351,18 @@ export function ScriptEditor({ script, onScriptChange, onScriptSave, onNavigate,
 
   const handleSave = useCallback(() => {
     if (!script.name.trim()) return;
-    void onScriptSave({ ...script, name: script.name.trim(), actions });
-  }, [onScriptSave, script, actions]);
+    void onScriptSave({
+      ...script,
+      name: script.name.trim(),
+      actions,
+      settings: {
+        ...script.settings,
+        loopMode: loopMode === 'duration' ? 'infinite' : loopMode,
+        loopCount: loopMode === 'count' ? Math.max(1, loopCount) : 1,
+        speedMultiplier: speedMultiplier > 0 ? speedMultiplier : 1,
+      },
+    });
+  }, [onScriptSave, script, actions, loopMode, loopCount, speedMultiplier]);
 
   usePageHotkeys(useMemo(() => {
     if (typeof window !== 'undefined' && window.desktop?.setGlobalHotkeys) return [];

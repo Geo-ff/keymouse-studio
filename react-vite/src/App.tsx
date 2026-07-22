@@ -20,8 +20,17 @@ import { createEmptyScript, mockScripts } from './data/mockData';
 import { useToast } from './providers/ToastProvider';
 import { showSystemAlert } from './utils/systemAlert';
 import { formatErrorForDisplay } from './utils/errorMessages';
-import type { DesktopAboutInfo, DesktopUpdateState, ErrorDetail, Script, ScriptAction, AppSettings } from './types';
+import type {
+  DesktopAboutInfo,
+  DesktopUpdateState,
+  ErrorDetail,
+  PlaybackOptions,
+  Script,
+  ScriptAction,
+  AppSettings,
+} from './types';
 import { ApiError } from './services/ApiClient';
+import { buildPlaybackOptionsFromScript } from './utils/playbackOptions';
 
 const MOCK_SCRIPT_IDS = new Set(mockScripts.map(script => script.id));
 
@@ -57,6 +66,14 @@ export default function App() {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [privilegeDialog, setPrivilegeDialog] = useState<{ title: string; description: string } | null>(null);
   const pendingHotkeyActions = useRef(new Set<string>());
+  /** Latest options from ScriptEditor UI (loop/duration/speed); falls back to script.settings. */
+  const playbackOptionsRef = useRef<PlaybackOptions | null>(null);
+  const currentScriptRef = useRef(currentScript);
+  currentScriptRef.current = currentScript;
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
 
   useEffect(() => {
@@ -101,6 +118,9 @@ export default function App() {
         pendingHotkeyActions.current.add(actionId);
         void task().finally(() => pendingHotkeyActions.current.delete(actionId));
       };
+      const liveState = stateRef.current;
+      const liveSettings = settingsRef.current;
+      const liveScript = currentScriptRef.current;
       if (actionId === 'emergency') {
         runOnce(() => emergencyStop()
           .then(() => { void showSystemAlert('急停', '已紧急停止', '所有输入注入已中止'); })
@@ -111,24 +131,24 @@ export default function App() {
         return;
       }
       if (actionId === 'recordStart') {
-        if (state.snapshot.operationType && state.runState !== 'idle') {
+        if (liveState.snapshot.operationType && liveState.runState !== 'idle') {
           toast.error('当前已有任务在运行，请先停止或急停后再开始录制');
           return;
         }
         setPage('recording');
         runOnce(() => startRecording({
-          recordMouseMove: settings.recordMouseMove,
-          minMoveSampleMs: settings.minRecordInterval,
+          recordMouseMove: liveSettings.recordMouseMove,
+          minMoveSampleMs: liveSettings.minRecordInterval,
           moveErrorPx: 2,
           recordWheel: true,
           recordMouse: true,
           recordKeyboard: true,
           controlHotkeys: [
-            settings.emergencyHotkey,
-            settings.recordStartHotkey,
-            settings.recordStopHotkey,
-            settings.playbackStartHotkey,
-            settings.playbackStopHotkey,
+            liveSettings.emergencyHotkey,
+            liveSettings.recordStartHotkey,
+            liveSettings.recordStopHotkey,
+            liveSettings.playbackStartHotkey,
+            liveSettings.playbackStopHotkey,
           ].filter(Boolean),
         })
           .then(() => { void showSystemAlert('录制', '录制已开始', '正在记录键鼠操作'); })
@@ -139,7 +159,7 @@ export default function App() {
         return;
       }
       if (actionId === 'recordStop') {
-        if (state.snapshot.operationType !== 'recording') return;
+        if (liveState.snapshot.operationType !== 'recording') return;
         runOnce(() => stopRecording()
           .then(() => { void showSystemAlert('录制', '录制已结束', '可保存为脚本，或丢弃本次录制结果'); })
           .catch((err) => {
@@ -149,31 +169,25 @@ export default function App() {
         return;
       }
       if (actionId === 'playbackStart') {
-        const enabled = currentScript.actions.filter(a => a.enabled);
+        const enabled = liveScript.actions.filter(a => a.enabled);
         if (enabled.length === 0) {
           toast.error('当前脚本没有可回放的动作');
           return;
         }
-        if (state.runState !== 'idle' && state.snapshot.operationType === 'playback') {
+        if (liveState.runState !== 'idle' && liveState.snapshot.operationType === 'playback') {
           toast.error('回放正在运行，请先停止或急停后再重新开始');
           return;
         }
-        if (state.runState !== 'idle' && state.snapshot.operationType) {
+        if (liveState.runState !== 'idle' && liveState.snapshot.operationType) {
           toast.error('当前已有任务在运行，请先停止或急停后再开始回放');
           return;
         }
+        const options =
+          playbackOptionsRef.current ??
+          buildPlaybackOptionsFromScript(liveScript, liveSettings);
         setPage('script');
-        runOnce(() => playback(
-          { ...currentScript, actions: enabled },
-          {
-            times: currentScript.settings.loopMode === 'count' ? Math.max(1, currentScript.settings.loopCount) : 1,
-            speedMultiplier: currentScript.settings.speedMultiplier,
-            loop: currentScript.settings.loopMode === 'infinite',
-            loopMode: currentScript.settings.loopMode === 'count' ? 'count' : 'infinite',
-            countdownMs: settings.countdownEnabled ? Math.round(settings.countdownSeconds * 1000) : 0,
-          },
-        )
-          .then(() => { void showSystemAlert('回放', '回放已开始', currentScript.name.trim() ? `脚本：${currentScript.name.trim()}` : undefined); })
+        runOnce(() => playback({ ...liveScript, actions: enabled }, options)
+          .then(() => { void showSystemAlert('回放', '回放已开始', liveScript.name.trim() ? `脚本：${liveScript.name.trim()}` : undefined); })
           .catch((err) => {
             const friendly = formatErrorForDisplay(toErrorDetail(err));
             toast.error(`${friendly.title}：${friendly.message}`);
@@ -181,10 +195,10 @@ export default function App() {
         return;
       }
       if (actionId === 'playbackStop') {
-        if (state.snapshot.operationType !== 'playback' && state.runState === 'idle') return;
+        if (liveState.snapshot.operationType !== 'playback' && liveState.runState === 'idle') return;
         runOnce(() => stopPlayback()
           .then(() => {
-            void showSystemAlert('回放', '回放已结束', currentScript.name.trim() ? `脚本：${currentScript.name.trim()}` : undefined);
+            void showSystemAlert('回放', '回放已结束', liveScript.name.trim() ? `脚本：${liveScript.name.trim()}` : undefined);
           })
           .catch((err) => {
             const friendly = formatErrorForDisplay(toErrorDetail(err));
@@ -194,9 +208,7 @@ export default function App() {
           }));
       }
     });
-  }, [
-    state, settings, currentScript, startRecording, stopRecording, playback, stopPlayback, emergencyStop, toast,
-  ]);
+  }, [startRecording, stopRecording, playback, stopPlayback, emergencyStop, toast]);
 
   // Apply theme to document and native window chrome
   useEffect(() => {
@@ -374,7 +386,9 @@ export default function App() {
             onScriptChange={handleScriptChange}
             onScriptSave={handleScriptSave}
             onNavigate={setPage}
-
+            onPlaybackOptionsChange={options => {
+              playbackOptionsRef.current = options;
+            }}
            data-qoder-id="qel-scripteditor-9f5415e1" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-scripteditor-9f5415e1&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;scripteditor&quot;,&quot;loc&quot;:{&quot;line&quot;:99,&quot;column&quot;:11}}"/>
         );
       case 'manager':
