@@ -187,13 +187,78 @@ async def test_elevated_foreground_auto_pauses_and_raises_permission_error() -> 
         {"positionMode": "fixed", "x": 1},
         {"positionMode": "current", "x": 1, "y": 2},
         {"countdownMs": 86_400_001},
+        {"inputType": "keyboard", "keys": []},
+        {"inputType": "keyboard", "keys": [{"keyCode": "ctrl_l"}]},
+        {
+            "inputType": "keyboard",
+            "keys": [{"keyCode": "a"}, {"keyCode": "b"}],
+        },
+        {
+            "inputType": "keyboard",
+            "keys": [{"keyCode": "a"}, {"keyCode": "a"}],
+        },
+        {"inputType": "keyboard", "keys": [{"keyCode": "a"}], "pressDurationMs": 5},
+        {"inputType": "mouse", "keys": [{"keyCode": "a"}]},
     ],
 )
-
-
 def test_clicker_config_rejects_boundary_violations(values: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         ClickerConfig.model_validate(values)
+
+
+@pytest.mark.asyncio
+async def test_keyboard_fixed_count_presses_and_releases() -> None:
+    from keymouse_studio.api.schemas.actions import KeyPayload
+    from keymouse_studio.domain.enums import ClickerInputType
+
+    service, operations, adapter, _events = create_service()
+    await service.start_clicker(
+        ClickerConfig(
+            input_type=ClickerInputType.KEYBOARD,
+            keys=[
+                KeyPayload(key_code="ctrl_l"),
+                KeyPayload(key_code="a"),
+            ],
+            press_duration_ms=20,
+            interval_ms=50,
+            repeat_count=3,
+        )
+    )
+    await wait_until_idle(service, operations)
+
+    downs = [action for action in adapter.actions if action[0] == "key_down"]
+    ups = [action for action in adapter.actions if action[0] == "key_up"]
+    assert len(downs) == 6
+    assert len(ups) == 6
+    assert downs[0][1][0] == "ctrl_l"
+    assert downs[1][1][0] == "a"
+    assert ups[0][1][0] == "a"
+    assert ups[1][1][0] == "ctrl_l"
+    assert adapter.pressed_keys == set()
+    await service.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_keyboard_stop_during_hold_releases_keys() -> None:
+    from keymouse_studio.api.schemas.actions import KeyPayload
+    from keymouse_studio.domain.enums import ClickerInputType
+
+    service, operations, adapter, _events = create_service()
+    transition = await service.start_clicker(
+        ClickerConfig(
+            input_type=ClickerInputType.KEYBOARD,
+            keys=[KeyPayload(key_code="a")],
+            press_duration_ms=500,
+            interval_ms=50,
+            repeat_mode=LoopMode.INFINITE,
+        )
+    )
+    await asyncio.wait_for(asyncio.to_thread(adapter.action_recorded.wait), timeout=1)
+    stopped = await service.stop(transition.operation_id)
+    assert stopped.state == EngineState.IDLE
+    assert operations.state == EngineState.IDLE
+    assert adapter.pressed_keys == set()
+    await service.shutdown()
 
 
 @pytest.mark.asyncio

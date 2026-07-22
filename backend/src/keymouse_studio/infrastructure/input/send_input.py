@@ -4,6 +4,7 @@ from typing import ClassVar
 
 from keymouse_studio.domain.enums import MouseButton
 from keymouse_studio.infrastructure.input.adapter import ReleaseResult
+from keymouse_studio.infrastructure.input.key_codes import resolve_virtual_key
 
 INPUT_MOUSE = 0
 INPUT_KEYBOARD = 1
@@ -152,7 +153,7 @@ class SendInputAdapter:
             scan = scan_code
             flags |= KEYEVENTF_SCANCODE
         else:
-            virtual_key = _virtual_key(key_code)
+            virtual_key = resolve_virtual_key(key_code)
             scan = 0
         if extended:
             flags |= KEYEVENTF_EXTENDEDKEY
@@ -175,44 +176,3 @@ def _button_flags(button: MouseButton) -> tuple[int, int]:
         MouseButton.RIGHT: (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP),
         MouseButton.MIDDLE: (MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP),
     }[button]
-
-
-def _virtual_key(key_code: str) -> int:
-    normalized = key_code.lower()
-    named = {
-        "alt": 0x12,
-        "alt_l": 0xA4,
-        "alt_r": 0xA5,
-        "backspace": 0x08,
-        "caps_lock": 0x14,
-        "ctrl": 0x11,
-        "ctrl_l": 0xA2,
-        "ctrl_r": 0xA3,
-        "delete": 0x2E,
-        "down": 0x28,
-        "end": 0x23,
-        "enter": 0x0D,
-        "esc": 0x1B,
-        "home": 0x24,
-        "insert": 0x2D,
-        "left": 0x25,
-        "page_down": 0x22,
-        "page_up": 0x21,
-        "right": 0x27,
-        "shift": 0x10,
-        "shift_l": 0xA0,
-        "shift_r": 0xA1,
-        "space": 0x20,
-        "tab": 0x09,
-        "up": 0x26,
-    }
-    named.update({f"f{number}": 0x6F + number for number in range(1, 25)})
-    if normalized in named:
-        return named[normalized]
-    if normalized.startswith("vk_"):
-        return int(normalized[3:])
-    if len(key_code) == 1:
-        result = int(ctypes.windll.user32.VkKeyScanW(key_code))
-        if result != -1:
-            return result & 0xFF
-    raise ValueError(f"Unsupported key code: {key_code}")

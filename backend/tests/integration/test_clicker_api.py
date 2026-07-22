@@ -68,3 +68,40 @@ async def test_clicker_api_validates_fixed_position() -> None:
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_keyboard_clicker_api_runs() -> None:
+    adapter = FakeInputAdapter()
+    settings = Settings(session_token="test-token")
+    app = create_app(settings, adapter)
+    transport = asgi_transport(app)
+    headers = {"Authorization": "Bearer test-token"}
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/clicker/start",
+                headers=headers,
+                json={
+                    "inputType": "keyboard",
+                    "keys": [{"keyCode": "a", "scanCode": None, "extended": False}],
+                    "pressDurationMs": 20,
+                    "intervalMs": 50,
+                    "repeatMode": "count",
+                    "repeatCount": 2,
+                    "positionMode": "current",
+                    "countdownMs": 0,
+                },
+            )
+            assert response.status_code == 202, response.text
+            await asyncio.wait_for(app.state.clicker_service.wait_finished(), timeout=2)
+            state = await client.get("/api/v1/state", headers=headers)
+            assert state.json()["state"] == "idle"
+    finally:
+        await app.state.clicker_service.shutdown()
+
+    downs = [a for a in adapter.actions if a[0] == "key_down"]
+    ups = [a for a in adapter.actions if a[0] == "key_up"]
+    assert len(downs) == 2
+    assert len(ups) == 2
+    assert adapter.pressed_keys == set()

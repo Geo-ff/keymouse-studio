@@ -3,6 +3,7 @@ import sys
 import pytest
 
 from keymouse_studio.infrastructure.input import send_input
+from keymouse_studio.infrastructure.input.key_codes import resolve_virtual_key
 from keymouse_studio.infrastructure.input.send_input import SendInputAdapter
 
 
@@ -11,7 +12,7 @@ def test_virtual_key_accepts_character_after_pynput_import() -> None:
     from pynput import keyboard
 
     assert keyboard is not None
-    assert send_input._virtual_key("a") > 0
+    assert resolve_virtual_key("a") > 0
 
 
 def test_scan_code_does_not_resolve_virtual_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -21,7 +22,7 @@ def test_scan_code_does_not_resolve_virtual_key(monkeypatch: pytest.MonkeyPatch)
     def fail_virtual_key(key_code: str) -> int:
         raise AssertionError(f"unexpected virtual key lookup: {key_code}")
 
-    monkeypatch.setattr(send_input, "_virtual_key", fail_virtual_key)
+    monkeypatch.setattr(send_input, "resolve_virtual_key", fail_virtual_key)
     monkeypatch.setattr(adapter, "_send", sent.append)
 
     adapter._send_key("unsupported", 30, False, False)

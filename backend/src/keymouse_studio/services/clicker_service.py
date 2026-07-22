@@ -1,16 +1,32 @@
+from __future__ import annotations
+
 import asyncio
 from contextlib import suppress
+from typing import Protocol
 from uuid import UUID
 
+from keymouse_studio.api.schemas.actions import KeyPayload
 from keymouse_studio.api.schemas.clicker import (
     ClickerConfig,
     EmergencyStopResponse,
     TimedClickConfig,
 )
 from keymouse_studio.api.schemas.operations import OperationTransition
-from keymouse_studio.domain.enums import EngineState, LoopMode, OperationType, PositionMode
+from keymouse_studio.api.schemas.settings import ApplicationSettings, normalize_hotkey
+from keymouse_studio.domain.enums import (
+    ClickerInputType,
+    EngineState,
+    LoopMode,
+    OperationType,
+    PositionMode,
+)
 from keymouse_studio.domain.errors import AppError, ErrorCode
 from keymouse_studio.infrastructure.input.adapter import InputWorker, ReleaseResult
+from keymouse_studio.infrastructure.input.key_codes import (
+    is_modifier_key,
+    keys_to_hotkey_chord,
+    normalize_key_code,
+)
 from keymouse_studio.infrastructure.system.clock import Clock
 from keymouse_studio.infrastructure.system.privilege import (
     AlwaysAllowPrivilegeChecker,
@@ -18,11 +34,23 @@ from keymouse_studio.infrastructure.system.privilege import (
 )
 from keymouse_studio.services.operation_service import OperationService
 
+
+class SettingsProvider(Protocol):
+    async def get(self) -> ApplicationSettings: ...
+
 PRIVILEGE_BLOCK_MESSAGE = (
     "当前前台窗口权限高于本应用, 系统禁止注入键鼠输入。"
     "任务已自动暂停。请将目标程序改为普通权限运行, "
     "或将 KeyMouse Studio 以管理员身份启动后再继续。"
 )
+
+CONTROL_HOTKEY_LABELS = {
+    "emergency_stop_hotkey": "急停热键",
+    "record_start_hotkey": "开始录制",
+    "record_stop_hotkey": "停止录制",
+    "playback_start_hotkey": "开始回放",
+    "playback_stop_hotkey": "停止回放",
+}
 
 
 class ClickerService:
@@ -34,6 +62,7 @@ class ClickerService:
         poll_interval_ms: int = 25,
         privilege_checker: PrivilegeChecker | None = None,
         progress_publish_interval_ms: int = 100,
+        settings_service: SettingsProvider | None = None,
     ) -> None:
         self._operations = operations
         self._input = input_worker
@@ -41,9 +70,11 @@ class ClickerService:
         self._poll_seconds = poll_interval_ms / 1000
         self._privilege = privilege_checker or AlwaysAllowPrivilegeChecker()
         self._progress_publish_ns = max(0, progress_publish_interval_ms) * 1_000_000
+        self._settings_service = settings_service
         self._cancelled = asyncio.Event()
         self._running = asyncio.Event()
         self._running.set()
+        self._cycle_active = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
         self._last_operation_id: UUID | None = None
         self._elapsed_ns = 0
@@ -51,14 +82,24 @@ class ClickerService:
         self._last_progress_publish_ns = 0
 
     async def start_clicker(self, config: ClickerConfig) -> OperationTransition:
+        await self._reject_control_hotkey_conflict(config)
         return await self._start(OperationType.CLICKER, config, 0)
 
     async def start_timed_click(self, config: TimedClickConfig) -> OperationTransition:
+        if config.input_type == ClickerInputType.KEYBOARD:
+            raise AppError(
+                ErrorCode.VALIDATION_ERROR,
+                "定时点击仅支持鼠标模式",
+                status_code=422,
+            )
         return await self._start(OperationType.TIMED_CLICK, config, config.delay_ms)
 
     async def pause(self, operation_id: UUID) -> OperationTransition:
         self._operations.require_operation(operation_id)
         self._running.clear()
+        if self._cycle_active.is_set():
+            with suppress(TimeoutError, asyncio.TimeoutError):
+                await asyncio.wait_for(self._wait_cycle_idle(), timeout=2)
         snapshot = await self._operations.transition(EngineState.PAUSED, operation_id)
         return OperationTransition(
             operation_id=operation_id, state=snapshot.state, snapshot=snapshot
@@ -146,6 +187,7 @@ class ClickerService:
         self._cancelled = asyncio.Event()
         self._running = asyncio.Event()
         self._running.set()
+        self._cycle_active = asyncio.Event()
         self._last_operation_id = operation_id
         self._elapsed_ns = 0
         self._task = asyncio.create_task(
@@ -182,17 +224,22 @@ class ClickerService:
             while total is None or completed < total:
                 self._raise_if_cancelled()
                 await self._running.wait()
-                target_x, target_y = await self._target_point(config)
-                if not await self._ensure_injectable(
-                    operation_id, completed, total, target_x, target_y
-                ):
-                    continue
-                if config.position_mode == PositionMode.FIXED:
-                    if config.x is None or config.y is None:
-                        raise RuntimeError("固定坐标模式下缺少 X/Y")
-                    await self._input.move(config.x, config.y)
-                for _ in range(config.click_count):
-                    await self._click(config, operation_id, completed, total)
+                if config.input_type == ClickerInputType.KEYBOARD:
+                    if not await self._ensure_injectable(operation_id, completed, total):
+                        continue
+                    await self._execute_keyboard_cycle(config)
+                else:
+                    target_x, target_y = await self._target_point(config)
+                    if not await self._ensure_injectable(
+                        operation_id, completed, total, target_x, target_y
+                    ):
+                        continue
+                    if config.position_mode == PositionMode.FIXED:
+                        if config.x is None or config.y is None:
+                            raise RuntimeError("固定坐标模式下缺少 X/Y")
+                        await self._input.move(config.x, config.y)
+                    for _ in range(config.click_count):
+                        await self._click(config, operation_id, completed, total)
                 completed += 1
                 progress = completed / total if total is not None else None
                 await self._publish_progress(completed, progress, force=True)
@@ -209,6 +256,7 @@ class ClickerService:
         except Exception as exc:
             await self._operations.fail(operation_id, exc)
         finally:
+            self._cycle_active.clear()
             self._release_results[operation_id] = await self._safe_release()
             if self._operations.operation_id == operation_id:
                 if self._operations.state != EngineState.STOPPING:
@@ -230,11 +278,57 @@ class ClickerService:
         if not await self._ensure_injectable(operation_id, completed, total, target_x, target_y):
             await self._running.wait()
             self._raise_if_cancelled()
-        await self._input.button_down(config.button)
+        self._cycle_active.set()
         try:
-            self._raise_if_cancelled()
+            await self._input.button_down(config.button)
+            try:
+                self._raise_if_cancelled()
+            finally:
+                await self._input.button_up(config.button)
         finally:
-            await self._input.button_up(config.button)
+            self._cycle_active.clear()
+
+    async def _execute_keyboard_cycle(self, config: ClickerConfig) -> None:
+        await self._running.wait()
+        self._raise_if_cancelled()
+        ordered = _ordered_keys(config.keys)
+        pressed: list[KeyPayload] = []
+        self._cycle_active.set()
+        try:
+            for key in ordered:
+                self._raise_if_cancelled()
+                if not self._running.is_set():
+                    break
+                await self._input.key_down(key.key_code, key.scan_code, key.extended)
+                pressed.append(key)
+            if pressed and self._running.is_set() and not self._cancelled.is_set():
+                await self._wait_key_hold(config.press_duration_ms)
+        finally:
+            await self._release_keys(pressed)
+            self._cycle_active.clear()
+
+    async def _wait_key_hold(self, duration_ms: int) -> None:
+        remaining_ns = duration_ms * 1_000_000
+        while remaining_ns > 0:
+            if self._cancelled.is_set() or not self._running.is_set():
+                return
+            slice_seconds = min(remaining_ns / 1_000_000_000, self._poll_seconds)
+            before = self._clock.now_ns()
+            await self._clock.sleep(slice_seconds)
+            if self._cancelled.is_set() or not self._running.is_set():
+                return
+            elapsed = min(max(0, self._clock.now_ns() - before), remaining_ns)
+            remaining_ns -= elapsed
+            self._elapsed_ns += elapsed
+
+    async def _release_keys(self, pressed: list[KeyPayload]) -> None:
+        for key in reversed(pressed):
+            with suppress(Exception):
+                await self._input.key_up(key.key_code, key.scan_code, key.extended)
+
+    async def _wait_cycle_idle(self) -> None:
+        while self._cycle_active.is_set():
+            await self._clock.sleep(self._poll_seconds)
 
     async def _target_point(self, config: ClickerConfig) -> tuple[int | None, int | None]:
         if config.position_mode == PositionMode.FIXED:
@@ -349,3 +443,39 @@ class ClickerService:
             with suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
+
+    async def _reject_control_hotkey_conflict(self, config: ClickerConfig) -> None:
+        if config.input_type != ClickerInputType.KEYBOARD or not config.keys:
+            return
+        if self._settings_service is None:
+            return
+        settings = await self._settings_service.get()
+        chord = keys_to_hotkey_chord([key.key_code for key in config.keys])
+        try:
+            normalized_chord = normalize_hotkey(chord)
+        except ValueError:
+            return
+        reserved = {
+            "emergency_stop_hotkey": settings.emergency_stop_hotkey,
+            "record_start_hotkey": settings.record_start_hotkey,
+            "record_stop_hotkey": settings.record_stop_hotkey,
+            "playback_start_hotkey": settings.playback_start_hotkey,
+            "playback_stop_hotkey": settings.playback_stop_hotkey,
+        }
+        for field, hotkey in reserved.items():
+            if not hotkey:
+                continue
+            if normalize_hotkey(hotkey) == normalized_chord:
+                label = CONTROL_HOTKEY_LABELS.get(field, field)
+                raise AppError(
+                    ErrorCode.VALIDATION_ERROR,
+                    f"键盘连点组合不能与{label}相同",
+                    status_code=422,
+                    details={"conflictField": field, "hotkey": hotkey},
+                )
+
+
+def _ordered_keys(keys: list[KeyPayload]) -> list[KeyPayload]:
+    modifiers = [key for key in keys if is_modifier_key(normalize_key_code(key.key_code))]
+    primaries = [key for key in keys if not is_modifier_key(normalize_key_code(key.key_code))]
+    return [*modifiers, *primaries]

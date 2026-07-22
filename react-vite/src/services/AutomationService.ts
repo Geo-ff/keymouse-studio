@@ -220,16 +220,25 @@ export class MockAutomationService extends AutomationServiceBase {
   async getMousePosition(): Promise<MousePosition> { return clone(this.currentState.mousePos); }
   async startClicker(config: ClickerConfig): Promise<OperationTransition> {
     const result = this.start('clicker', 'running');
+    const cycleMs =
+      (config.inputType === 'keyboard' ? Math.max(10, config.pressDurationMs ?? 30) : 0) +
+      Math.max(50, config.intervalMs);
     const tick = () => {
       if (!this.operationId || this.operationType !== 'clicker') return;
-      if (this.currentState.snapshot.state === 'paused') { this.timer(tick, config.intervalMs); return; }
-      this.currentState.snapshot.completedCount += config.clickCount;
-      this.currentState.snapshot.elapsedMs += config.intervalMs;
+      if (this.currentState.snapshot.state === 'paused') {
+        this.timer(tick, cycleMs);
+        return;
+      }
+      this.currentState.snapshot.completedCount += 1;
+      this.currentState.snapshot.elapsedMs += cycleMs;
       this.applySnapshot({ ...this.currentState.snapshot, sequence: ++this.sequence });
-      if (config.repeatMode === 'count' && this.currentState.snapshot.completedCount >= config.repeatCount * config.clickCount) this.transition('idle');
-      else this.timer(tick, config.intervalMs);
+      if (config.repeatMode === 'count' && this.currentState.snapshot.completedCount >= config.repeatCount) {
+        this.transition('idle');
+      } else {
+        this.timer(tick, cycleMs);
+      }
     };
-    this.timer(tick, config.intervalMs);
+    this.timer(tick, cycleMs);
     return result;
   }
   async pauseClicker(): Promise<OperationTransition> { return this.pause(); }

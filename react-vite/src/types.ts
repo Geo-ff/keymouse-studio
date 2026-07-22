@@ -151,7 +151,16 @@ export interface RecordingResult {
   actions: ScriptAction[];
 }
 
+export type ClickerInputType = 'mouse' | 'keyboard';
+
+export interface KeySpec {
+  keyCode: string;
+  scanCode: number | null;
+  extended: boolean;
+}
+
 export interface ClickerConfig {
+  inputType?: ClickerInputType;
   button: MouseButton;
   clickCount: 1 | 2;
   intervalMs: number;
@@ -161,6 +170,8 @@ export interface ClickerConfig {
   x: number | null;
   y: number | null;
   countdownMs: number;
+  keys?: KeySpec[];
+  pressDurationMs?: number;
 }
 
 export interface TimedClickConfig extends ClickerConfig { delayMs: number; }

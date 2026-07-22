@@ -32,3 +32,8 @@ class LoopMode(StrEnum):
 class PositionMode(StrEnum):
     CURRENT = "current"
     FIXED = "fixed"
+
+
+class ClickerInputType(StrEnum):
+    MOUSE = "mouse"
+    KEYBOARD = "keyboard"

@@ -148,6 +148,7 @@ def create_app(
         JsonSettingsRepository(app_settings.settings_file),
         hotkey_service,
     )
+    clicker_service._settings_service = settings_service
     app.state.settings = app_settings
     app.state.event_service = event_service
     app.state.operation_service = operation_service
