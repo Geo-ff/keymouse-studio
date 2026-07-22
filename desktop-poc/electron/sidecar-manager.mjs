@@ -9,6 +9,23 @@ const HANDSHAKE_TIMEOUT_MS = 15000
 const STOP_TIMEOUT_MS = 2000
 const FORCE_STOP_TIMEOUT_MS = 2000
 
+export function createSidecarUnavailableError(sidecarPath, cause) {
+  const detail = cause instanceof Error ? `\n\n系统错误：${cause.message}` : ''
+  return new Error(
+    `自动化引擎文件缺失或无法运行，可能已被 Windows 安全中心或其他安全软件隔离。\n\n请打开“Windows 安全中心 → 病毒和威胁防护 → 保护历史记录”检查并允许 keymouse-sidecar.exe，然后重新安装 KeyMouse Studio。\n\n文件路径：${sidecarPath}${detail}`,
+    cause instanceof Error ? { cause } : undefined,
+  )
+}
+
+export function normalizeSidecarStartError(error, sidecarPath) {
+  if (!(error instanceof Error)) return error
+  const code = typeof error.code === 'string' ? error.code.toUpperCase() : ''
+  if (['UNKNOWN', 'ENOENT', 'EACCES', 'EPERM'].includes(code) || /^spawn .*\bUNKNOWN$/i.test(error.message)) {
+    return createSidecarUnavailableError(sidecarPath, error)
+  }
+  return error
+}
+
 function waitForExit(child, timeoutMs) {
   if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true)
   return new Promise((resolve) => {
@@ -137,7 +154,7 @@ export async function startSidecar(launch, script, options = {}) {
     child.stdout.resume()
     child.stderr.off('data', preHandshakeStderr)
     await stopSidecar(child)
-    throw error
+    throw normalizeSidecarStartError(error, command)
   }
 }
 

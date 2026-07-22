@@ -20,7 +20,11 @@ import {
   GITHUB_REPO,
   GITHUB_REPO_URL,
 } from './constants.mjs'
-import { startSidecar, stopSidecar } from './sidecar-manager.mjs'
+import {
+  createSidecarUnavailableError,
+  startSidecar,
+  stopSidecar,
+} from './sidecar-manager.mjs'
 import { setGlobalHotkeys, unregisterAll as unregisterGlobalHotkeys } from './global-hotkeys.mjs'
 
 const directory = path.dirname(fileURLToPath(import.meta.url))
@@ -109,7 +113,7 @@ function resolveSidecarLaunch() {
   if (app.isPackaged) {
     const sidecarExe = path.join(process.resourcesPath, 'sidecar', 'keymouse-sidecar.exe')
     if (!existsSync(sidecarExe)) {
-      throw new Error(`打包资源中缺少 sidecar：${sidecarExe}`)
+      throw createSidecarUnavailableError(sidecarExe)
     }
     return { command: sidecarExe, args: [] }
   }

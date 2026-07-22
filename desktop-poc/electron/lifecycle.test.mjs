@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { startSidecar, stopSidecar } from './sidecar-manager.mjs'
+import {
+  createSidecarUnavailableError,
+  normalizeSidecarStartError,
+  startSidecar,
+  stopSidecar,
+} from './sidecar-manager.mjs'
 
 const directory = path.dirname(fileURLToPath(import.meta.url))
 const python = process.env.KEYMOUSE_PYTHON ?? 'python'
@@ -31,6 +36,29 @@ async function waitForFile(file) {
   }
   throw new Error(`timed out waiting for ${file}`)
 }
+
+test('missing sidecar explains possible security software quarantine', () => {
+  const sidecarPath = String.raw`C:\Program Files\KeyMouse Studio\resources\sidecar\keymouse-sidecar.exe`
+  const error = createSidecarUnavailableError(sidecarPath)
+  assert.match(error.message, /可能已被 Windows 安全中心或其他安全软件隔离/)
+  assert.match(error.message, /保护历史记录/)
+  assert.match(error.message, /keymouse-sidecar\.exe/)
+  assert.match(error.message, /C:\\Program Files\\KeyMouse Studio/)
+})
+
+test('spawn UNKNOWN is normalized to actionable quarantine guidance', () => {
+  const cause = Object.assign(new Error('spawn UNKNOWN'), { code: 'UNKNOWN' })
+  const error = normalizeSidecarStartError(cause, 'keymouse-sidecar.exe')
+  assert.notEqual(error, cause)
+  assert.equal(error.cause, cause)
+  assert.match(error.message, /保护历史记录/)
+  assert.match(error.message, /系统错误：spawn UNKNOWN/)
+})
+
+test('unrelated sidecar errors remain unchanged', () => {
+  const cause = new Error('sidecar handshake timeout')
+  assert.equal(normalizeSidecarStartError(cause, 'keymouse-sidecar.exe'), cause)
+})
 
 test('sidecar uses dynamic port, token authentication, and exits cleanly', async () => {
   const sidecar = await startSidecar(python, path.join(directory, 'sidecar.py'))
