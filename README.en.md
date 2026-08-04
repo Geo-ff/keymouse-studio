@@ -60,6 +60,20 @@ If GitHub is slow, use the [domestic download mirror (Quark Drive)](./docs/domes
 
 **Not in the current version**: cloud sync, accounts, online script marketplace, macOS / Linux, image recognition / OCR, and similar.
 
+## Demos
+
+### Showcase
+
+<p align="center">
+  <img src="docs/assets/demo-showcase.gif" alt="KeyMouse Studio showcase" width="720" />
+</p>
+
+### Real demo
+
+<p align="center">
+  <img src="docs/assets/demo-real.gif" alt="KeyMouse Studio real demo" width="720" />
+</p>
+
 ## Auto-update
 
 - Official installers check [GitHub Releases](https://github.com/Geo-ff/keymouse-studio/releases) in the background after startup
@@ -93,7 +107,7 @@ For bugs or suggestions, you can:
   <img src="docs/assets/wechat-feedback-group.png" alt="KeyMouse Studio WeChat feedback group QR code" width="360" />
 </p>
 
-> The WeChat group QR code is valid until **July 24, 2026**. If it expires, please ask the maintainer to update it through GitHub Issues.
+> The WeChat group QR code is valid until **August 11, 2026**. If it expires, please ask the maintainer to update it through GitHub Issues.
 
 ## For developers
 

@@ -60,6 +60,20 @@
 
 **当前版本不包含**：云同步、账号、在线脚本市场、macOS / Linux、图像识别 / OCR 等。
 
+## 演示视频
+
+### 展示视频
+
+<p align="center">
+  <img src="docs/assets/demo-showcase.gif" alt="KeyMouse Studio 展示视频" width="720" />
+</p>
+
+### 实机演示
+
+<p align="center">
+  <img src="docs/assets/demo-real.gif" alt="KeyMouse Studio 实机演示" width="720" />
+</p>
+
 ## 自动更新
 
 - 使用官方安装包时，启动后会在后台检查 [GitHub Releases](https://github.com/Geo-ff/keymouse-studio/releases) 是否有新版本
@@ -93,7 +107,7 @@
   <img src="docs/assets/wechat-feedback-group.png" alt="KeyMouse Studio 使用反馈微信群二维码" width="360" />
 </p>
 
-> 微信群二维码将在 **2026 年 7 月 24 日前**有效；若二维码失效，请通过 GitHub Issue 联系维护者更新。
+> 微信群二维码将在 **2026 年 8 月 11 日前**有效；若二维码失效，请通过 GitHub Issue 联系维护者更新。
 
 ## 开发者
 
