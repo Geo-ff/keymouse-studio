@@ -21,6 +21,11 @@ function writeStorage<T>(key: string, value: T): void {
   }
 }
 
+/** Read a persisted form outside React (e.g. from a global hotkey handler). */
+export function readPersistedForm<T extends object>(key: string, defaults: T): T {
+  return readStorage(key, defaults);
+}
+
 export function usePersistedFormState<T extends object>(
   key: string,
   defaults: T,

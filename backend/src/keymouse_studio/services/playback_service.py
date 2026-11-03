@@ -9,6 +9,7 @@ from keymouse_studio.api.schemas.actions import (
     MouseButtonUpAction,
     MouseClickAction,
     MouseMoveAction,
+    MouseMoveRelativeAction,
     MouseWheelAction,
     ScriptAction,
     WaitAction,
@@ -24,6 +25,7 @@ from keymouse_studio.infrastructure.system.privilege import (
     AlwaysAllowPrivilegeChecker,
     PrivilegeChecker,
 )
+from keymouse_studio.infrastructure.system.timer import high_resolution_timer
 from keymouse_studio.services.clicker_service import PRIVILEGE_BLOCK_MESSAGE
 from keymouse_studio.services.operation_service import OperationService
 from keymouse_studio.services.script_service import ScriptService
@@ -31,6 +33,8 @@ from keymouse_studio.services.script_service import ScriptService
 # How long a synthesized ``mouse_click`` keeps the button down. Recorded clicks replay their own
 # down/up timing; this only applies to click actions created in the editor.
 MOUSE_CLICK_HOLD_MS = 30
+# Step size used to spread a ``mouse_move_relative`` over its duration (~ one 120 Hz frame).
+RELATIVE_MOVE_STEP_MS = 8
 
 
 class PlaybackService:
@@ -177,6 +181,17 @@ class PlaybackService:
         request: PlaybackRequest,
         countdown_ms: int,
     ) -> None:
+        with high_resolution_timer():
+            await self._run_script(operation_id, enabled, script, request, countdown_ms)
+
+    async def _run_script(
+        self,
+        operation_id: UUID,
+        enabled: list[ScriptAction],
+        script: Script,
+        request: PlaybackRequest,
+        countdown_ms: int,
+    ) -> None:
         speed = request.speed_multiplier or script.settings.speed_multiplier
         loop_mode = request.loop_mode or script.settings.loop_mode
         loop_count = request.loop_count or script.settings.loop_count
@@ -297,6 +312,9 @@ class PlaybackService:
                 if not await self._wait(action.payload.duration_ms, speed, duration_ns):
                     return False
             await self._input.move(action.payload.x, action.payload.y)
+        elif isinstance(action, MouseMoveRelativeAction):
+            if not await self._move_relative(action, speed, duration_ns):
+                return False
         elif isinstance(action, MouseButtonDownAction):
             await self._input.button_down(action.payload.button)
         elif isinstance(action, MouseButtonUpAction):
@@ -334,13 +352,49 @@ class PlaybackService:
             return await self._wait(action.payload.duration_ms, speed, duration_ns)
         return not self._duration_reached(duration_ns)
 
+    async def _move_relative(
+        self,
+        action: MouseMoveRelativeAction,
+        speed: float,
+        duration_ns: int | None,
+    ) -> bool:
+        """Send a relative motion, spread evenly over its (speed-scaled) duration.
+
+        Each step targets an absolute point on the action's own timeline, so sleep overshoot
+        in one step is absorbed by the next instead of slowing the whole motion down.
+        """
+        dx, dy = action.payload.dx, action.payload.dy
+        total_ns = int(action.payload.duration_ms * 1_000_000 / speed)
+        steps = max(1, total_ns // (RELATIVE_MOVE_STEP_MS * 1_000_000))
+        if total_ns <= 0 or steps == 1:
+            if total_ns > 0 and not await self._wait_ns(total_ns, duration_ns):
+                return False
+            await self._input.move_relative(dx, dy)
+            return True
+        self._refresh_elapsed()
+        started_ns = self._elapsed_ns
+        sent_x = sent_y = 0
+        for step in range(1, steps + 1):
+            self._refresh_elapsed()
+            remaining_ns = total_ns * step // steps - (self._elapsed_ns - started_ns)
+            if remaining_ns > 0 and not await self._wait_ns(remaining_ns, duration_ns):
+                return False
+            target_x = dx * step // steps if dx >= 0 else -((-dx) * step // steps)
+            target_y = dy * step // steps if dy >= 0 else -((-dy) * step // steps)
+            if target_x != sent_x or target_y != sent_y:
+                await self._input.move_relative(target_x - sent_x, target_y - sent_y)
+                sent_x, sent_y = target_x, target_y
+        return True
+
     async def _wait(
         self,
         duration_ms: int,
         speed: float,
         duration_ns: int | None,
     ) -> bool:
-        remaining_ns = int(duration_ms * 1_000_000 / speed)
+        return await self._wait_ns(int(duration_ms * 1_000_000 / speed), duration_ns)
+
+    async def _wait_ns(self, remaining_ns: int, duration_ns: int | None) -> bool:
         last_progress_ns = 0
         progress_interval_ns = 150_000_000
         while remaining_ns > 0:
@@ -462,7 +516,7 @@ class PlaybackService:
 
     def _action_planned_duration_ns(self, action: ScriptAction, speed: float) -> int:
         duration_ms = action.delay_before_ms
-        if isinstance(action, MouseMoveAction):
+        if isinstance(action, MouseMoveAction | MouseMoveRelativeAction):
             duration_ms += action.payload.duration_ms
         elif isinstance(action, MouseClickAction):
             duration_ms += max(0, action.payload.click_count - 1) * action.payload.interval_ms

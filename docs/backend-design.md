@@ -168,6 +168,7 @@ V1 动作及 `payload`：
 | 动作 | payload |
 |---|---|
 | `mouse_move` | `x`、`y`、可选 `durationMs` |
+| `mouse_move_relative` | `dx`、`dy`（鼠标原始位移，±1,000,000）、可选 `durationMs`（在该时长内平滑完成） |
 | `mouse_button_down` | `button` |
 | `mouse_button_up` | `button` |
 | `mouse_click` | `button`、`clickCount`、可选 `x`、`y`、`intervalMs` |

@@ -9,7 +9,7 @@ from keymouse_studio.api.schemas.recording import (
     RecordingResult,
     RecordingStopResponse,
 )
-from keymouse_studio.domain.enums import EngineState, OperationType
+from keymouse_studio.domain.enums import EngineState, MouseMoveMode, OperationType
 from keymouse_studio.domain.errors import AppError, ErrorCode
 from keymouse_studio.infrastructure.input.listener import (
     EventSubscription,
@@ -19,6 +19,11 @@ from keymouse_studio.infrastructure.input.listener import (
 from keymouse_studio.services.action_normalizer import ActionNormalizer
 from keymouse_studio.services.event_service import EventService
 from keymouse_studio.services.operation_service import OperationService
+
+RELATIVE_MOUSE_UNAVAILABLE_MESSAGE = (
+    "无法开启「游戏视角 (相对移动)」录制: 系统未能注册原始鼠标输入。"
+    "请改用「屏幕坐标」模式录制, 或重启 KeyMouse Studio 后重试。"
+)
 
 
 class RecordingService:
@@ -45,9 +50,31 @@ class RecordingService:
         self._resume_boundary_ns: int | None = None
         self._published_count = 0
         self._stop_lock = asyncio.Lock()
+        self._start_lock = asyncio.Lock()
+        self._relative_mouse_active = False
 
     async def start(self, config: RecordingConfig) -> OperationTransition:
-        snapshot = await self._operations.start(OperationType.RECORDING, EngineState.RECORDING)
+        async with self._start_lock:
+            return await self._start(config)
+
+    async def _start(self, config: RecordingConfig) -> OperationTransition:
+        # Only switch the raw mouse listener on when no other operation is active; otherwise
+        # operations.start() below rejects the request and nothing must be touched.
+        enable_relative = (
+            config.record_mouse
+            and config.record_mouse_move
+            and config.mouse_move_mode == MouseMoveMode.RELATIVE
+            and self._operations.operation_id is None
+        )
+        if enable_relative:
+            await self._enable_relative_mouse()
+        try:
+            snapshot = await self._operations.start(OperationType.RECORDING, EngineState.RECORDING)
+        except BaseException:
+            if enable_relative:
+                await self._disable_relative_mouse()
+            raise
+        self._relative_mouse_active = enable_relative
         operation_id = snapshot.operation_id
         if operation_id is None:
             raise RuntimeError("Operation service did not create an operation id")
@@ -185,7 +212,28 @@ class RecordingService:
         finally:
             self._bridge.unsubscribe(subscriber, drain=True)
             self._subscriber = None
+            if self._relative_mouse_active:
+                self._relative_mouse_active = False
+                await self._disable_relative_mouse()
             await self._finalize(operation_id)
+
+    async def _enable_relative_mouse(self) -> None:
+        try:
+            await asyncio.to_thread(self._bridge.set_relative_mouse, True)
+        except Exception as exc:
+            with suppress(Exception):
+                await asyncio.to_thread(self._bridge.set_relative_mouse, False)
+            raise AppError(
+                ErrorCode.ENGINE_INTERNAL_ERROR,
+                RELATIVE_MOUSE_UNAVAILABLE_MESSAGE,
+                status_code=500,
+                details={"exceptionType": type(exc).__name__, "reason": str(exc)},
+                retryable=True,
+            ) from exc
+
+    async def _disable_relative_mouse(self) -> None:
+        with suppress(Exception):
+            await asyncio.to_thread(self._bridge.set_relative_mouse, False)
 
     async def _apply_pause_boundary(
         self,

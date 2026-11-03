@@ -47,6 +47,12 @@ export interface MouseMoveAction extends ActionBase {
   payload: { x: number; y: number; durationMs: number };
 }
 
+/** Raw mouse motion (what 3D games read for camera control), spread over durationMs. */
+export interface MouseMoveRelativeAction extends ActionBase {
+  type: 'mouse_move_relative';
+  payload: { dx: number; dy: number; durationMs: number };
+}
+
 export interface MouseButtonDownAction extends ActionBase {
   type: 'mouse_button_down';
   payload: { button: MouseButton };
@@ -84,6 +90,7 @@ export interface WaitAction extends ActionBase {
 
 export type ScriptAction =
   | MouseMoveAction
+  | MouseMoveRelativeAction
   | MouseButtonDownAction
   | MouseButtonUpAction
   | MouseClickAction
@@ -175,8 +182,12 @@ export interface ClickerConfig {
 }
 
 export interface TimedClickConfig extends ClickerConfig { delayMs: number; }
+/** absolute: desktop cursor positions; relative: raw mouse motion for 3D game cameras. */
+export type MouseMoveMode = 'absolute' | 'relative';
+
 export interface RecordingConfig {
   recordMouseMove: boolean;
+  mouseMoveMode?: MouseMoveMode;
   minMoveSampleMs: number;
   moveErrorPx: number;
   recordWheel: boolean;

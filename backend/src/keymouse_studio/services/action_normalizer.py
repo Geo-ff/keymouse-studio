@@ -8,7 +8,7 @@ from pydantic import TypeAdapter
 
 from keymouse_studio.api.schemas.actions import ScriptAction
 from keymouse_studio.api.schemas.recording import RecordingConfig
-from keymouse_studio.domain.enums import MouseButton
+from keymouse_studio.domain.enums import MouseButton, MouseMoveMode
 from keymouse_studio.infrastructure.input.listener import RawInputEvent
 
 _SCRIPT_ACTION: TypeAdapter[ScriptAction] = TypeAdapter(ScriptAction)
@@ -121,11 +121,22 @@ def _line_distance(point: TimedMove, start: TimedMove, end: TimedMove) -> float:
 
 
 @dataclass(slots=True)
+class RelativeWindow:
+    """Raw mouse motion accumulated over one sampling window."""
+
+    start_ns: int
+    end_ns: int
+    dx: int
+    dy: int
+
+
+@dataclass(slots=True)
 class ActionNormalizer:
     config: RecordingConfig
     actions: list[ScriptAction] = field(default_factory=list)
     _last_action_ns: int | None = None
     _moves: list[TimedMove] = field(default_factory=list)
+    _relative: RelativeWindow | None = None
     _physical_keys: dict[str, RawInputEvent] = field(default_factory=dict)
     _recorded_keys: dict[str, RawInputEvent] = field(default_factory=dict)
     _suppressed_keys: set[str] = field(default_factory=set)
@@ -143,9 +154,13 @@ class ActionNormalizer:
 
     def process(self, event: RawInputEvent) -> list[ScriptAction]:
         if event.type == "mouse_move":
-            if self.config.record_mouse and self.config.record_mouse_move:
+            if self._records_moves(MouseMoveMode.ABSOLUTE):
                 if event.x is not None and event.y is not None:
                     self._moves.append(TimedMove(event.monotonic_ns, event.x, event.y))
+            return []
+        if event.type == "mouse_move_relative":
+            if self._records_moves(MouseMoveMode.RELATIVE):
+                return self._process_relative(event)
             return []
         captured = self._flush_moves()
         if event.type.startswith("key_"):
@@ -244,6 +259,67 @@ class ActionNormalizer:
         if self._last_action_ns is not None:
             self._last_action_ns += shift
         self._moves = [TimedMove(move.monotonic_ns + shift, move.x, move.y) for move in self._moves]
+        if self._relative is not None:
+            self._relative.start_ns += shift
+            self._relative.end_ns += shift
+
+    def _records_moves(self, mode: MouseMoveMode) -> bool:
+        return (
+            self.config.record_mouse
+            and self.config.record_mouse_move
+            and self.config.mouse_move_mode == mode
+        )
+
+    def _process_relative(self, event: RawInputEvent) -> list[ScriptAction]:
+        captured: list[ScriptAction] = []
+        window = self._relative
+        sample_ns = self.config.min_move_sample_ms * 1_000_000
+        if window is not None and event.monotonic_ns - window.start_ns >= sample_ns:
+            # While the mouse keeps moving, windows tile the timeline (each one ends where the
+            # next begins) so that replaying them back to back preserves the original speed.
+            # After a pause in motion the old window ends at its last report instead.
+            contiguous = event.monotonic_ns - window.end_ns < sample_ns
+            captured.extend(
+                self._flush_relative(event.monotonic_ns if contiguous else window.end_ns)
+            )
+            window = None
+        if window is None:
+            self._relative = RelativeWindow(
+                event.monotonic_ns, event.monotonic_ns, event.delta_x, event.delta_y
+            )
+        else:
+            window.end_ns = event.monotonic_ns
+            window.dx += event.delta_x
+            window.dy += event.delta_y
+        return captured
+
+    def _flush_relative(self, end_ns: int | None = None) -> list[ScriptAction]:
+        window = self._relative
+        self._relative = None
+        if window is None or (not window.dx and not window.dy):
+            return []
+        end_ns = window.end_ns if end_ns is None else end_ns
+        # Whole-millisecond positions on the timeline, so consecutive windows add up exactly.
+        start_ms = window.start_ns // 1_000_000
+        delay = 0
+        if self._last_action_ns is not None:
+            delay = max(0, start_ms - self._last_action_ns // 1_000_000)
+        self._last_action_ns = end_ns
+        action = _SCRIPT_ACTION.validate_python(
+            {
+                "id": uuid4(),
+                "type": "mouse_move_relative",
+                "enabled": True,
+                "delayBeforeMs": delay,
+                "payload": {
+                    "dx": window.dx,
+                    "dy": window.dy,
+                    "durationMs": max(0, end_ns // 1_000_000 - start_ms),
+                },
+            }
+        )
+        self.actions.append(action)
+        return [action]
 
     def _current_hotkey(self, key: str) -> frozenset[str]:
         parts = {
@@ -346,13 +422,14 @@ class ActionNormalizer:
         )
 
     def _flush_moves(self) -> list[ScriptAction]:
+        relative = self._flush_relative()
         moves = compress_moves(
             self._moves,
             self.config.min_move_sample_ms,
             self.config.move_error_px,
         )
         self._moves = []
-        return [
+        return relative + [
             self._append(
                 "mouse_move",
                 {"x": move.x, "y": move.y, "durationMs": 0},

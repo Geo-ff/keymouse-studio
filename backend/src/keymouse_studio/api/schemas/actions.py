@@ -16,6 +16,20 @@ class MouseMovePayload(ApiModel):
     duration_ms: NonNegativeInt = 0
 
 
+RelativeDelta = Annotated[int, Field(ge=-1_000_000, le=1_000_000)]
+
+
+class MouseMoveRelativePayload(ApiModel):
+    """Move the mouse by raw device units (what 3D games read for camera control).
+
+    ``duration_ms`` spreads the motion evenly over that time; 0 moves in one step.
+    """
+
+    dx: RelativeDelta
+    dy: RelativeDelta
+    duration_ms: Annotated[int, Field(ge=0, le=86_400_000)] = 0
+
+
 class MouseButtonPayload(ApiModel):
     button: MouseButton
 
@@ -60,6 +74,11 @@ class MouseMoveAction(ActionBase):
     payload: MouseMovePayload
 
 
+class MouseMoveRelativeAction(ActionBase):
+    type: Literal["mouse_move_relative"]
+    payload: MouseMoveRelativePayload
+
+
 class MouseButtonDownAction(ActionBase):
     type: Literal["mouse_button_down"]
     payload: MouseButtonPayload
@@ -97,6 +116,7 @@ class WaitAction(ActionBase):
 
 ScriptAction = Annotated[
     MouseMoveAction
+    | MouseMoveRelativeAction
     | MouseButtonDownAction
     | MouseButtonUpAction
     | MouseClickAction

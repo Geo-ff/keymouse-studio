@@ -232,3 +232,78 @@ async def test_emergency_stop_releases_before_waiting_for_playback(tmp_path: Pat
     assert stopped.json()["releaseFailures"] == []
     assert stopped.json()["state"] == "idle"
     assert adapter.pressed_keys == set()
+
+
+@pytest.mark.asyncio
+async def test_relative_recording_captures_raw_motion_and_releases_listener(
+    tmp_path: Path,
+) -> None:
+    listener = FakeInputListener()
+    app = create_app(
+        Settings(session_token="test-token", script_directory=tmp_path / "scripts"),
+        FakeInputAdapter(),
+        listener,
+    )
+    headers = {"Authorization": "Bearer test-token"}
+    async with app.router.lifespan_context(app):
+        transport = asgi_transport(app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            started = await client.post(
+                "/api/v1/recordings/start",
+                headers=headers,
+                json={"mouseMoveMode": "relative", "minMoveSampleMs": 10},
+            )
+            assert started.status_code == 202
+            assert listener.relative_mouse
+            operation_id = started.json()["operationId"]
+            listener.emit(RawInputEvent("mouse_move", 1_000_000, x=500, y=500))
+            for index in range(6):
+                listener.emit(
+                    RawInputEvent(
+                        "mouse_move_relative",
+                        2_000_000 + index * 4_000_000,
+                        delta_x=10,
+                        delta_y=-4,
+                    )
+                )
+            await client.post(f"/api/v1/operations/{operation_id}/stop", headers=headers)
+            result = await app.state.recording_service.result_for_operation(UUID(operation_id))
+
+    assert not listener.relative_mouse
+    assert result is not None
+    assert {action.type for action in result.actions} == {"mouse_move_relative"}
+    assert sum(action.payload.dx for action in result.actions) == 60
+    assert sum(action.payload.dy for action in result.actions) == -24
+
+
+class FailingRelativeListener(FakeInputListener):
+    def set_relative_mouse(self, enabled: bool) -> None:
+        if enabled:
+            raise OSError("RegisterRawInputDevices failed")
+        self.relative_mouse = False
+
+
+@pytest.mark.asyncio
+async def test_relative_recording_reports_unavailable_raw_input(tmp_path: Path) -> None:
+    app = create_app(
+        Settings(session_token="test-token", script_directory=tmp_path / "scripts"),
+        FakeInputAdapter(),
+        FailingRelativeListener(),
+    )
+    headers = {"Authorization": "Bearer test-token"}
+    async with app.router.lifespan_context(app):
+        transport = asgi_transport(app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/recordings/start",
+                headers=headers,
+                json={"mouseMoveMode": "relative"},
+            )
+            state = app.state.operation_service.state
+
+    assert response.status_code == 500
+    error = response.json()["error"]
+    assert error["code"] == "ENGINE_INTERNAL_ERROR"
+    assert "游戏视角" in error["message"]
+    assert error["retryable"] is True
+    assert state == "idle"

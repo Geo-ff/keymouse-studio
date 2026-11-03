@@ -39,6 +39,7 @@ import type {
 } from './types';
 import { ApiError } from './services/ApiClient';
 import { buildPlaybackOptionsFromScript } from './utils/playbackOptions';
+import { buildRecordingConfig } from './utils/recordingConfig';
 
 const MOCK_SCRIPT_IDS = new Set(mockScripts.map(script => script.id));
 
@@ -149,21 +150,7 @@ export default function App() {
           return;
         }
         setPage('recording');
-        runOnce(() => startRecording({
-          recordMouseMove: liveSettings.recordMouseMove,
-          minMoveSampleMs: liveSettings.minRecordInterval,
-          moveErrorPx: 2,
-          recordWheel: true,
-          recordMouse: true,
-          recordKeyboard: true,
-          controlHotkeys: [
-            liveSettings.emergencyHotkey,
-            liveSettings.recordStartHotkey,
-            liveSettings.recordStopHotkey,
-            liveSettings.playbackStartHotkey,
-            liveSettings.playbackStopHotkey,
-          ].filter(Boolean),
-        })
+        runOnce(() => startRecording(buildRecordingConfig(liveSettings))
           .then(() => { void showSystemAlert('录制', '录制已开始', '正在记录键鼠操作'); })
           .catch((err) => {
             const friendly = formatErrorForDisplay(toErrorDetail(err));

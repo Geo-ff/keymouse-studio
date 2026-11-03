@@ -10,6 +10,7 @@ export function createAction(type: ActionType, delayBeforeMs = 200): ScriptActio
   const base = { id: genId(), enabled: true, delayBeforeMs };
   switch (type) {
     case 'mouse_move': return { ...base, type, payload: { x: 0, y: 0, durationMs: 0 } };
+    case 'mouse_move_relative': return { ...base, type, payload: { dx: 100, dy: 0, durationMs: 200 } };
     case 'mouse_button_down': return { ...base, type, payload: { button: 'left' } };
     case 'mouse_button_up': return { ...base, type, payload: { button: 'left' } };
     case 'mouse_click': return { ...base, type, payload: { button: 'left', clickCount: 1, x: 0, y: 0, intervalMs: 0 } };
@@ -69,7 +70,11 @@ export const mockScripts: Script[] = [
 ];
 
 export function actionDuration(action: ScriptAction): number {
-  return action.delayBeforeMs + (action.type === 'wait' ? action.payload.durationMs : action.type === 'mouse_move' ? action.payload.durationMs : 0);
+  const own =
+    action.type === 'wait' || action.type === 'mouse_move' || action.type === 'mouse_move_relative'
+      ? action.payload.durationMs
+      : 0;
+  return action.delayBeforeMs + own;
 }
 
 export function calcScriptDuration(script: Script): number {

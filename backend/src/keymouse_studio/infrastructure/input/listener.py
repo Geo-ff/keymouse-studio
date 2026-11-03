@@ -9,9 +9,11 @@ from threading import Condition, Lock
 from typing import Any, Literal, Protocol, cast
 
 from keymouse_studio.domain.enums import MouseButton
+from keymouse_studio.infrastructure.input.raw_mouse import RawMouseListener
 
 RawEventType = Literal[
     "mouse_move",
+    "mouse_move_relative",
     "mouse_button_down",
     "mouse_button_up",
     "mouse_wheel",
@@ -34,10 +36,31 @@ class RawInputEvent:
     extended: bool = False
 
 
+def merge_relative_motion(earlier: RawInputEvent, later: RawInputEvent) -> RawInputEvent:
+    """Coalesce two queued relative motions without losing any distance."""
+    return RawInputEvent(
+        "mouse_move_relative",
+        later.monotonic_ns,
+        delta_x=earlier.delta_x + later.delta_x,
+        delta_y=earlier.delta_y + later.delta_y,
+    )
+
+
+def _is_relative_motion(event: object) -> bool:
+    return isinstance(event, RawInputEvent) and event.type == "mouse_move_relative"
+
+
 class InputListener(Protocol):
     def start(self, emit: Callable[[RawInputEvent], None]) -> None: ...
 
     def stop(self) -> None: ...
+
+    def set_relative_mouse(self, enabled: bool) -> None:
+        """Start/stop emitting ``mouse_move_relative`` (raw device motion) events.
+
+        While enabled, absolute ``mouse_move`` events are not emitted.
+        """
+        ...
 
 
 class ThreadListener(Protocol):
@@ -54,6 +77,10 @@ class ThreadListener(Protocol):
 class FakeInputListener:
     _emit: Callable[[RawInputEvent], None] | None = None
     started: bool = False
+    relative_mouse: bool = False
+
+    def set_relative_mouse(self, enabled: bool) -> None:
+        self.relative_mouse = enabled
 
     def start(self, emit: Callable[[RawInputEvent], None]) -> None:
         self._emit = emit
@@ -97,9 +124,42 @@ class ScanCodeTracker:
 
 
 class PynputInputListener:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        raw_mouse_factory: Callable[[Callable[[int, int], None]], RawMouseListener] = (
+            RawMouseListener
+        ),
+    ) -> None:
         self._keyboard: ThreadListener | None = None
         self._mouse: ThreadListener | None = None
+        self._emit: Callable[[RawInputEvent], None] | None = None
+        self._raw_mouse_factory = raw_mouse_factory
+        self._raw_mouse: RawMouseListener | None = None
+        self._relative_mouse = False
+
+    def set_relative_mouse(self, enabled: bool) -> None:
+        if not enabled:
+            self._relative_mouse = False
+            raw_mouse, self._raw_mouse = self._raw_mouse, None
+            if raw_mouse is not None:
+                raw_mouse.stop()
+            return
+        emit = self._emit
+        if emit is None:
+            raise RuntimeError("Input listener is not running")
+        if self._raw_mouse is None:
+
+            def on_motion(dx: int, dy: int) -> None:
+                emit(
+                    RawInputEvent(
+                        "mouse_move_relative", time.monotonic_ns(), delta_x=dx, delta_y=dy
+                    )
+                )
+
+            raw_mouse = self._raw_mouse_factory(on_motion)
+            raw_mouse.start()
+            self._raw_mouse = raw_mouse
+        self._relative_mouse = True
 
     def start(self, emit: Callable[[RawInputEvent], None]) -> None:
         from pynput import keyboard, mouse
@@ -157,6 +217,10 @@ class PynputInputListener:
             return int(fallback_x), int(fallback_y)
 
         def on_move(x: int, y: int) -> None:
+            if self._relative_mouse:
+                # Cursor positions are meaningless while a game locks the cursor; the raw
+                # mouse listener reports the motion instead.
+                return
             cx, cy = cursor_pos(x, y)
             emit(RawInputEvent("mouse_move", time.monotonic_ns(), x=cx, y=cy))
 
@@ -210,12 +274,18 @@ class PynputInputListener:
             raise
         self._keyboard = keyboard_listener
         self._mouse = mouse_listener
+        self._emit = emit
 
     def stop(self) -> None:
         listeners = (self._keyboard, self._mouse)
         self._keyboard = None
         self._mouse = None
+        self._emit = None
         failures: list[Exception] = []
+        try:
+            self.set_relative_mouse(False)
+        except Exception as exc:
+            failures.append(exc)
         for listener in listeners:
             if listener is not None:
                 try:
@@ -255,6 +325,13 @@ class EventSubscription:
     def put_nowait(self, event: RawInputEvent) -> None:
         if self._closed:
             return
+        if event.type == "mouse_move_relative" and self._events:
+            last = self._events[-1]
+            if isinstance(last, RawInputEvent) and _is_relative_motion(last):
+                self._events[-1] = merge_relative_motion(last, event)
+                self.coalesced_move_count += 1
+                self._available.set()
+                return
         if event.type == "mouse_move" and self._events:
             last = self._events[-1]
             if isinstance(last, RawInputEvent) and last.type == "mouse_move":
@@ -339,6 +416,13 @@ class ThreadEventBuffer:
         with self._condition:
             if self.failure is not None:
                 return
+            if event.type == "mouse_move_relative" and self._events:
+                last = self._events[-1]
+                if isinstance(last, RawInputEvent) and _is_relative_motion(last):
+                    self._events[-1] = merge_relative_motion(last, event)
+                    self.coalesced_move_count += 1
+                    self._condition.notify()
+                    return
             if event.type == "mouse_move" and self._events:
                 last = self._events[-1]
                 if isinstance(last, RawInputEvent) and last.type == "mouse_move":
@@ -446,6 +530,9 @@ class InputEventBridge:
                 self._task = None
         if listener_error is not None:
             raise listener_error
+
+    def set_relative_mouse(self, enabled: bool) -> None:
+        self.listener.set_relative_mouse(enabled)
 
     def subscribe(self) -> EventSubscription:
         result = EventSubscription(self.subscriber_capacity)

@@ -122,6 +122,13 @@ class SendInputAdapter:
         flags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK
         self._send_mouse(flags, dx, dy)
 
+    def move_relative(self, dx: int, dy: int) -> None:
+        # Without MOUSEEVENTF_ABSOLUTE the event reaches Raw Input as device motion, which is
+        # what games use for camera control. (The desktop cursor additionally applies the
+        # user's pointer speed / acceleration to it.)
+        if dx or dy:
+            self._send_mouse(MOUSEEVENTF_MOVE, dx, dy)
+
     def button_down(self, button: MouseButton) -> None:
         self._send_mouse(_button_flags(button)[0])
         self._pressed.add(button)

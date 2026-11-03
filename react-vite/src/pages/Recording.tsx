@@ -13,13 +13,14 @@ import {
   Trash2,
   MousePointer,
   MousePointerClick,
+  Move,
   Scroll,
   Keyboard,
   Clock,
 } from 'lucide-react';
 import { useService } from '../hooks/useService';
 import { usePageHotkeys } from '../hooks/usePageHotkeys';
-import { Button, IconButton, Toggle, Input, EmptyState, ConfirmDialog } from '../components/ui';
+import { Button, IconButton, Toggle, Input, EmptyState, ConfirmDialog, RadioGroup } from '../components/ui';
 import { formatTime, formatDuration } from '../data/mockData';
 import type { ScriptAction, ActionType } from '../types';
 import type { PageId } from '../components/Layout';
@@ -27,9 +28,18 @@ import { useToast } from '../providers/ToastProvider';
 import { showSystemAlert } from '../utils/systemAlert';
 import { formatHotkeyLabel } from '../utils/hotkey';
 import { resolveCountdownMs } from '../utils/countdown';
+import { usePersistedFormState } from '../utils/formPersistence';
+import {
+  RECORDING_PREFS_DEFAULTS,
+  RECORDING_PREFS_KEY,
+  buildRecordingConfig,
+  type RecordingPrefs,
+} from '../utils/recordingConfig';
+import type { MouseMoveMode } from '../types';
 
 const ACTION_ICONS: Record<ActionType, typeof MousePointer> = {
   mouse_move: MousePointer,
+  mouse_move_relative: Move,
   mouse_click: MousePointerClick,
   mouse_button_down: MousePointerClick,
   mouse_button_up: MousePointerClick,
@@ -41,6 +51,7 @@ const ACTION_ICONS: Record<ActionType, typeof MousePointer> = {
 
 const ACTION_COLORS: Record<ActionType, string> = {
   mouse_move: 'var(--color-action-primary)',
+  mouse_move_relative: 'var(--color-action-primary)',
   mouse_click: 'var(--color-action-primary)',
   mouse_button_down: 'var(--color-action-primary)',
   mouse_button_up: 'var(--color-action-primary)',
@@ -52,6 +63,7 @@ const ACTION_COLORS: Record<ActionType, string> = {
 
 const ACTION_LABELS: Record<ActionType, string> = {
   mouse_move: '鼠标移动',
+  mouse_move_relative: '视角移动',
   mouse_click: '鼠标点击',
   mouse_button_down: '鼠标按下',
   mouse_button_up: '鼠标释放',
@@ -64,6 +76,7 @@ const ACTION_LABELS: Record<ActionType, string> = {
 function summarizeAction(a: ScriptAction): string {
   switch (a.type) {
     case 'mouse_move': return `(${a.payload.x}, ${a.payload.y})`;
+    case 'mouse_move_relative': return `Δ(${a.payload.dx}, ${a.payload.dy}) ${formatDuration(a.payload.durationMs)}`;
     case 'mouse_button_down': return `${a.payload.button}键按下`;
     case 'mouse_button_up': return `${a.payload.button}键释放`;
     case 'mouse_click': return `${a.payload.button}键 ${a.payload.clickCount === 2 ? '双击' : '单击'} (${a.payload.x ?? '当前'}, ${a.payload.y ?? '当前'})`;
@@ -86,6 +99,7 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [scriptName, setScriptName] = useState('');
   const [displayTime, setDisplayTime] = useState(0);
+  const [prefs, setPrefs] = usePersistedFormState<RecordingPrefs>(RECORDING_PREFS_KEY, RECORDING_PREFS_DEFAULTS);
   const displayTimeRef = useRef(0);
 
   const isRecording = state.snapshot.operationType === 'recording' && state.recordingState === 'recording';
@@ -136,26 +150,12 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
         void showSystemAlert('录制', '倒计时开始', `${Math.round(countdownMs / 1000)} 秒后开始录制`);
         await new Promise<void>(resolve => { window.setTimeout(resolve, countdownMs); });
       }
-      await startRecording({
-        recordMouseMove: settings.recordMouseMove,
-        minMoveSampleMs: settings.minRecordInterval,
-        moveErrorPx: 2,
-        recordWheel: true,
-        recordMouse: true,
-        recordKeyboard: true,
-        controlHotkeys: [
-          settings.emergencyHotkey,
-          settings.recordStartHotkey,
-          settings.recordStopHotkey,
-          settings.playbackStartHotkey,
-          settings.playbackStopHotkey,
-        ].filter(Boolean),
-      });
+      await startRecording(buildRecordingConfig(settings, prefs));
       void showSystemAlert('录制', '录制已开始', '正在记录键鼠操作');
     } finally {
       setPending(false);
     }
-  }, [pending, startRecording, settings]);
+  }, [pending, startRecording, settings, prefs]);
 
   const handlePause = useCallback(async () => {
     if (pending) return;
@@ -328,6 +328,27 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
                 maxLength={200}
                 disabled={pending}
               />
+            </div>
+          )}
+          {(state.recordingState === 'idle' || state.recordingState === 'stopped') && (
+            <div className="field-group" style={{ width: '100%' }}>
+              <label className="field-label">鼠标移动录制方式</label>
+              <RadioGroup
+                style={{ alignSelf: 'flex-start' }}
+                value={prefs.mouseMoveMode}
+                onChange={value => setPrefs(current => ({ ...current, mouseMoveMode: value as MouseMoveMode }))}
+                options={[
+                  { value: 'absolute', label: '屏幕坐标' },
+                  { value: 'relative', label: '游戏视角（相对移动）' },
+                ]}
+              />
+              <span className="text-sm text-tertiary" style={{ lineHeight: 1.6 }}>
+                {!settings.recordMouseMove
+                  ? '已在「设置 → 录制选项」中关闭鼠标移动录制，本次不会记录移动。'
+                  : prefs.mouseMoveMode === 'relative'
+                    ? '记录鼠标的原始位移，用于第一/第三人称游戏中转动视角；回放时不受光标位置影响。'
+                    : '记录光标在屏幕上的位置，适合点击菜单、网页和桌面程序。'}
+              </span>
             </div>
           )}
           {state.recordingState === 'idle' && (

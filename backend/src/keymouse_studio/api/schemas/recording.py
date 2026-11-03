@@ -6,10 +6,12 @@ from pydantic import Field
 from keymouse_studio.api.schemas.actions import ScriptAction
 from keymouse_studio.api.schemas.common import ApiModel
 from keymouse_studio.api.schemas.operations import OperationTransition
+from keymouse_studio.domain.enums import MouseMoveMode
 
 
 class RecordingConfig(ApiModel):
     record_mouse_move: bool = True
+    mouse_move_mode: MouseMoveMode = MouseMoveMode.ABSOLUTE
     min_move_sample_ms: Annotated[int, Field(ge=1, le=1000)] = 10
     move_error_px: Annotated[float, Field(ge=0, le=100)] = 2.0
     record_wheel: bool = True

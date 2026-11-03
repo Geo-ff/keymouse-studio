@@ -92,7 +92,7 @@ def test_openapi_uses_action_discriminator(app: FastAPI) -> None:
     script_schema = schema["components"]["schemas"]["Script"]
     actions_schema = script_schema["properties"]["actions"]["items"]
     assert actions_schema["discriminator"]["propertyName"] == "type"
-    assert len(actions_schema["oneOf"]) == 8
+    assert len(actions_schema["oneOf"]) == 9
 
 
 @pytest.mark.asyncio

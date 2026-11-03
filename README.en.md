@@ -92,7 +92,7 @@ If GitHub is slow, use the [domestic download mirror (Quark Drive)](./docs/domes
 
 - **Run as administrator**: many games (or their launchers) run elevated, and Windows blocks input sent from a non-elevated app. The task pauses with a warning; right-click KeyMouse Studio → **Run as administrator** and try again
 - **Keys and clicks**: keys are sent as hardware scan codes and mouse clicks are held briefly (about 30 ms), so games that read DirectInput / Raw Input or poll input once per frame can see them. Scripts recorded with older versions do not need to be re-recorded
-- **3D camera movement**: mouse moves use absolute screen coordinates, which suits menus and UI; camera control in first/third-person games relies on relative motion and is not supported yet
+- **3D camera movement**: first/third-person games turn the camera from relative mouse motion, not cursor positions. Before recording, set **鼠标移动录制方式** (mouse movement mode) on the Recording page to **游戏视角（相对移动）** (game camera, relative), or add a **视角移动** (camera move) action in the script editor with a distance and duration. Recordings store raw mouse motion, so keep the same in-game sensitivity when recording and replaying
 - **Games with anti-cheat**: some games deliberately ignore synthesized input. KeyMouse Studio provides no way around this, and automating such games may break their terms of service
 
 ## Support the project

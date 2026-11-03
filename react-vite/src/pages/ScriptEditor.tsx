@@ -20,6 +20,7 @@ import {
   GripVertical,
   MousePointer,
   MousePointerClick,
+  Move,
   Scroll,
   Keyboard,
   Clock,
@@ -43,6 +44,7 @@ import { buildPlaybackOptionsFromEditor } from '../utils/playbackOptions';
 
 const ACTION_ICONS: Record<ActionType, typeof MousePointer> = {
   mouse_move: MousePointer,
+  mouse_move_relative: Move,
   mouse_click: MousePointerClick,
   mouse_button_down: MousePointerClick,
   mouse_button_up: MousePointerClick,
@@ -54,6 +56,7 @@ const ACTION_ICONS: Record<ActionType, typeof MousePointer> = {
 
 const ACTION_COLORS: Record<ActionType, string> = {
   mouse_move: 'var(--color-action-primary)',
+  mouse_move_relative: 'var(--color-action-primary)',
   mouse_click: 'var(--color-action-primary)',
   mouse_button_down: 'var(--color-action-primary)',
   mouse_button_up: 'var(--color-action-primary)',
@@ -65,6 +68,7 @@ const ACTION_COLORS: Record<ActionType, string> = {
 
 const ACTION_LABELS: Record<ActionType, string> = {
   mouse_move: '鼠标移动',
+  mouse_move_relative: '视角移动',
   mouse_click: '鼠标点击',
   mouse_button_down: '鼠标按下',
   mouse_button_up: '鼠标释放',
@@ -88,6 +92,7 @@ interface ScriptEditorProps {
 function summarizeAction(a: ScriptAction): string {
   switch (a.type) {
     case 'mouse_move': return `移动到 (${a.payload.x}, ${a.payload.y})`;
+    case 'mouse_move_relative': return `相对移动 (${a.payload.dx >= 0 ? '+' : ''}${a.payload.dx}, ${a.payload.dy >= 0 ? '+' : ''}${a.payload.dy})${a.payload.durationMs ? ` · ${formatDuration(a.payload.durationMs)}` : ''}`;
     case 'mouse_button_down': return `${a.payload.button === 'left' ? '左' : a.payload.button === 'right' ? '右' : '中'}键按下`;
     case 'mouse_button_up': return `${a.payload.button === 'left' ? '左' : a.payload.button === 'right' ? '右' : '中'}键释放`;
     case 'mouse_click': return `${a.payload.button === 'left' ? '左' : a.payload.button === 'right' ? '右' : '中'}键${a.payload.clickCount === 2 ? '双击' : '单击'} (${a.payload.x ?? '当前'}, ${a.payload.y ?? '当前'})`;
@@ -527,7 +532,7 @@ export function ScriptEditor({
               zIndex: 100,
               minWidth: 160,
             }} data-qoder-id="qel-div-af6f457d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-af6f457d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:398,&quot;column&quot;:13}}">
-              {(['mouse_move', 'mouse_button_down', 'mouse_button_up', 'mouse_click', 'mouse_wheel', 'key_down', 'key_up', 'wait'] as ActionType[]).map(type => {
+              {(['mouse_move', 'mouse_move_relative', 'mouse_button_down', 'mouse_button_up', 'mouse_click', 'mouse_wheel', 'key_down', 'key_up', 'wait'] as ActionType[]).map(type => {
                 const Icon = ACTION_ICONS[type];
                 return (
                   <button
@@ -698,6 +703,12 @@ export function ScriptEditor({
   );
 }
 
+/** Backend accepts relative deltas within ±1,000,000 raw units. */
+function clampDelta(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(-1_000_000, Math.min(1_000_000, Math.round(value)));
+}
+
 /* --- Property Editor --- */
 function PropertyEditor({ action, onUpdate, ...qoderProps }: { action: ScriptAction; onUpdate: (updated: ScriptAction) => void } & Record<string, any>) {
   return (
@@ -726,6 +737,31 @@ function PropertyEditor({ action, onUpdate, ...qoderProps }: { action: ScriptAct
             </div>
           </div>
         </div>
+      )}
+
+      {/* 相对移动（游戏视角） */}
+      {action.type === 'mouse_move_relative' && (
+        <>
+          <div className="prop-group">
+            <span className="prop-label">位移</span>
+            <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+              <div className="field-inline" style={{ flex: 1 }}>
+                <span className="text-sm text-secondary">ΔX</span>
+                <Input type="number" variant="number" value={action.payload.dx} onChange={e => onUpdate({ ...action, payload: { ...action.payload, dx: clampDelta(+e.target.value) } })} />
+              </div>
+              <div className="field-inline" style={{ flex: 1 }}>
+                <span className="text-sm text-secondary">ΔY</span>
+                <Input type="number" variant="number" value={action.payload.dy} onChange={e => onUpdate({ ...action, payload: { ...action.payload, dy: clampDelta(+e.target.value) } })} />
+              </div>
+            </div>
+            <span className="text-sm text-tertiary">鼠标原始位移单位：X 正值向右，Y 正值向下。实际转动角度取决于游戏内灵敏度</span>
+          </div>
+          <div className="prop-group">
+            <span className="prop-label">移动时长（毫秒）</span>
+            <Input type="number" variant="number" value={action.payload.durationMs} onChange={e => onUpdate({ ...action, payload: { ...action.payload, durationMs: Math.max(0, Math.min(86_400_000, Math.round(+e.target.value) || 0)) } })} min={0} />
+            <span className="text-sm text-tertiary">在这段时间内平滑完成位移；0 表示瞬间完成</span>
+          </div>
+        </>
       )}
 
       {/* 按键选择 */}

@@ -22,6 +22,8 @@ class InputAdapter(Protocol):
 
     def move(self, x: int, y: int) -> None: ...
 
+    def move_relative(self, dx: int, dy: int) -> None: ...
+
     def button_down(self, button: MouseButton) -> None: ...
 
     def button_up(self, button: MouseButton) -> None: ...
@@ -49,6 +51,11 @@ class FakeInputAdapter:
     def move(self, x: int, y: int) -> None:
         self.position = (x, y)
         self.actions.append(("move", (x, y)))
+        self.action_recorded.set()
+
+    def move_relative(self, dx: int, dy: int) -> None:
+        self.position = (self.position[0] + dx, self.position[1] + dy)
+        self.actions.append(("move_relative", (dx, dy)))
         self.action_recorded.set()
 
     def button_down(self, button: MouseButton) -> None:
@@ -97,6 +104,9 @@ class InputWorker:
 
     async def move(self, x: int, y: int) -> None:
         await self._run(self._adapter.move, x, y)
+
+    async def move_relative(self, dx: int, dy: int) -> None:
+        await self._run(self._adapter.move_relative, dx, dy)
 
     async def button_down(self, button: MouseButton) -> None:
         await self._run(self._adapter.button_down, button)

@@ -37,3 +37,10 @@ class PositionMode(StrEnum):
 class ClickerInputType(StrEnum):
     MOUSE = "mouse"
     KEYBOARD = "keyboard"
+
+
+class MouseMoveMode(StrEnum):
+    """How recording captures mouse movement."""
+
+    ABSOLUTE = "absolute"  # cursor position on the desktop (menus, UI)
+    RELATIVE = "relative"  # raw device motion (camera control in 3D games)
