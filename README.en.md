@@ -88,6 +88,13 @@ If GitHub is slow, use the [domestic download mirror (Quark Drive)](./docs/domes
 - Scripts stay **local**; the app does not upload them to a cloud service
 - Emergency-stop hotkey is configurable; confirm it works before long runs
 
+## Not working in a game?
+
+- **Run as administrator**: many games (or their launchers) run elevated, and Windows blocks input sent from a non-elevated app. The task pauses with a warning; right-click KeyMouse Studio → **Run as administrator** and try again
+- **Keys and clicks**: keys are sent as hardware scan codes and mouse clicks are held briefly (about 30 ms), so games that read DirectInput / Raw Input or poll input once per frame can see them. Scripts recorded with older versions do not need to be re-recorded
+- **3D camera movement**: mouse moves use absolute screen coordinates, which suits menus and UI; camera control in first/third-person games relies on relative motion and is not supported yet
+- **Games with anti-cheat**: some games deliberately ignore synthesized input. KeyMouse Studio provides no way around this, and automating such games may break their terms of service
+
 ## Support the project
 
 This project is free and open source, developed and maintained by an individual in their spare time. If you find it useful, giving it a [Star](https://github.com/Geo-ff/keymouse-studio) is the best way to support the work behind it.

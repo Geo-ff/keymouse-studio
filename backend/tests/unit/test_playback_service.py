@@ -1,4 +1,5 @@
 import asyncio
+import time
 from pathlib import Path
 
 import pytest
@@ -17,7 +18,7 @@ from keymouse_studio.infrastructure.persistence.json_script_repository import Js
 from keymouse_studio.infrastructure.system.clock import MonotonicClock
 from keymouse_studio.services.event_service import EventService
 from keymouse_studio.services.operation_service import OperationService
-from keymouse_studio.services.playback_service import PlaybackService
+from keymouse_studio.services.playback_service import MOUSE_CLICK_HOLD_MS, PlaybackService
 from keymouse_studio.services.script_service import ScriptService
 
 
@@ -342,4 +343,56 @@ async def test_long_wait_publishes_smooth_progress_before_completion(
     assert intermediate
     assert intermediate == sorted(intermediate)
     assert progress_values[-1] == 1.0
+    worker.close()
+
+
+class TimelineInputAdapter(FakeInputAdapter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.timeline: list[tuple[str, int]] = []
+
+    def button_down(self, button: MouseButton) -> None:
+        self.timeline.append(("down", time.monotonic_ns()))
+        super().button_down(button)
+
+    def button_up(self, button: MouseButton) -> None:
+        self.timeline.append(("up", time.monotonic_ns()))
+        super().button_up(button)
+
+
+@pytest.mark.asyncio
+async def test_mouse_click_action_holds_button_even_at_high_speed(tmp_path: Path) -> None:
+    adapter = TimelineInputAdapter()
+    worker = InputWorker(adapter)
+    operations = OperationService(EventService(1))
+    scripts = ScriptService(JsonScriptRepository(tmp_path / "scripts"))
+    service = PlaybackService(operations, scripts, worker, MonotonicClock(), 2)
+    script = Script.model_validate(
+        {
+            "id": "00000000-0000-0000-0000-000000000001",
+            "name": "Click",
+            "createdAt": "2026-07-14T00:00:00Z",
+            "updatedAt": "2026-07-14T00:00:00Z",
+            "settings": {"countdownMs": 0},
+            "actions": [
+                {
+                    "id": "00000000-0000-0000-0000-000000000002",
+                    "type": "mouse_click",
+                    "payload": {"button": "left", "clickCount": 2},
+                }
+            ],
+        }
+    )
+
+    await service.start(PlaybackRequest(inline_script=script, countdown_ms=0, speed_multiplier=10))
+    await asyncio.wait_for(service.wait_finished(), timeout=1)
+
+    assert [kind for kind, _ in adapter.timeline] == ["down", "up", "down", "up"]
+    stamps = [stamp for _, stamp in adapter.timeline]
+    hold_ns = MOUSE_CLICK_HOLD_MS * 1_000_000
+    # Held while pressed, and the two presses stay apart even though intervalMs is 0.
+    assert stamps[1] - stamps[0] >= hold_ns
+    assert stamps[2] - stamps[1] >= hold_ns
+    assert stamps[3] - stamps[2] >= hold_ns
+    assert adapter.pressed == set()
     worker.close()

@@ -1,6 +1,8 @@
 import ctypes
+import sys
 from ctypes import wintypes
-from typing import ClassVar
+from functools import cache
+from typing import Any, ClassVar
 
 from keymouse_studio.domain.enums import MouseButton
 from keymouse_studio.infrastructure.input.adapter import ReleaseResult
@@ -27,6 +29,30 @@ SM_YVIRTUALSCREEN = 77
 SM_CXVIRTUALSCREEN = 78
 SM_CYVIRTUALSCREEN = 79
 WHEEL_DELTA = 120
+MAPVK_VK_TO_VSC_EX = 4
+# Navigation / right-hand modifier keys whose scan code needs the E0 (extended) prefix.
+# MapVirtualKey(..., MAPVK_VK_TO_VSC_EX) usually reports this itself; the table is a fallback
+# so that e.g. VK_LEFT can never be sent as the bare scan code of Numpad 4.
+_EXTENDED_VIRTUAL_KEYS = frozenset(
+    {
+        0x21,  # PAGE UP
+        0x22,  # PAGE DOWN
+        0x23,  # END
+        0x24,  # HOME
+        0x25,  # LEFT
+        0x26,  # UP
+        0x27,  # RIGHT
+        0x28,  # DOWN
+        0x2D,  # INSERT
+        0x2E,  # DELETE
+        0x5B,  # LEFT WIN
+        0x5C,  # RIGHT WIN
+        0x5D,  # APPS
+        0x6F,  # NUMPAD DIVIDE
+        0xA3,  # RIGHT CTRL
+        0xA5,  # RIGHT ALT
+    }
+)
 
 
 class MOUSEINPUT(ctypes.Structure):
@@ -151,10 +177,21 @@ class SendInputAdapter:
         if scan_code is not None:
             virtual_key = 0
             scan = scan_code
+            if scan > 0xFF:
+                # Accept "E0 xx" style codes (e.g. 0xE04B) as extended + low byte.
+                extended = extended or (scan >> 8) == 0xE0
+                scan &= 0xFF
             flags |= KEYEVENTF_SCANCODE
         else:
             virtual_key = resolve_virtual_key(key_code)
-            scan = 0
+            scan, mapped_extended = _scan_code_for_virtual_key(virtual_key)
+            if scan:
+                # Games that read DirectInput / Raw Input identify keys by scan code only;
+                # a VK-only event arrives with scan code 0 and is ignored. Send the key as a
+                # hardware scan code (Windows derives the VK for normal apps from it).
+                virtual_key = 0
+                flags |= KEYEVENTF_SCANCODE
+                extended = extended or mapped_extended
         if extended:
             flags |= KEYEVENTF_EXTENDEDKEY
         self._send(
@@ -168,6 +205,61 @@ class SendInputAdapter:
         sent = ctypes.windll.user32.SendInput(1, ctypes.byref(value), ctypes.sizeof(INPUT))
         if sent != 1:
             raise ctypes.WinError()
+
+
+@cache
+def _user32() -> Any:
+    """Private user32 handle so argtypes set here never leak into other ctypes users."""
+    library = ctypes.WinDLL("user32")
+    library.GetForegroundWindow.argtypes = []
+    library.GetForegroundWindow.restype = wintypes.HWND
+    library.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.c_void_p]
+    library.GetWindowThreadProcessId.restype = wintypes.DWORD
+    library.GetKeyboardLayout.argtypes = [wintypes.DWORD]
+    library.GetKeyboardLayout.restype = ctypes.c_void_p
+    library.MapVirtualKeyExW.argtypes = [wintypes.UINT, wintypes.UINT, ctypes.c_void_p]
+    library.MapVirtualKeyExW.restype = wintypes.UINT
+    return library
+
+
+def _foreground_keyboard_layout(user32: Any) -> int | None:
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd:
+        return None
+    thread_id = user32.GetWindowThreadProcessId(hwnd, None)
+    if not thread_id:
+        return None
+    layout = user32.GetKeyboardLayout(thread_id)
+    return int(layout) if layout else None
+
+
+def _scan_code_for_virtual_key(virtual_key: int) -> tuple[int, bool]:
+    """Map a virtual key to (scan code, extended) using the foreground window's layout.
+
+    Returns ``(0, False)`` when no usable hardware scan code exists; callers then fall back to
+    a VK-only event.
+    """
+    if sys.platform != "win32":
+        return 0, False
+    try:
+        user32 = _user32()
+        mapped = int(
+            user32.MapVirtualKeyExW(
+                virtual_key, MAPVK_VK_TO_VSC_EX, _foreground_keyboard_layout(user32)
+            )
+        )
+    except (AttributeError, OSError):
+        return 0, False
+    return _split_mapped_scan_code(virtual_key, mapped)
+
+
+def _split_mapped_scan_code(virtual_key: int, mapped: int) -> tuple[int, bool]:
+    scan = mapped & 0xFF
+    prefix = (mapped >> 8) & 0xFF
+    if not scan or prefix == 0xE1:
+        # No scan code, or an E1 sequence (Pause) that cannot be expressed as one INPUT.
+        return 0, False
+    return scan, prefix == 0xE0 or virtual_key in _EXTENDED_VIRTUAL_KEYS
 
 
 def _button_flags(button: MouseButton) -> tuple[int, int]:

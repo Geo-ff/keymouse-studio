@@ -220,8 +220,9 @@ export class MockAutomationService extends AutomationServiceBase {
   async getMousePosition(): Promise<MousePosition> { return clone(this.currentState.mousePos); }
   async startClicker(config: ClickerConfig): Promise<OperationTransition> {
     const result = this.start('clicker', 'running');
+    const pressMs = Math.max(10, config.pressDurationMs ?? 30);
     const cycleMs =
-      (config.inputType === 'keyboard' ? Math.max(10, config.pressDurationMs ?? 30) : 0) +
+      (config.inputType === 'keyboard' ? pressMs : (2 * config.clickCount - 1) * pressMs) +
       Math.max(50, config.intervalMs);
     const tick = () => {
       if (!this.operationId || this.operationType !== 'clicker') return;

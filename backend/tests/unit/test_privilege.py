@@ -18,3 +18,11 @@ def test_can_inject_rejects_upward_integrity() -> None:
     assert not can_inject(IntegrityLevel.MEDIUM, IntegrityLevel.HIGH)
     assert not can_inject(IntegrityLevel.UNKNOWN, IntegrityLevel.MEDIUM)
     assert not can_inject(IntegrityLevel.MEDIUM, IntegrityLevel.UNKNOWN)
+
+def test_elevated_process_can_inject_into_unreadable_target() -> None:
+    # Games protected by anti-cheat often refuse handle queries; running KeyMouse Studio as
+    # administrator must then actually unblock injection instead of failing the same way.
+    assert can_inject(IntegrityLevel.HIGH, IntegrityLevel.UNKNOWN)
+    assert can_inject(IntegrityLevel.SYSTEM, IntegrityLevel.UNKNOWN)
+    assert not can_inject(IntegrityLevel.LOW, IntegrityLevel.UNKNOWN)
+    assert not can_inject(IntegrityLevel.UNKNOWN, IntegrityLevel.UNKNOWN)

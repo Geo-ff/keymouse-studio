@@ -53,9 +53,13 @@ def can_inject(current: IntegrityLevel, target: IntegrityLevel) -> bool:
         IntegrityLevel.HIGH: 2,
         IntegrityLevel.SYSTEM: 3,
     }
-    # Unknown integrity cannot be treated as injectable (elevated targets often fail token query).
-    if current is IntegrityLevel.UNKNOWN or target is IntegrityLevel.UNKNOWN:
+    if current is IntegrityLevel.UNKNOWN:
         return False
+    if target is IntegrityLevel.UNKNOWN:
+        # An unreadable target is usually elevated or protected (e.g. games whose anti-cheat
+        # strips process handle rights). A non-elevated sender must assume UIPI blocks it, but
+        # an elevated sender can reach any High-integrity window, which covers such games.
+        return rank[current] >= rank[IntegrityLevel.HIGH]
     return rank[current] >= rank[target]
 
 
@@ -136,6 +140,8 @@ class WindowsPrivilegeChecker:
             if pid is None or pid == our_pid:
                 continue
             if level is None or level is IntegrityLevel.UNKNOWN:
+                if can_inject(process_level, IntegrityLevel.UNKNOWN):
+                    continue
                 # Cannot read integrity (common for protected/elevated targets) → block.
                 blocked_level = level or IntegrityLevel.UNKNOWN
                 blocked_reason = f"{source}_unreadable"

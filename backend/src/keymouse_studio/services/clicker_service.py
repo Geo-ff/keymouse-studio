@@ -238,7 +238,11 @@ class ClickerService:
                         if config.x is None or config.y is None:
                             raise RuntimeError("固定坐标模式下缺少 X/Y")
                         await self._input.move(config.x, config.y)
-                    for _ in range(config.click_count):
+                    for click_index in range(config.click_count):
+                        if click_index:
+                            # Gap between the clicks of a double click, so games that sample
+                            # button state once per frame see two separate presses.
+                            await self._wait_hold(config.press_duration_ms)
                         await self._click(config, operation_id, completed, total)
                 completed += 1
                 progress = completed / total if total is not None else None
@@ -283,6 +287,9 @@ class ClickerService:
             await self._input.button_down(config.button)
             try:
                 self._raise_if_cancelled()
+                # Hold the button: down+up in the same instant falls inside one game frame
+                # and is never observed by engines that poll input state per frame.
+                await self._wait_hold(config.press_duration_ms)
             finally:
                 await self._input.button_up(config.button)
         finally:
@@ -302,12 +309,12 @@ class ClickerService:
                 await self._input.key_down(key.key_code, key.scan_code, key.extended)
                 pressed.append(key)
             if pressed and self._running.is_set() and not self._cancelled.is_set():
-                await self._wait_key_hold(config.press_duration_ms)
+                await self._wait_hold(config.press_duration_ms)
         finally:
             await self._release_keys(pressed)
             self._cycle_active.clear()
 
-    async def _wait_key_hold(self, duration_ms: int) -> None:
+    async def _wait_hold(self, duration_ms: int) -> None:
         remaining_ns = duration_ms * 1_000_000
         while remaining_ns > 0:
             if self._cancelled.is_set() or not self._running.is_set():

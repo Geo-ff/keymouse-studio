@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 import pytest
 from pydantic import ValidationError
@@ -16,6 +17,20 @@ from keymouse_studio.infrastructure.system.privilege import (
 from keymouse_studio.services.clicker_service import ClickerService
 from keymouse_studio.services.event_service import EventService
 from keymouse_studio.services.operation_service import OperationService
+
+
+class TimelineInputAdapter(FakeInputAdapter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.timeline: list[tuple[str, int]] = []
+
+    def button_down(self, button: MouseButton) -> None:
+        self.timeline.append(("down", time.monotonic_ns()))
+        super().button_down(button)
+
+    def button_up(self, button: MouseButton) -> None:
+        self.timeline.append(("up", time.monotonic_ns()))
+        super().button_up(button)
 
 
 async def wait_until_idle(service: ClickerService, operations: OperationService) -> None:
@@ -352,3 +367,25 @@ async def test_timed_click_publishes_remaining_time_between_repeats() -> None:
     assert max(snapshot.countdown_remaining_ms for snapshot in repeated_waits) <= 60
     await service.shutdown()
     events.unsubscribe(queue)
+
+
+@pytest.mark.asyncio
+async def test_mouse_click_holds_button_for_press_duration() -> None:
+    adapter = TimelineInputAdapter()
+    operations = OperationService(EventService(protocol_version=1))
+    service = ClickerService(operations, InputWorker(adapter), MonotonicClock(), 5)
+
+    await service.start_clicker(
+        ClickerConfig(click_count=2, interval_ms=50, repeat_count=1, press_duration_ms=40)
+    )
+    await wait_until_idle(service, operations)
+
+    assert [kind for kind, _ in adapter.timeline] == ["down", "up", "down", "up"]
+    stamps = [stamp for _, stamp in adapter.timeline]
+    hold_ns = 40 * 1_000_000
+    # Each press is held, and the two clicks of a double click are separated.
+    assert stamps[1] - stamps[0] >= hold_ns
+    assert stamps[2] - stamps[1] >= hold_ns
+    assert stamps[3] - stamps[2] >= hold_ns
+    assert adapter.pressed == set()
+    await service.shutdown()

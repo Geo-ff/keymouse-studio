@@ -28,6 +28,10 @@ from keymouse_studio.services.clicker_service import PRIVILEGE_BLOCK_MESSAGE
 from keymouse_studio.services.operation_service import OperationService
 from keymouse_studio.services.script_service import ScriptService
 
+# How long a synthesized ``mouse_click`` keeps the button down. Recorded clicks replay their own
+# down/up timing; this only applies to click actions created in the editor.
+MOUSE_CLICK_HOLD_MS = 30
+
 
 class PlaybackService:
     def __init__(
@@ -304,11 +308,14 @@ class PlaybackService:
                 await self._input.button_down(action.payload.button)
                 try:
                     self._raise_if_cancelled()
+                    await self._hold_click()
                 finally:
                     await self._input.button_up(action.payload.button)
                 if click_index + 1 < action.payload.click_count:
                     if not await self._wait(action.payload.interval_ms, speed, duration_ns):
                         return False
+                    # Keep the two presses of a double click apart even with intervalMs = 0.
+                    await self._hold_click()
         elif isinstance(action, MouseWheelAction):
             await self._input.wheel(action.payload.delta_x, action.payload.delta_y)
         elif isinstance(action, KeyDownAction):
@@ -370,6 +377,18 @@ class PlaybackService:
                         ctx.get("duration_ns"),
                     )
         return not self._duration_reached(duration_ns)
+
+    async def _hold_click(self) -> None:
+        """Keep a synthesized click pressed long enough for per-frame input polling.
+
+        Not scaled by playback speed and not paused: the button is always released promptly.
+        """
+        remaining_ns = MOUSE_CLICK_HOLD_MS * 1_000_000
+        while remaining_ns > 0 and not self._cancelled.is_set():
+            slice_ns = min(remaining_ns, int(self._poll_seconds * 1_000_000_000))
+            before = self._clock.now_ns()
+            await self._clock.sleep(slice_ns / 1_000_000_000)
+            remaining_ns -= max(slice_ns, self._clock.now_ns() - before)
 
     async def _wait_countdown(self, duration_ms: int, operation_id: UUID) -> None:
         remaining_ns = duration_ms * 1_000_000

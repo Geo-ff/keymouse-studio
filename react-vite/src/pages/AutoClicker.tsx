@@ -35,6 +35,9 @@ interface ClickerFormState {
   pressDurationMs: number;
 }
 
+/** How long each mouse click keeps the button down (sent as pressDurationMs for mouse mode). */
+const MOUSE_PRESS_MS = 30;
+
 const CLICKER_DEFAULTS: ClickerFormState = {
   inputType: 'mouse',
   button: 'left',
@@ -89,7 +92,12 @@ export function AutoClicker(qoderProps: Record<string, any>) {
   const isKeyboard = inputType === 'keyboard';
 
   const intervalMs = hours * 3600000 + minutes * 60000 + seconds * 1000 + millis;
-  const cycleMs = isKeyboard ? Math.max(10, pressDurationMs) + Math.max(50, intervalMs) : Math.max(50, intervalMs);
+  // Mouse clicks are held for MOUSE_PRESS_MS (and double clicks are separated by the same gap)
+  // so that games polling input once per frame register them.
+  const mouseClicks = clickMode === 'double' ? 2 : 1;
+  const cycleMs = isKeyboard
+    ? Math.max(10, pressDurationMs) + Math.max(50, intervalMs)
+    : (2 * mouseClicks - 1) * MOUSE_PRESS_MS + Math.max(50, intervalMs);
   const estimatedHz = cycleMs > 0 ? (1000 / cycleMs).toFixed(1) : '—';
 
   const controlHotkeys = useMemo(
@@ -163,7 +171,7 @@ export function AutoClicker(qoderProps: Record<string, any>) {
           y: useCurrentPos ? null : posY,
           countdownMs: resolveCountdownMs(settings),
           keys: [],
-          pressDurationMs: 30,
+          pressDurationMs: MOUSE_PRESS_MS,
         };
 
     void startClicker(config)

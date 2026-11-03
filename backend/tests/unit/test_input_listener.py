@@ -11,6 +11,7 @@ from keymouse_studio.infrastructure.input.listener import (
     PynputInputListener,
     RawEventType,
     RawInputEvent,
+    ScanCodeTracker,
 )
 
 
@@ -147,3 +148,65 @@ async def test_partial_pynput_start_rolls_back_keyboard(
     assert created[0].joined
     assert created[1].stopped
     assert created[1].joined
+
+
+def test_scan_code_tracker_records_scan_and_extended_flag() -> None:
+    tracker = ScanCodeTracker()
+    tracker.observe(0x41, 0x1E, 0)
+    tracker.observe(0x25, 0x4B, 0x01)
+    tracker.observe(0xE7, 0x61, 0)  # VK_PACKET carries a character, not a scan code
+    tracker.observe(0xB3, 0, 0)
+
+    assert tracker.lookup(0x41) == (0x1E, False)
+    assert tracker.lookup(0x25) == (0x4B, True)
+    assert tracker.lookup(0xE7) == (None, False)
+    assert tracker.lookup(0xB3) == (None, False)
+    assert tracker.lookup(None) == (None, False)
+
+
+def test_pynput_listener_attaches_hook_scan_codes_to_key_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Key:
+        def __init__(self, name: str, vk: int) -> None:
+            self.name = name
+            self.value = SimpleNamespace(vk=vk)
+
+    class KeyCode:
+        def __init__(self, vk: int, char: str | None) -> None:
+            self.vk = vk
+            self.char = char
+
+    options: dict[str, object] = {}
+
+    def keyboard_listener(**kwargs: object) -> FakeThreadListener:
+        options.update(kwargs)
+        return FakeThreadListener()
+
+    keyboard = SimpleNamespace(Key=Key, KeyCode=KeyCode, Listener=keyboard_listener)
+    mouse = SimpleNamespace(
+        Button=SimpleNamespace(left="left", right="right", middle="middle"),
+        Listener=lambda **kwargs: FakeThreadListener(),
+    )
+    monkeypatch.setitem(sys.modules, "pynput", SimpleNamespace(keyboard=keyboard, mouse=mouse))
+    monkeypatch.setattr(sys, "platform", "win32")
+    events: list[RawInputEvent] = []
+
+    source = PynputInputListener()
+    source.start(events.append)
+    hook_filter = options["win32_event_filter"]
+    on_press = options["on_press"]
+    on_release = options["on_release"]
+    assert callable(hook_filter) and callable(on_press) and callable(on_release)
+
+    assert hook_filter(0x100, SimpleNamespace(vkCode=0x41, scanCode=0x1E, flags=0)) is True
+    on_press(KeyCode(0x41, "a"))
+    assert hook_filter(0x101, SimpleNamespace(vkCode=0x25, scanCode=0x4B, flags=0x01)) is True
+    on_release(Key("left", 0x25))
+    on_press(KeyCode(0xB3, None))  # never seen by the hook filter → no scan code
+
+    assert [(e.type, e.key_code, e.scan_code, e.extended) for e in events] == [
+        ("key_down", "a", 0x1E, False),
+        ("key_up", "left", 0x4B, True),
+        ("key_down", "vk_179", None, False),
+    ]

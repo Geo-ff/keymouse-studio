@@ -1,11 +1,12 @@
 import asyncio
+import sys
 import time
 from collections import deque
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from threading import Condition, Lock
-from typing import Literal, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 
 from keymouse_studio.domain.enums import MouseButton
 
@@ -67,6 +68,34 @@ class FakeInputListener:
             self._emit(event)
 
 
+LLKHF_EXTENDED = 0x01
+VK_PACKET = 0xE7
+
+
+class ScanCodeTracker:
+    """Remembers the hardware scan code of the most recent low-level event per virtual key.
+
+    pynput's key objects only carry the virtual key. The scan code is read from the
+    ``KBDLLHOOKSTRUCT`` in ``win32_event_filter`` (same listener thread, before the press /
+    release callback) so that recorded scripts replay as scan codes, which DirectInput /
+    Raw Input games require.
+    """
+
+    def __init__(self) -> None:
+        self._by_vk: dict[int, tuple[int, bool]] = {}
+
+    def observe(self, vk_code: int, scan_code: int, flags: int) -> None:
+        if vk_code == VK_PACKET or not 0 < scan_code <= 0xFF:
+            return
+        self._by_vk[vk_code] = (scan_code, bool(flags & LLKHF_EXTENDED))
+
+    def lookup(self, vk_code: int | None) -> tuple[int | None, bool]:
+        if vk_code is None:
+            return None, False
+        scan_code, extended = self._by_vk.get(vk_code, (None, False))
+        return scan_code, extended
+
+
 class PynputInputListener:
     def __init__(self) -> None:
         self._keyboard: ThreadListener | None = None
@@ -83,11 +112,36 @@ class PynputInputListener:
             name = key.name
             return str(name) if name is not None else str(key)
 
+        scan_codes = ScanCodeTracker()
+
+        def key_vk(key: keyboard.Key | keyboard.KeyCode) -> int | None:
+            code = key.value if isinstance(key, keyboard.Key) else key
+            vk = getattr(code, "vk", None)
+            return int(vk) if vk is not None else None
+
+        def key_event(
+            event_type: RawEventType, key: keyboard.Key | keyboard.KeyCode
+        ) -> RawInputEvent:
+            scan_code, extended = scan_codes.lookup(key_vk(key))
+            return RawInputEvent(
+                event_type,
+                time.monotonic_ns(),
+                key_code=key_data(key),
+                scan_code=scan_code,
+                extended=extended,
+            )
+
         def on_press(key: keyboard.Key | keyboard.KeyCode) -> None:
-            emit(RawInputEvent("key_down", time.monotonic_ns(), key_code=key_data(key)))
+            emit(key_event("key_down", key))
 
         def on_release(key: keyboard.Key | keyboard.KeyCode) -> None:
-            emit(RawInputEvent("key_up", time.monotonic_ns(), key_code=key_data(key)))
+            emit(key_event("key_up", key))
+
+        def win32_event_filter(_msg: int, data: Any) -> bool:
+            # Runs inside the low-level hook: never raise, never suppress the event.
+            with suppress(Exception):
+                scan_codes.observe(int(data.vkCode), int(data.scanCode), int(data.flags))
+            return True
 
         def cursor_pos(fallback_x: int, fallback_y: int) -> tuple[int, int]:
             """Prefer GetCursorPos so coords match SendInput / virtual desktop."""
@@ -130,9 +184,12 @@ class PynputInputListener:
                 )
             )
 
+        keyboard_options: dict[str, object] = {}
+        if sys.platform == "win32":
+            keyboard_options["win32_event_filter"] = win32_event_filter
         keyboard_listener = cast(
             ThreadListener,
-            keyboard.Listener(on_press=on_press, on_release=on_release),
+            keyboard.Listener(on_press=on_press, on_release=on_release, **keyboard_options),
         )
         mouse_listener = cast(
             ThreadListener,
