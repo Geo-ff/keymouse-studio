@@ -407,6 +407,17 @@ input, select, textarea {
 }
 
 /* --- Sidebar Nav Items --- */
+.nav-item-badge {
+  position: absolute;
+  top: 5px;
+  right: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-danger);
+  box-shadow: 0 0 0 2px var(--color-bg-sidebar, var(--color-bg-surface));
+}
+
 .nav-item {
   width: 44px;
   height: 44px;

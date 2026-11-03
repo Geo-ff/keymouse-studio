@@ -575,6 +575,7 @@ export default function App() {
             onPlaybackOptionsChange={options => {
               playbackOptionsRef.current = options;
             }}
+            hasUnsavedChanges={!saved}
            data-qoder-id="qel-scripteditor-9f5415e1" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-scripteditor-9f5415e1&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;scripteditor&quot;,&quot;loc&quot;:{&quot;line&quot;:99,&quot;column&quot;:11}}"/>
         );
       case 'manager':
@@ -625,6 +626,11 @@ export default function App() {
           setAboutOpen(true);
         }}
         updateStatus={updateState?.status}
+        navBadges={
+          state.recordingState === 'stopped' && state.recordingActions.length > 0
+            ? { recording: '有未保存的录制结果' }
+            : undefined
+        }
        data-qoder-id="qel-layout-c21360f5" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-layout-c21360f5&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;layout&quot;,&quot;loc&quot;:{&quot;line&quot;:117,&quot;column&quot;:7}}">
         {renderPage()}
       </Layout>

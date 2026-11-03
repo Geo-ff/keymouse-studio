@@ -27,6 +27,7 @@ import { HotkeyCaptureInput } from '../components/HotkeyCaptureInput';
 import {
   collectReservedHotkeys,
   findHotkeyConflict,
+  globalHotkeyWarning,
   hotkeyFieldLabel,
   scriptHotkeyField,
 } from '../utils/hotkey';
@@ -112,6 +113,8 @@ export function ScriptManager({ onNavigate, onLoadScript, onNewScript, onScriptD
     const next = hotkey ? { ...others, [script.id]: hotkey } : others;
     // The field shows the stored binding; a rejected update surfaces in the global error banner.
     void updateSettings({ scriptHotkeys: next });
+    const warning = hotkey ? globalHotkeyWarning(hotkey) : null;
+    if (warning) toast.info(warning);
   }, [settings, updateSettings, allScripts, toast]);
 
   const handleRename = useCallback(async (script: Script) => {
@@ -179,6 +182,9 @@ export function ScriptManager({ onNavigate, onLoadScript, onNewScript, onScriptD
             style={{ paddingLeft: '28px' }}
            data-qoder-id="qel-input-0a36b7b1" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-0a36b7b1&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:112,&quot;column&quot;:11}}"/>
         </div>
+        <span className="text-sm text-tertiary" style={{ lineHeight: 1.5, minWidth: 0 }}>
+          设置快捷键后，在任何窗口按下即运行该脚本（不倒计时），再按一次停止；运行的是已保存的版本。
+        </span>
         <div className="toolbar-spacer"  data-qoder-id="qel-toolbar-spacer-8ff8e32f" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toolbar-spacer-8ff8e32f&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;toolbar-spacer&quot;,&quot;loc&quot;:{&quot;line&quot;:119,&quot;column&quot;:9}}"/>
         <Button variant="primary" size="sm" icon={<FilePlus2 size={13}  data-qoder-id="qel-fileplus2-4e495f8a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-fileplus2-4e495f8a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;fileplus2&quot;,&quot;loc&quot;:{&quot;line&quot;:120,&quot;column&quot;:51}}"/>} onClick={onNewScript} data-qoder-id="qel-button-0c0c810f" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-0c0c810f&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:120,&quot;column&quot;:9}}">
           新建脚本

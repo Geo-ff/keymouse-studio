@@ -200,3 +200,14 @@ export function hotkeyToBackend(value: string): string {
   if (keys.length !== 1) return parts.join('+');
   return [...modifiers, keys[0]].join('+');
 }
+/**
+ * Global hotkeys are taken over system-wide: the bound key no longer reaches games or other
+ * programs. Warn when that is likely to get in the way (a plain key without modifiers).
+ */
+export function globalHotkeyWarning(hotkey: string): string | null {
+  const parts = normalizeHotkeyDisplay(hotkey).split('+').filter(Boolean);
+  if (parts.length !== 1) return null;
+  const [key] = parts;
+  if (/^F\d{1,2}$/.test(key)) return null;
+  return `「${key}」会被全局占用：在游戏和其他程序里按 ${key} 都会触发这个快捷键，而不再是原来的输入。建议改用 F 键或 Ctrl / Alt 组合键。`;
+}

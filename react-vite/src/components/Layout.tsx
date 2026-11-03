@@ -46,7 +46,7 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 /* --- Sidebar --- */
-function Sidebar({ activePage, onNavigate, ...qoderProps }: { activePage: PageId; onNavigate: (page: PageId) => void } & Record<string, any>) {
+function Sidebar({ activePage, onNavigate, badges = {}, ...qoderProps }: { activePage: PageId; onNavigate: (page: PageId) => void; badges?: Partial<Record<PageId, string>> } & Record<string, any>) {
   return (
     <nav className={["app-sidebar", (qoderProps as any)?.className].filter(Boolean).join(" ")} role="navigation" aria-label="主导航" data-component="sidebar" style={(qoderProps as any)?.style} data-qoder-id={(qoderProps as any)?.["data-qoder-id"]} data-qoder-source={(qoderProps as any)?.["data-qoder-source"]}>
       <button
@@ -67,12 +67,13 @@ function Sidebar({ activePage, onNavigate, ...qoderProps }: { activePage: PageId
           key={item.id}
           className={`nav-item ${active ? 'active' : ''}`}
           onClick={() => onNavigate(item.id)}
-          data-tooltip={item.label}
+          data-tooltip={badges[item.id] ? `${item.label}（${badges[item.id]}）` : item.label}
           aria-label={item.label}
           aria-current={active ? 'page' : undefined}
          data-qoder-id="qel-button-d6b96ae9" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-d6b96ae9&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Sidebar&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:50,&quot;column&quot;:9}}">
           <span className="nav-item-icon" data-qoder-id="qel-nav-item-icon-8acdfb7b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-nav-item-icon-8acdfb7b&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Sidebar&quot;,&quot;elementRole&quot;:&quot;nav-item-icon&quot;,&quot;loc&quot;:{&quot;line&quot;:58,&quot;column&quot;:11}}">{item.icon}</span>
           <span className="nav-item-label" data-qoder-id="qel-nav-item-label-df57558e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-nav-item-label-df57558e&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Sidebar&quot;,&quot;elementRole&quot;:&quot;nav-item-label&quot;,&quot;loc&quot;:{&quot;line&quot;:59,&quot;column&quot;:11}}">{item.label}</span>
+          {badges[item.id] && <span className="nav-item-badge" title={badges[item.id]} aria-label={badges[item.id]} />}
         </button>
         );
       })}
@@ -299,6 +300,8 @@ interface LayoutProps {
   onEmergencyStop: () => void;
   onOpenAbout?: () => void;
   updateStatus?: DesktopUpdateState['status'];
+  /** Small dot on a sidebar entry, with the reason as its tooltip (e.g. an unsaved recording). */
+  navBadges?: Partial<Record<PageId, string>>;
   children: ReactNode;
 }
 
@@ -319,7 +322,7 @@ export function Layout(props: LayoutProps & Record<string, any>) {
 
   return (
     <div className={["app-shell", (props as any)?.className].filter(Boolean).join(" ")} data-component="app-shell" style={(props as any)?.style} data-qoder-id={(props as any)?.["data-qoder-id"]} data-qoder-source={(props as any)?.["data-qoder-source"]}>
-      <Sidebar activePage={props.activePage} onNavigate={props.onPageChange}  data-qoder-id="qel-sidebar-2c38f8f1" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-sidebar-2c38f8f1&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Layout&quot;,&quot;elementRole&quot;:&quot;sidebar&quot;,&quot;loc&quot;:{&quot;line&quot;:249,&quot;column&quot;:7}}"/>
+      <Sidebar activePage={props.activePage} onNavigate={props.onPageChange} badges={props.navBadges}  data-qoder-id="qel-sidebar-2c38f8f1" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-sidebar-2c38f8f1&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Layout&quot;,&quot;elementRole&quot;:&quot;sidebar&quot;,&quot;loc&quot;:{&quot;line&quot;:249,&quot;column&quot;:7}}"/>
       <div className="app-main" data-component="app-main" data-qoder-id="qel-app-main-721867b0" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-app-main-721867b0&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Layout&quot;,&quot;elementRole&quot;:&quot;app-main&quot;,&quot;loc&quot;:{&quot;line&quot;:250,&quot;column&quot;:7}}">
         <Toolbar
           scriptName={props.scriptName}

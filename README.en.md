@@ -88,12 +88,15 @@ If GitHub is slow, use the [domestic download mirror (Quark Drive)](./docs/domes
 - Follow OS, game, site, and software terms, and applicable law; misuse is your responsibility
 - Scripts stay **local**; the app does not upload them to a cloud service
 - Emergency-stop hotkey is configurable; confirm it works before long runs
+- A key bound as a global hotkey is taken over system-wide: pressing it in a game or another program only triggers KeyMouse Studio and no longer types what it used to. Prefer F-keys or Ctrl / Alt combinations
+- Script hotkeys and the run buttons in the list run the **saved** script; save editor changes first
 
 ## Not working in a game?
 
 - **Run as administrator**: many games (or their launchers) run elevated, and Windows blocks input sent from a non-elevated app. The task pauses with a warning; right-click KeyMouse Studio → **Run as administrator** and try again
 - **Keys and clicks**: keys are sent as hardware scan codes and mouse clicks are held briefly (about 30 ms), so games that read DirectInput / Raw Input or poll input once per frame can see them. Scripts recorded with older versions do not need to be re-recorded
 - **3D camera movement**: first/third-person games turn the camera from relative mouse motion, not cursor positions. Before recording, set **鼠标移动录制方式** (mouse movement mode) on the Recording page to **游戏视角（相对移动）** (game camera, relative), or add a **视角移动** (camera move) action in the script editor with a distance and duration. Recordings store raw mouse motion, so keep the same in-game sensitivity when recording and replaying
+- **A hotkey does nothing in one particular game**: a few games block system-wide hotkeys. Switch out of the game and use the buttons instead; the emergency stop (F12 by default) uses a different key listener and usually still works. Please report the game in an Issue
 - **Games with anti-cheat**: some games deliberately ignore synthesized input. KeyMouse Studio provides no way around this, and automating such games may break their terms of service
 
 ## Support the project

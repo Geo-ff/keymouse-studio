@@ -87,6 +87,10 @@ function summarizeAction(a: ScriptAction): string {
   }
 }
 
+function defaultRecordingName(): string {
+  return `录制脚本 ${new Date().toLocaleString('zh-CN')}`;
+}
+
 interface RecordingProps {
   onNavigate: (page: PageId) => void;
   onActionsSaved: (actions: ScriptAction[], name: string) => Promise<void>;
@@ -97,7 +101,10 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
   const toast = useToast();
   const [pending, setPending] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
-  const [scriptName, setScriptName] = useState('');
+  // Coming back to an unsaved recording: offer a name so it can be saved right away.
+  const [scriptName, setScriptName] = useState(() =>
+    state.recordingState === 'stopped' && state.recordingActions.length > 0 ? defaultRecordingName() : '',
+  );
   const [displayTime, setDisplayTime] = useState(0);
   const [prefs, setPrefs] = usePersistedFormState<RecordingPrefs>(RECORDING_PREFS_KEY, RECORDING_PREFS_DEFAULTS);
   const displayTimeRef = useRef(0);
@@ -114,7 +121,10 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
       state.snapshot.operationType === 'recording' &&
       (state.recordingState === 'recording' || state.recordingState === 'paused');
     if (recordingActive) return;
-    if (state.recordingState === 'idle' && state.recordingActions.length === 0) return;
+    // An unsaved result stays until the user saves or discards it (saving clears the workspace).
+    // Only an empty leftover workspace is reset here.
+    if (state.recordingActions.length > 0) return;
+    if (state.recordingState === 'idle') return;
     void discardRecording();
     setScriptName('');
     displayTimeRef.current = 0;
@@ -142,7 +152,7 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
     if (pending) return;
     setPending(true);
     try {
-      setScriptName(`录制脚本 ${new Date().toLocaleString('zh-CN')}`);
+      setScriptName(defaultRecordingName());
       displayTimeRef.current = 0;
       setDisplayTime(0);
       const countdownMs = resolveCountdownMs(settings);
@@ -193,11 +203,13 @@ export function Recording({ onNavigate, onActionsSaved, ...qoderProps }: Recordi
       }
       const result = await getRecordingResult(stopped.recordingResultId);
       await onActionsSaved(result.actions, scriptName.trim());
+      // Saved: clear the workspace so the page starts fresh next time.
+      await discardRecording();
       onNavigate('script');
     } finally {
       setPending(false);
     }
-  }, [pending, scriptName, stopRecording, getRecordingResult, onActionsSaved, onNavigate, state.recordingState]);
+  }, [pending, scriptName, stopRecording, getRecordingResult, onActionsSaved, discardRecording, onNavigate, state.recordingState]);
 
   const handleDiscard = useCallback(async () => {
     if (pending) return;

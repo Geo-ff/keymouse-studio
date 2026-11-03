@@ -396,3 +396,51 @@ async def test_mouse_click_action_holds_button_even_at_high_speed(tmp_path: Path
     assert stamps[3] - stamps[2] >= hold_ns
     assert adapter.pressed == set()
     worker.close()
+
+
+@pytest.mark.asyncio
+async def test_playback_rejects_chord_key_actions_before_starting(tmp_path: Path) -> None:
+    adapter = FakeInputAdapter()
+    worker = InputWorker(adapter)
+    operations = OperationService(EventService(1))
+    scripts = ScriptService(JsonScriptRepository(tmp_path / "scripts"))
+    service = PlaybackService(operations, scripts, worker, MonotonicClock(), 2)
+    script = Script.model_validate(
+        {
+            "id": "00000000-0000-0000-0000-000000000001",
+            "name": "Copy",
+            "createdAt": "2026-07-14T00:00:00Z",
+            "updatedAt": "2026-07-14T00:00:00Z",
+            "settings": {"countdownMs": 0},
+            "actions": [
+                {
+                    "id": "00000000-0000-0000-0000-000000000002",
+                    "type": "key_down",
+                    "payload": {"keyCode": "Enter"},
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000003",
+                    "type": "key_down",
+                    "enabled": False,
+                    "payload": {"keyCode": "Alt+Tab"},
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000004",
+                    "type": "key_up",
+                    "payload": {"keyCode": "Ctrl+C"},
+                },
+            ],
+        }
+    )
+
+    with pytest.raises(AppError) as raised:
+        await service.start(PlaybackRequest(inline_script=script, countdown_ms=0))
+
+    assert raised.value.status_code == 422
+    assert "第 3 个动作" in raised.value.message
+    assert "Ctrl+C" in raised.value.message
+    assert raised.value.details["actionIndex"] == 2
+    # Nothing was pressed and no operation is left running.
+    assert adapter.actions == []
+    assert operations.state == EngineState.IDLE
+    worker.close()

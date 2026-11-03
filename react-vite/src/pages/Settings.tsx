@@ -13,6 +13,7 @@ import {
   eventToHotkey,
   findHotkeyConflict,
   formatHotkeyLabel,
+  globalHotkeyWarning,
   hotkeyFieldLabel,
   normalizeHotkeyDisplay,
 } from '../utils/hotkey';
@@ -92,6 +93,8 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
     }
     setHotkeyDrafts(prev => ({ ...prev, [field]: normalized }));
     onUpdate({ [field]: normalized });
+    const warning = globalHotkeyWarning(normalized);
+    if (warning) toast.info(warning);
   };
 
   const clearHotkey = (field: HotkeyField) => {

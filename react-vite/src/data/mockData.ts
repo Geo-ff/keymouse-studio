@@ -1,7 +1,8 @@
 import type { ActionType, MouseButton, Script, ScriptAction } from '../types';
+import { expandKeyPress } from '../utils/keyActions';
 
 export const genId = () => crypto.randomUUID();
-const KEYS = ['Enter', 'Tab', 'Escape', 'Space', 'Backspace', 'Delete', 'Ctrl+C', 'Ctrl+V', 'Ctrl+A', 'Ctrl+S', 'Alt+Tab', 'Win+D', 'F5'];
+const KEYS = ['Enter', 'Tab', 'Escape', 'Space', 'Backspace', 'Delete', 'F5', 'a', 'c', 'v'];
 const buttons: MouseButton[] = ['left', 'right', 'middle'];
 const randInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 export const randomKey = () => KEYS[randInt(0, KEYS.length - 1)];
@@ -40,9 +41,13 @@ const now = Date.now();
 const date = (offset: number) => new Date(now - offset).toISOString();
 const move = (x: number, y: number, delayBeforeMs = 0): ScriptAction => ({ id: genId(), enabled: true, delayBeforeMs, type: 'mouse_move', payload: { x, y, durationMs: 0 } });
 const click = (x: number, y: number, count: 1 | 2 = 1, delayBeforeMs = 200): ScriptAction => ({ id: genId(), enabled: true, delayBeforeMs, type: 'mouse_click', payload: { button: 'left', clickCount: count, x, y, intervalMs: 0 } });
-const key = (type: 'key_down' | 'key_up', keyCode: string, delayBeforeMs = 100): ScriptAction => type === 'key_down'
-  ? { id: genId(), enabled: true, delayBeforeMs, type, payload: { keyCode, scanCode: null, extended: false } }
-  : { id: genId(), enabled: true, delayBeforeMs, type, payload: { keyCode, scanCode: null, extended: false } };
+const CHORD_KEYS: Record<string, string> = { ctrl: 'ctrl', alt: 'alt', shift: 'shift', win: 'win', escape: 'esc' };
+/** A key or chord ("Ctrl+C") as its press-and-release action sequence. */
+const press = (chord: string, delayBeforeMs = 100): ScriptAction[] =>
+  expandKeyPress(
+    chord.split('+').map(part => ({ keyCode: CHORD_KEYS[part.toLowerCase()] ?? part.toLowerCase(), scanCode: null, extended: false })),
+    delayBeforeMs,
+  );
 const wait = (durationMs: number): ScriptAction => ({ id: genId(), enabled: true, delayBeforeMs: 0, type: 'wait', payload: { durationMs } });
 const wheel = (deltaY: number, delayBeforeMs = 300): ScriptAction => ({ id: genId(), enabled: true, delayBeforeMs, type: 'mouse_wheel', payload: { deltaX: 0, deltaY } });
 const settings = { speedMultiplier: 1, loopMode: 'count' as const, loopCount: 1, countdownMs: 3000 };
@@ -62,10 +67,10 @@ export function createEmptyScript(): Script {
 }
 
 export const mockScripts: Script[] = [
-  { schemaVersion: 1, id: '00000000-0000-4000-8000-000000000001', name: '浏览器自动刷新页面', description: '打开浏览器并定时刷新当前页面', createdAt: date(259200000), updatedAt: date(3600000), settings, actions: [move(100, 100), click(100, 100), wait(1000), key('key_down', 'F5', 500), key('key_up', 'F5', 50), wait(2000), move(960, 540, 300), wheel(-300, 200), wait(500), click(960, 540)] },
-  { schemaVersion: 1, id: '00000000-0000-4000-8000-000000000002', name: 'Excel 表格批量填写', description: '在 Excel 中自动填写数据并切换单元格', createdAt: date(604800000), updatedAt: date(172800000), settings, actions: [click(300, 200, 1, 0), key('key_down', 'Ctrl+A'), key('key_up', 'Ctrl+A'), key('key_down', 'Delete'), key('key_up', 'Delete'), key('key_down', 'Tab'), key('key_up', 'Tab'), key('key_down', 'Enter'), key('key_up', 'Enter'), wait(500)] },
-  { schemaVersion: 1, id: '00000000-0000-4000-8000-000000000003', name: '定时检查并点击按钮', description: '每 30 秒检查界面并点击指定位置按钮', createdAt: date(1209600000), updatedAt: date(432000000), settings, actions: [move(800, 600), click(800, 600), wait(30000), move(950, 500), click(950, 500, 2), key('key_down', 'Escape'), key('key_up', 'Escape')] },
-  { schemaVersion: 1, id: '00000000-0000-4000-8000-000000000004', name: '快捷键工作流', description: '使用键盘快捷键完成一系列操作', createdAt: date(86400000), updatedAt: date(7200000), settings, actions: [key('key_down', 'Win+D', 0), key('key_up', 'Win+D'), wait(500), key('key_down', 'Ctrl+C'), key('key_up', 'Ctrl+C'), key('key_down', 'Alt+Tab'), key('key_up', 'Alt+Tab'), key('key_down', 'Ctrl+V'), key('key_up', 'Ctrl+V')] },
+  { schemaVersion: 1, id: '00000000-0000-4000-8000-000000000001', name: '浏览器自动刷新页面', description: '打开浏览器并定时刷新当前页面', createdAt: date(259200000), updatedAt: date(3600000), settings, actions: [move(100, 100), click(100, 100), wait(1000), ...press('F5', 500), wait(2000), move(960, 540, 300), wheel(-300, 200), wait(500), click(960, 540)] },
+  { schemaVersion: 1, id: '00000000-0000-4000-8000-000000000002', name: 'Excel 表格批量填写', description: '在 Excel 中自动填写数据并切换单元格', createdAt: date(604800000), updatedAt: date(172800000), settings, actions: [click(300, 200, 1, 0), ...press('Ctrl+A'), ...press('Delete'), ...press('Tab'), ...press('Enter'), wait(500)] },
+  { schemaVersion: 1, id: '00000000-0000-4000-8000-000000000003', name: '定时检查并点击按钮', description: '每 30 秒检查界面并点击指定位置按钮', createdAt: date(1209600000), updatedAt: date(432000000), settings, actions: [move(800, 600), click(800, 600), wait(30000), move(950, 500), click(950, 500, 2), ...press('Escape')] },
+  { schemaVersion: 1, id: '00000000-0000-4000-8000-000000000004', name: '快捷键工作流', description: '使用键盘快捷键完成一系列操作', createdAt: date(86400000), updatedAt: date(7200000), settings, actions: [...press('Win+D', 0), wait(500), ...press('Ctrl+C'), ...press('Alt+Tab'), ...press('Ctrl+V')] },
   { schemaVersion: 1, id: '00000000-0000-4000-8000-000000000005', name: '网页自动滚动浏览', description: '模拟用户浏览网页时的滚动行为', createdAt: date(864000000), updatedAt: date(259200000), settings, actions: [move(960, 540), wheel(-300, 500), wait(800), wheel(-300), wait(800), wheel(-200), wait(1000), click(1200, 400), wait(2000), wheel(500)] },
 ];
 

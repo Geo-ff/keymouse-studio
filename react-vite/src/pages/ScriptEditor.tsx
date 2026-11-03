@@ -36,11 +36,16 @@ import { usePageHotkeys } from '../hooks/usePageHotkeys';
 
 import { Button, IconButton, Toggle, Input, Select, RadioGroup, EmptyState, ProgressBar } from '../components/ui';
 import { formatDuration, formatTime, createAction, createEmptyScript } from '../data/mockData';
-import type { ScriptAction, ActionType, MouseButton, Script, PlaybackOptions, EditorLoopMode } from '../types';
+import type { ScriptAction, ActionType, MouseButton, Script, PlaybackOptions, EditorLoopMode, KeySpec } from '../types';
 import { genId } from '../services/AutomationService';
 import type { PageId } from '../components/Layout';
 import { showSystemAlert } from '../utils/systemAlert';
 import { buildPlaybackOptionsFromEditor } from '../utils/playbackOptions';
+import { KeyCaptureInput } from '../components/KeyCaptureInput';
+import { KeyComboDialog } from '../components/KeyComboDialog';
+import { isPlayableKeyCode } from '../utils/keySpec';
+import { expandKeyPress, keyActionLabel, updateActionWithKeyPartner } from '../utils/keyActions';
+import { formatHotkeyLabel } from '../utils/hotkey';
 
 const ACTION_ICONS: Record<ActionType, typeof MousePointer> = {
   mouse_move: MousePointer,
@@ -78,13 +83,14 @@ const ACTION_LABELS: Record<ActionType, string> = {
   wait: '等待',
 };
 
-const KEYS = ['Enter', 'Tab', 'Escape', 'Space', 'Backspace', 'Delete', 'Ctrl+C', 'Ctrl+V', 'Ctrl+A', 'Ctrl+S', 'Alt+Tab', 'Win+D', 'F5', 'Shift+Tab'];
 
 interface ScriptEditorProps {
   script: Script;
   onScriptChange: (script: Script) => void;
   onScriptSave: (script: Script) => Promise<void>;
   onNavigate: (page: PageId) => void;
+  /** The open script differs from what is saved (hotkeys run the saved version). */
+  hasUnsavedChanges?: boolean;
   /** Keep latest editor playback options for global hotkeys outside this page. */
   onPlaybackOptionsChange?: (options: PlaybackOptions) => void;
 }
@@ -97,8 +103,11 @@ function summarizeAction(a: ScriptAction): string {
     case 'mouse_button_up': return `${a.payload.button === 'left' ? '左' : a.payload.button === 'right' ? '右' : '中'}键释放`;
     case 'mouse_click': return `${a.payload.button === 'left' ? '左' : a.payload.button === 'right' ? '右' : '中'}键${a.payload.clickCount === 2 ? '双击' : '单击'} (${a.payload.x ?? '当前'}, ${a.payload.y ?? '当前'})`;
     case 'mouse_wheel': return `滚动 ${a.payload.deltaY > 0 ? '↓' : '↑'} ${Math.abs(a.payload.deltaY)}`;
-    case 'key_down': return `按下 ${a.payload.keyCode}`;
-    case 'key_up': return `释放 ${a.payload.keyCode}`;
+    case 'key_down':
+    case 'key_up': {
+      const text = `${a.type === 'key_down' ? '按下' : '释放'} ${keyActionLabel(a.payload)}`;
+      return isPlayableKeyCode(a.payload.keyCode, a.payload.scanCode) ? text : `⚠ ${text}（无法回放，请重新设置按键）`;
+    }
     case 'wait': return formatDuration(a.payload.durationMs);
   }
 }
@@ -109,6 +118,7 @@ export function ScriptEditor({
   onScriptSave,
   onNavigate,
   onPlaybackOptionsChange,
+  hasUnsavedChanges = false,
   ...qoderProps
 }: ScriptEditorProps & Record<string, any>) {
   const { playback, pausePlayback, resumePlayback, stopPlayback, state, settings } = useService();
@@ -118,6 +128,7 @@ export function ScriptEditor({
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
+  const [showKeyComboDialog, setShowKeyComboDialog] = useState(false);
   const [loopMode, setLoopMode] = useState<EditorLoopMode>(
     script.settings.loopMode === 'infinite' ? 'infinite' : 'count',
   );
@@ -253,8 +264,18 @@ export function ScriptEditor({
     setShowAddMenu(false);
   }, [actions, updateActions]);
 
+  /** Insert a key or chord as a press-and-release sequence. */
+  const addKeyPress = useCallback((keys: KeySpec[]) => {
+    if (!keys.length) return;
+    const inserted = expandKeyPress(keys);
+    updateActions([...actions, ...inserted]);
+    setEditingId(inserted[0].id);
+    setShowKeyComboDialog(false);
+  }, [actions, updateActions]);
+
   const updateAction = useCallback((id: string, updated: ScriptAction) => {
-    updateActions(actions.map(action => action.id === id ? updated : action));
+    // Changing a pressed key also changes its matching release (and vice versa).
+    updateActions(updateActionWithKeyPartner(actions, id, updated));
   }, [actions, updateActions]);
 
   /* --- Delete --- */
@@ -388,6 +409,11 @@ export function ScriptEditor({
 
   return (
     <div style={{ ...({ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }), ...((qoderProps as any)?.style) }} className={(qoderProps as any)?.className} data-qoder-id={(qoderProps as any)?.["data-qoder-id"]} data-qoder-source={(qoderProps as any)?.["data-qoder-source"]}>
+      <KeyComboDialog
+        open={showKeyComboDialog}
+        onConfirm={addKeyPress}
+        onCancel={() => setShowKeyComboDialog(false)}
+      />
       {/* 顶部工具栏 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }} data-qoder-id="qel-div-ff004509" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-ff004509&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:275,&quot;column&quot;:7}}">
         <Button variant="secondary" size="sm" icon={<FilePlus2 size={13}  data-qoder-id="qel-fileplus2-4b671153" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-fileplus2-4b671153&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;fileplus2&quot;,&quot;loc&quot;:{&quot;line&quot;:276,&quot;column&quot;:53}}"/>} onClick={() => { onScriptChange(createEmptyScript()); setActions([]); setEditingId(null); setSelectedIds(new Set()); }} data-qoder-id="qel-button-874a436e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-874a436e&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:276,&quot;column&quot;:9}}">
@@ -407,6 +433,11 @@ export function ScriptEditor({
         <Button variant="secondary" size="sm" icon={<SaveIcon size={13}  data-qoder-id="qel-saveicon-7eb7f443" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-saveicon-7eb7f443&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;saveicon&quot;,&quot;loc&quot;:{&quot;line&quot;:282,&quot;column&quot;:53}}"/>} onClick={handleSave} data-qoder-id="qel-button-8b4a49ba" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-8b4a49ba&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:282,&quot;column&quot;:9}}">
           保存
         </Button>
+        {script.id && settings.scriptHotkeys[script.id] && hasUnsavedChanges && (
+          <span className="text-sm" style={{ color: 'var(--color-paused)' }} title="快捷键和列表中的运行按钮使用已保存的版本">
+            未保存：快捷键 {formatHotkeyLabel(settings.scriptHotkeys[script.id])} 仍运行上次保存的版本
+          </span>
+        )}
         <div className="toolbar-divider"  data-qoder-id="qel-toolbar-divider-c90f2a74" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toolbar-divider-c90f2a74&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;toolbar-divider&quot;,&quot;loc&quot;:{&quot;line&quot;:285,&quot;column&quot;:9}}"/>
         <Button variant="danger" size="sm" icon={<Circle size={13} fill="currentColor"  data-qoder-id="qel-circle-481671cb" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-circle-481671cb&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;circle&quot;,&quot;loc&quot;:{&quot;line&quot;:286,&quot;column&quot;:50}}"/>} onClick={() => onNavigate('recording')} data-qoder-id="qel-button-4be37ce8" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-4be37ce8&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:286,&quot;column&quot;:9}}">
           录制
@@ -556,6 +587,25 @@ export function ScriptEditor({
                   </button>
                 );
               })}
+              <div style={{ borderTop: '1px solid var(--color-border-subtle)', margin: '4px 0' }} />
+              <button
+                onClick={() => { setShowAddMenu(false); setShowKeyComboDialog(true); }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--space-sm)',
+                  padding: 'var(--space-xs) var(--space-md)',
+                  width: '100%',
+                  textAlign: 'left',
+                  fontSize: 'var(--fs-base)',
+                  transition: 'background 120ms',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-bg-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.background = '')}
+              >
+                <Keyboard size={14} style={{ color: 'var(--color-running)' }} />
+                按键 / 组合键…
+              </button>
             </div>
           )}
         </div>
@@ -800,11 +850,23 @@ function PropertyEditor({ action, onUpdate, ...qoderProps }: { action: ScriptAct
 
       {/* 键盘按键 */}
       {(action.type === 'key_down' || action.type === 'key_up') && (
-        <div className="prop-group" data-qoder-id="qel-prop-group-cf2bd269" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-prop-group-cf2bd269&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;prop-group&quot;,&quot;loc&quot;:{&quot;line&quot;:647,&quot;column&quot;:9}}">
-          <span className="prop-label" data-qoder-id="qel-prop-label-504160ba" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-prop-label-504160ba&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;prop-label&quot;,&quot;loc&quot;:{&quot;line&quot;:648,&quot;column&quot;:11}}">按键</span>
-          <Select value={action.payload.keyCode} onChange={e => onUpdate({ ...action, payload: { ...action.payload, keyCode: e.target.value, scanCode: null, extended: false } })} data-qoder-id="qel-select-a70ed73b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-select-a70ed73b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;select&quot;,&quot;loc&quot;:{&quot;line&quot;:649,&quot;column&quot;:11}}">
-            {KEYS.map(k => <option key={k} value={k} data-qoder-id="qel-option-a6328a1b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-option-a6328a1b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;option&quot;,&quot;loc&quot;:{&quot;line&quot;:650,&quot;column&quot;:28}}">{k}</option>)}
-          </Select>
+        <div className="prop-group">
+          <span className="prop-label">按键</span>
+          <KeyCaptureInput
+            mode="single"
+            value={[action.payload]}
+            invalid={!isPlayableKeyCode(action.payload.keyCode, action.payload.scanCode)}
+            onCapture={([key]) => onUpdate({ ...action, payload: { ...action.payload, keyCode: key.keyCode, scanCode: null, extended: key.extended } })}
+          />
+          {!isPlayableKeyCode(action.payload.keyCode, action.payload.scanCode) && (
+            <span className="text-sm" style={{ color: 'var(--color-danger)' }}>
+              「{action.payload.keyCode}」无法回放：一个动作只能对应一个按键，请点击上方重新设置。
+            </span>
+          )}
+          <span className="text-sm text-tertiary">
+            点击后按下一个按键；与之配对的{action.type === 'key_down' ? '释放' : '按下'}动作会一起更新。
+            组合键（如 Ctrl+C）请用「添加动作 → 按键 / 组合键」。
+          </span>
         </div>
       )}
 

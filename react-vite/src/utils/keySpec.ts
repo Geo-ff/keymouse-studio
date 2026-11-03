@@ -154,3 +154,42 @@ export function findControlHotkeyConflict(
   }
   return null;
 }
+/**
+ * One physical key for a key_down / key_up action. Unlike {@link eventToKeySpecs} this accepts
+ * a modifier on its own (Ctrl, Shift…) and punctuation, and ignores held modifiers.
+ */
+export function eventToSingleKeySpec(event: KeyboardEvent): KeySpec | null {
+  const mapped = CODE_TO_KEY[event.code];
+  if (mapped) return { keyCode: mapped.keyCode, scanCode: null, extended: Boolean(mapped.extended) };
+  const spec = codeFromEvent(event);
+  if (spec) return spec;
+  if ([...event.key].length === 1 && event.key.trim()) {
+    return { keyCode: event.key.toLowerCase(), scanCode: null, extended: false };
+  }
+  return null;
+}
+
+// Mirrors the backend's key-code validation (key_codes.validate_key_code).
+const PLAYABLE_NAMED_KEYS = new Set([
+  'alt', 'alt_l', 'alt_r', 'backspace', 'caps_lock', 'ctrl', 'ctrl_l', 'ctrl_r', 'delete', 'down',
+  'end', 'enter', 'esc', 'home', 'insert', 'left', 'page_down', 'page_up', 'right', 'shift',
+  'shift_l', 'shift_r', 'space', 'tab', 'up', 'win', 'win_l', 'win_r', 'cmd', 'cmd_l', 'cmd_r',
+  'meta',
+  ...Array.from({ length: 24 }, (_, index) => `f${index + 1}`),
+]);
+const PLAYABLE_ALIASES = new Set([
+  'escape', 'return', 'spacebar', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'pageup',
+  'pagedown', 'control',
+]);
+
+/** Whether playback can press this key. Combined values such as "Ctrl+C" cannot be pressed. */
+export function isPlayableKeyCode(keyCode: string, scanCode: number | null = null): boolean {
+  const trimmed = keyCode.trim();
+  if (!trimmed) return false;
+  if (scanCode !== null && scanCode !== undefined) return true;
+  const raw = trimmed.toLowerCase().replace(/-/g, '_');
+  if (PLAYABLE_NAMED_KEYS.has(raw)) return true;
+  if (PLAYABLE_ALIASES.has(raw) || PLAYABLE_ALIASES.has(raw.replace(/_/g, ''))) return true;
+  if (/^vk_\d+$/.test(raw)) return true;
+  return [...trimmed].length === 1;
+}

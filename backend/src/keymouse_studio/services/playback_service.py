@@ -20,6 +20,7 @@ from keymouse_studio.api.schemas.scripts import Script
 from keymouse_studio.domain.enums import EngineState, LoopMode, OperationType
 from keymouse_studio.domain.errors import AppError, ErrorCode
 from keymouse_studio.infrastructure.input.adapter import InputWorker, ReleaseResult
+from keymouse_studio.infrastructure.input.key_codes import validate_key_code
 from keymouse_studio.infrastructure.system.clock import Clock
 from keymouse_studio.infrastructure.system.privilege import (
     AlwaysAllowPrivilegeChecker,
@@ -82,6 +83,7 @@ class PlaybackService:
                 "回放脚本至少需要一个可执行动作",
                 status_code=422,
             )
+        _reject_unplayable_keys(script)
         countdown_ms = request.countdown_ms
         if countdown_ms is None:
             countdown_ms = script.settings.countdown_ms
@@ -613,3 +615,29 @@ class PlaybackService:
             with suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
+
+
+def _reject_unplayable_keys(script: Script) -> None:
+    """Fail before playback starts instead of in the middle of a run.
+
+    Older editors offered chords such as "Ctrl+C" as a single key action, which can never be
+    pressed; name the action so the user can fix it.
+    """
+    for position, action in enumerate(script.actions, start=1):
+        if not action.enabled or not isinstance(action, KeyDownAction | KeyUpAction):
+            continue
+        try:
+            validate_key_code(action.payload.key_code, action.payload.scan_code)
+        except ValueError:
+            raise AppError(
+                ErrorCode.VALIDATION_ERROR,
+                f"第 {position} 个动作的按键「{action.payload.key_code}」无法回放: "
+                "一个动作只能对应一个按键。请在脚本编辑器中重新设置该按键, "
+                "组合键请用「添加动作 → 按键 / 组合键」。",
+                status_code=422,
+                details={
+                    "actionIndex": position - 1,
+                    "actionId": str(action.id),
+                    "keyCode": action.payload.key_code,
+                },
+            ) from None
