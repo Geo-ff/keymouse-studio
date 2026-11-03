@@ -1,4 +1,5 @@
 from typing import Annotated, Literal
+from uuid import UUID
 
 from pydantic import Field, field_validator, model_validator
 
@@ -95,6 +96,33 @@ def normalize_optional_hotkey(value: str) -> str:
     return normalize_hotkey(trimmed)
 
 
+MAX_SCRIPT_HOTKEYS = 100
+OPTIONAL_HOTKEY_FIELDS = (
+    "record_start_hotkey",
+    "record_stop_hotkey",
+    "playback_start_hotkey",
+    "playback_stop_hotkey",
+    "clicker_toggle_hotkey",
+)
+ScriptHotkeys = Annotated[dict[UUID, str], Field(max_length=MAX_SCRIPT_HOTKEYS)]
+
+
+def normalize_script_hotkeys(value: dict[UUID, str]) -> dict[UUID, str]:
+    """Normalize per-script hotkeys; an empty hotkey removes the binding."""
+    normalized: dict[UUID, str] = {}
+    for script_id, hotkey in value.items():
+        chord = normalize_optional_hotkey(hotkey)
+        if chord:
+            normalized[script_id] = chord
+    return normalized
+
+
+def ensure_unique_hotkeys(fixed: list[str], script_hotkeys: dict[UUID, str]) -> None:
+    values = [item for item in fixed if item] + list(script_hotkeys.values())
+    if len(values) != len(set(values)):
+        raise ValueError("快捷键不能重复配置")
+
+
 class ApplicationSettings(ApiModel):
     default_speed_multiplier: Annotated[float, Field(gt=0, le=100)] = 1.0
     default_loop_mode: LoopMode = LoopMode.COUNT
@@ -105,35 +133,39 @@ class ApplicationSettings(ApiModel):
     record_stop_hotkey: str = ""
     playback_start_hotkey: str = ""
     playback_stop_hotkey: str = ""
+    clicker_toggle_hotkey: str = ""
+    script_hotkeys: ScriptHotkeys = Field(default_factory=dict)
 
     @field_validator("emergency_stop_hotkey")
     @classmethod
     def validate_emergency_stop_hotkey(cls, value: str) -> str:
         return normalize_hotkey(value)
 
-    @field_validator(
-        "record_start_hotkey",
-        "record_stop_hotkey",
-        "playback_start_hotkey",
-        "playback_stop_hotkey",
-    )
+    @field_validator(*OPTIONAL_HOTKEY_FIELDS)
     @classmethod
     def validate_optional_hotkey(cls, value: str) -> str:
         return normalize_optional_hotkey(value)
 
+    @field_validator("script_hotkeys")
+    @classmethod
+    def validate_script_hotkeys(cls, value: dict[UUID, str]) -> dict[UUID, str]:
+        return normalize_script_hotkeys(value)
+
     @model_validator(mode="after")
     def validate_unique_hotkeys(self) -> "ApplicationSettings":
-        values = [
+        ensure_unique_hotkeys(self.control_hotkeys(), self.script_hotkeys)
+        return self
+
+    def control_hotkeys(self) -> list[str]:
+        """Fixed (non per-script) global hotkeys, in a stable order; empty means unset."""
+        return [
             self.emergency_stop_hotkey,
             self.record_start_hotkey,
             self.record_stop_hotkey,
             self.playback_start_hotkey,
             self.playback_stop_hotkey,
+            self.clicker_toggle_hotkey,
         ]
-        non_empty = [item for item in values if item]
-        if len(non_empty) != len(set(non_empty)):
-            raise ValueError("快捷键不能重复配置")
-        return self
 
 
 class ApplicationSettingsUpdate(ApiModel):
@@ -146,34 +178,37 @@ class ApplicationSettingsUpdate(ApiModel):
     record_stop_hotkey: str = ""
     playback_start_hotkey: str = ""
     playback_stop_hotkey: str = ""
+    clicker_toggle_hotkey: str = ""
+    script_hotkeys: ScriptHotkeys = Field(default_factory=dict)
 
     @field_validator("emergency_stop_hotkey")
     @classmethod
     def validate_emergency_stop_hotkey(cls, value: str) -> str:
         return normalize_hotkey(value)
 
-    @field_validator(
-        "record_start_hotkey",
-        "record_stop_hotkey",
-        "playback_start_hotkey",
-        "playback_stop_hotkey",
-    )
+    @field_validator(*OPTIONAL_HOTKEY_FIELDS)
     @classmethod
     def validate_optional_hotkey(cls, value: str) -> str:
         return normalize_optional_hotkey(value)
 
+    @field_validator("script_hotkeys")
+    @classmethod
+    def validate_script_hotkeys(cls, value: dict[UUID, str]) -> dict[UUID, str]:
+        return normalize_script_hotkeys(value)
+
     @model_validator(mode="after")
     def validate_unique_hotkeys(self) -> "ApplicationSettingsUpdate":
-        values = [
-            self.emergency_stop_hotkey,
-            self.record_start_hotkey,
-            self.record_stop_hotkey,
-            self.playback_start_hotkey,
-            self.playback_stop_hotkey,
-        ]
-        non_empty = [item for item in values if item]
-        if len(non_empty) != len(set(non_empty)):
-            raise ValueError("快捷键不能重复配置")
+        ensure_unique_hotkeys(
+            [
+                self.emergency_stop_hotkey,
+                self.record_start_hotkey,
+                self.record_stop_hotkey,
+                self.playback_start_hotkey,
+                self.playback_stop_hotkey,
+                self.clicker_toggle_hotkey,
+            ],
+            self.script_hotkeys,
+        )
         return self
 
     def to_settings(self) -> ApplicationSettings:

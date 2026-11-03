@@ -12,10 +12,12 @@ import {
   Clock,
   ListChecks,
   ArrowRight,
+  Square,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useService } from '../hooks/useService';
-import { Button, StatusBadge, EmptyState } from '../components/ui';
+import { Button, StatusBadge, EmptyState, IconButton } from '../components/ui';
+import { formatHotkeyLabel } from '../utils/hotkey';
 import type { PageId } from '../components/Layout';
 import { formatDuration, calcScriptDuration } from '../data/mockData';
 import type { RunState, Script } from '../types';
@@ -23,6 +25,8 @@ import type { RunState, Script } from '../types';
 interface DashboardProps {
   onNavigate: (page: PageId) => void;
   onLoadScript: (script: Script) => void;
+  runningScriptId?: string | null;
+  onRunScript?: (scriptId: string) => void;
 }
 
 function QuickCard({ icon, title, desc, onClick, ...qoderProps }: { icon: ReactNode; title: string; desc: string; onClick: () => void } & Record<string, any>) {
@@ -41,8 +45,8 @@ function QuickCard({ icon, title, desc, onClick, ...qoderProps }: { icon: ReactN
   );
 }
 
-export function Dashboard({ onNavigate, onLoadScript, ...qoderProps }: DashboardProps & Record<string, any>) {
-  const { emergencyStop, loadScript, state, scripts } = useService();
+export function Dashboard({ onNavigate, onLoadScript, runningScriptId = null, onRunScript, ...qoderProps }: DashboardProps & Record<string, any>) {
+  const { emergencyStop, loadScript, state, scripts, settings } = useService();
   const recentScripts = scripts;
 
   const runStateMap: Record<RunState, 'idle' | 'running' | 'paused' | 'emergency'> = {
@@ -125,6 +129,7 @@ export function Dashboard({ onNavigate, onLoadScript, ...qoderProps }: Dashboard
                 <th data-qoder-id="qel-th-6c308465" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-th-6c308465&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;th&quot;,&quot;loc&quot;:{&quot;line&quot;:124,&quot;column&quot;:17}}">说明</th>
                 <th data-qoder-id="qel-th-65307960" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-th-65307960&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;th&quot;,&quot;loc&quot;:{&quot;line&quot;:125,&quot;column&quot;:17}}">动作数</th>
                 <th data-qoder-id="qel-th-66307af3" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-th-66307af3&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;th&quot;,&quot;loc&quot;:{&quot;line&quot;:126,&quot;column&quot;:17}}">总时长</th>
+                <th>快捷键</th>
                 <th data-qoder-id="qel-th-67307c86" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-th-67307c86&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;th&quot;,&quot;loc&quot;:{&quot;line&quot;:127,&quot;column&quot;:17}}">最后使用</th>
                 <th data-qoder-id="qel-th-68307e19" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-th-68307e19&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;th&quot;,&quot;loc&quot;:{&quot;line&quot;:128,&quot;column&quot;:17}}"></th>
               </tr>
@@ -136,11 +141,28 @@ export function Dashboard({ onNavigate, onLoadScript, ...qoderProps }: Dashboard
                   <td data-label="说明" className="text-secondary text-sm" data-qoder-id="qel-text-secondary-da34f020" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-secondary-da34f020&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;text-secondary&quot;,&quot;loc&quot;:{&quot;line&quot;:135,&quot;column&quot;:19}}">{script.description}</td>
                   <td data-label="动作数" className="text-mono" data-qoder-id="qel-text-mono-aab46098" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-mono-aab46098&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;text-mono&quot;,&quot;loc&quot;:{&quot;line&quot;:136,&quot;column&quot;:19}}">{script.actions.length}</td>
                   <td data-label="总时长" className="text-mono" data-qoder-id="qel-text-mono-abb4622b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-mono-abb4622b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;text-mono&quot;,&quot;loc&quot;:{&quot;line&quot;:137,&quot;column&quot;:19}}">{formatDuration(calcScriptDuration(script))}</td>
+                  <td data-label="快捷键">
+                    {settings.scriptHotkeys[script.id]
+                      ? <span className="kbd">{formatHotkeyLabel(settings.scriptHotkeys[script.id])}</span>
+                      : <span className="text-tertiary">—</span>}
+                  </td>
                   <td data-label="最后使用" className="text-sm text-tertiary" data-qoder-id="qel-text-sm-25c6ae5b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-25c6ae5b&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:138,&quot;column&quot;:19}}">
                     {new Date(script.updatedAt).toLocaleDateString('zh-CN')}
                   </td>
                   <td data-label="" data-qoder-id="qel-td-f6711404" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-td-f6711404&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;td&quot;,&quot;loc&quot;:{&quot;line&quot;:141,&quot;column&quot;:19}}">
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+                      {onRunScript && (
+                        <IconButton
+                          tooltip={runningScriptId === script.id ? '停止运行' : '运行'}
+                          aria-label={runningScriptId === script.id ? '停止运行' : '运行'}
+                          onClick={(event: React.MouseEvent) => { event.stopPropagation(); onRunScript(script.id); }}
+                          style={{ color: runningScriptId === script.id ? 'var(--color-danger)' : 'var(--color-running)' }}
+                        >
+                          {runningScriptId === script.id ? <Square size={14} fill="currentColor" /> : <Play size={14} />}
+                        </IconButton>
+                      )}
                     <ArrowRight size={14} className="text-tertiary"  data-qoder-id="qel-text-tertiary-94c0c19c" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-tertiary-94c0c19c&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Dashboard.tsx&quot;,&quot;componentName&quot;:&quot;Dashboard&quot;,&quot;elementRole&quot;:&quot;text-tertiary&quot;,&quot;loc&quot;:{&quot;line&quot;:142,&quot;column&quot;:21}}"/>
+                    </span>
                   </td>
                 </tr>
               ))}

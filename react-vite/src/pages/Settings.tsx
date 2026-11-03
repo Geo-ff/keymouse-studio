@@ -9,10 +9,11 @@ import { useService } from '../hooks/useService';
 import { Toggle, Input, Select, Button } from '../components/ui';
 import type { AppSettings } from '../types';
 import {
+  collectReservedHotkeys,
   eventToHotkey,
   findHotkeyConflict,
   formatHotkeyLabel,
-  HOTKEY_FIELD_LABELS,
+  hotkeyFieldLabel,
   normalizeHotkeyDisplay,
 } from '../utils/hotkey';
 import { isMockModeAllowed } from '../utils/runtime';
@@ -23,17 +24,18 @@ interface SettingsProps {
   onUpdate: (settings: Partial<AppSettings>) => void;
 }
 
-type HotkeyField = 'emergencyHotkey' | 'recordStartHotkey' | 'recordStopHotkey' | 'playbackStartHotkey' | 'playbackStopHotkey';
+type HotkeyField = 'emergencyHotkey' | 'recordStartHotkey' | 'recordStopHotkey' | 'playbackStartHotkey' | 'playbackStopHotkey' | 'clickerToggleHotkey';
 
 const HOTKEY_SUGGESTIONS = [
   { label: '开始录制', value: 'F9' },
   { label: '停止录制', value: 'F10' },
   { label: '开始回放', value: 'F5' },
   { label: '停止回放', value: 'F6' },
+  { label: '连点器开关', value: 'F8' },
 ];
 
 export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & Record<string, any>) {
-  const { mode, capabilities, hotkey } = useService();
+  const { mode, capabilities, hotkey, scripts } = useService();
   const toast = useToast();
   const [hotkeyDrafts, setHotkeyDrafts] = useState<Record<HotkeyField, string>>({
     emergencyHotkey: settings.emergencyHotkey,
@@ -41,6 +43,7 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
     recordStopHotkey: settings.recordStopHotkey,
     playbackStartHotkey: settings.playbackStartHotkey,
     playbackStopHotkey: settings.playbackStopHotkey,
+    clickerToggleHotkey: settings.clickerToggleHotkey,
   });
 
   useEffect(() => {
@@ -50,6 +53,7 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
       recordStopHotkey: settings.recordStopHotkey,
       playbackStartHotkey: settings.playbackStartHotkey,
       playbackStopHotkey: settings.playbackStopHotkey,
+      clickerToggleHotkey: settings.clickerToggleHotkey,
     });
   }, [
     settings.emergencyHotkey,
@@ -57,7 +61,15 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
     settings.recordStopHotkey,
     settings.playbackStartHotkey,
     settings.playbackStopHotkey,
+    settings.clickerToggleHotkey,
   ]);
+
+  /** All bound hotkeys (including per-script ones) with the editor drafts applied on top. */
+  const reservedWithDrafts = (overrides: Record<string, string>) => ({
+    ...collectReservedHotkeys(settings),
+    ...hotkeyDrafts,
+    ...overrides,
+  });
 
   const captureHotkey = (field: HotkeyField, e: React.KeyboardEvent) => {
     e.preventDefault();
@@ -73,12 +85,9 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
     const captured = eventToHotkey(e);
     if (!captured) return;
     const normalized = normalizeHotkeyDisplay(captured);
-    const conflictWith = findHotkeyConflict(field, normalized, {
-      ...hotkeyDrafts,
-      [field]: normalized,
-    });
+    const conflictWith = findHotkeyConflict(field, normalized, reservedWithDrafts({ [field]: normalized }));
     if (conflictWith) {
-      toast.error(`与「${HOTKEY_FIELD_LABELS[conflictWith] ?? conflictWith}」冲突, 请更换按键`);
+      toast.error(`与「${hotkeyFieldLabel(conflictWith, scripts)}」冲突, 请更换按键`);
       return;
     }
     setHotkeyDrafts(prev => ({ ...prev, [field]: normalized }));
@@ -100,14 +109,15 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
       recordStopHotkey: 'F10',
       playbackStartHotkey: 'F5',
       playbackStopHotkey: 'F6',
+      clickerToggleHotkey: 'F8',
     };
-    const merged: Record<string, string> = { ...hotkeyDrafts, ...next };
+    const merged: Record<string, string> = reservedWithDrafts(next as Record<string, string>);
     for (const field of Object.keys(next) as HotkeyField[]) {
       const value = next[field];
       if (!value) continue;
       const conflictWith = findHotkeyConflict(field, value, merged);
       if (conflictWith) {
-        toast.error(`推荐配置与「${HOTKEY_FIELD_LABELS[conflictWith] ?? conflictWith}」冲突`);
+        toast.error(`推荐配置与「${hotkeyFieldLabel(conflictWith, scripts)}」冲突`);
         return;
       }
     }
@@ -231,7 +241,7 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
       <div className="panel">
         <div className="panel-header">
           <span className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
-            <Keyboard size={14} /> 录制 / 回放快捷键
+            <Keyboard size={14} /> 全局快捷键
           </span>
           <Button size="sm" variant="secondary" onClick={applySuggestions}>应用推荐配置</Button>
         </div>
@@ -240,9 +250,12 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
           {renderHotkeyRow('recordStopHotkey', '停止录制')}
           {renderHotkeyRow('playbackStartHotkey', '开始回放')}
           {renderHotkeyRow('playbackStopHotkey', '停止回放')}
+          {renderHotkeyRow('clickerToggleHotkey', '连点器 开始/停止')}
           <div className="text-sm text-tertiary" style={{ paddingLeft: 140, lineHeight: 1.6 }}>
             默认为空。推荐：{HOTKEY_SUGGESTIONS.map(item => `${item.label} ${item.value}`).join(' · ')}。
-            可自定义任意功能键或 Ctrl/Alt/Shift 组合；请勿与急停热键冲突。当前为窗口内快捷键。
+            可自定义任意功能键或 Ctrl/Alt/Shift 组合；请勿与急停热键冲突。桌面版中这些快捷键在任何窗口都可触发。
+            连点器开关使用连点器页面最近一次的设置，按下立即开始（不倒计时），再按一次停止。
+            单个脚本的快捷键可在「脚本」页面的列表中设置。
           </div>
         </div>
       </div>

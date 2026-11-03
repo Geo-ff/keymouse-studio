@@ -43,18 +43,19 @@ If GitHub is slow, use the [domestic download mirror (Quark Drive)](./docs/domes
 1. Install and open the app
 2. Use the sidebar: **Auto-clicker / Timed / Recording / Scripts**, etc.
 3. Configure and start; use **Emergency stop** when needed (default **F12**)
-4. Menu **File → About & Check for Updates**, or the toolbar **About & Updates** button, for version, updates, and the official repository
+4. Trigger common actions from any window: set the clicker toggle under **设置 → 全局快捷键** (Settings → Global hotkeys) and per-script hotkeys in the **脚本** (Scripts) list (press to run, press again to stop; hotkey starts skip the countdown)
+5. Menu **File → About & Check for Updates**, or the toolbar **About & Updates** button, for version, updates, and the official repository
 
 ## Features
 
 | Feature | What it does |
 | --- | --- |
-| Auto-clicker | Click at a set interval (count or continuous; coordinates or current position) |
+| Auto-clicker | Click or press keys at a set interval (count or continuous; coordinates or current position); a toggle hotkey starts/stops it from inside a game |
 | Timed click | Click after a delay |
 | Recording | Capture keyboard/mouse input into an editable script |
 | Script editor | Add, edit, reorder, enable/disable actions |
 | Playback | Replay with speed and loops; pause / resume / stop |
-| Script manager | Save, load, duplicate, and delete local scripts |
+| Script manager | Save, load, duplicate, and delete local scripts; run one from the list and give frequent scripts their own hotkey |
 | Safety | Global emergency stop; best-effort release of held keys/buttons |
 | Auto-update | Checks for new versions after launch; manual check in About |
 

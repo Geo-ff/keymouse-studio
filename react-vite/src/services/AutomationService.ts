@@ -749,6 +749,10 @@ export class RealAutomationService extends AutomationServiceBase {
       recordStopHotkey: this.formatHotkeyFromBackend(backend.recordStopHotkey ?? ''),
       playbackStartHotkey: this.formatHotkeyFromBackend(backend.playbackStartHotkey ?? ''),
       playbackStopHotkey: this.formatHotkeyFromBackend(backend.playbackStopHotkey ?? ''),
+      clickerToggleHotkey: this.formatHotkeyFromBackend(backend.clickerToggleHotkey ?? ''),
+      scriptHotkeys: Object.fromEntries(
+        Object.entries(backend.scriptHotkeys ?? {}).map(([id, hotkey]) => [id, this.formatHotkeyFromBackend(hotkey)]),
+      ),
       countdownEnabled: backend.defaultCountdownMs > 0,
       countdownSeconds: backend.defaultCountdownMs / 1000,
       defaultSpeedMultiplier: backend.defaultSpeedMultiplier,
@@ -768,6 +772,12 @@ export class RealAutomationService extends AutomationServiceBase {
       recordStopHotkey: hotkeyToBackend(settings.recordStopHotkey),
       playbackStartHotkey: hotkeyToBackend(settings.playbackStartHotkey),
       playbackStopHotkey: hotkeyToBackend(settings.playbackStopHotkey),
+      clickerToggleHotkey: hotkeyToBackend(settings.clickerToggleHotkey),
+      scriptHotkeys: Object.fromEntries(
+        Object.entries(settings.scriptHotkeys)
+          .map(([id, hotkey]) => [id, hotkeyToBackend(hotkey)])
+          .filter(([, hotkey]) => hotkey),
+      ),
     };
   }
   async getSettings(): Promise<AppSettings> {
@@ -776,7 +786,7 @@ export class RealAutomationService extends AutomationServiceBase {
   }
   async updateSettings(updates: Partial<AppSettings>): Promise<AppSettings> {
     const next = { ...this.settings, ...updates, serviceMode: 'real' as const };
-    const hotkeyFields = ['emergencyHotkey', 'recordStartHotkey', 'recordStopHotkey', 'playbackStartHotkey', 'playbackStopHotkey'] as const;
+    const hotkeyFields = ['emergencyHotkey', 'recordStartHotkey', 'recordStopHotkey', 'playbackStartHotkey', 'playbackStopHotkey', 'clickerToggleHotkey'] as const;
     for (const field of hotkeyFields) {
       if (!(field in updates)) continue;
       const value = updates[field] ?? '';

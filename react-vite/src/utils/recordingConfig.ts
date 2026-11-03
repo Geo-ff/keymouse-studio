@@ -1,5 +1,6 @@
 import type { AppSettings, MouseMoveMode, RecordingConfig } from '../types';
 import { readPersistedForm } from './formPersistence';
+import { collectReservedHotkeys } from './hotkey';
 
 /** Persisted choices made on the Recording page (shared with the global record hotkey). */
 export interface RecordingPrefs {
@@ -28,12 +29,7 @@ export function buildRecordingConfig(
     recordWheel: true,
     recordMouse: true,
     recordKeyboard: true,
-    controlHotkeys: [
-      settings.emergencyHotkey,
-      settings.recordStartHotkey,
-      settings.recordStopHotkey,
-      settings.playbackStartHotkey,
-      settings.playbackStopHotkey,
-    ].filter(Boolean),
+    // Every global hotkey, including clicker and per-script bindings, is kept out of recordings.
+    controlHotkeys: Object.values(collectReservedHotkeys(settings)),
   };
 }

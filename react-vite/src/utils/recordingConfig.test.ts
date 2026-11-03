@@ -24,6 +24,12 @@ describe('recording config', () => {
     expect(config.mouseMoveMode).toBe('relative');
     expect(config.minMoveSampleMs).toBe(20);
     expect(config.controlHotkeys).toEqual(['F12', 'F9']);
+
+    const withBindings = buildRecordingConfig(
+      { ...DEFAULT_SETTINGS, clickerToggleHotkey: 'F6', scriptHotkeys: { abc: 'Ctrl+1' } },
+      { mouseMoveMode: 'absolute' },
+    );
+    expect(withBindings.controlHotkeys).toEqual(['F12', 'F6', 'Ctrl+1']);
   });
 
   it('reads the mode saved by the recording page for global hotkeys', () => {

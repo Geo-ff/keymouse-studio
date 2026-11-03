@@ -2,58 +2,23 @@
    AutoClicker — 连点器页面（鼠标 / 键盘）
    ========================================================================= */
 
-import { useCallback, useMemo, useState, type KeyboardEvent } from 'react';
+import { useCallback, useState, type KeyboardEvent } from 'react';
 import { Play, Pause, Square, MousePointer, Crosshair, Clock, Keyboard } from 'lucide-react';
 import { useService } from '../hooks/useService';
 import { Button, RadioGroup, Toggle, Input, NumericInput, Select, IconButton } from '../components/ui';
-import type { ClickerConfig, ClickerInputType, KeySpec, MouseButton, ClickMode } from '../types';
+import type { ClickerInputType, ClickMode, MouseButton } from '../types';
 import { formatTime } from '../data/mockData';
 import { showSystemAlert } from '../utils/systemAlert';
 import { usePersistedFormState } from '../utils/formPersistence';
-import { resolveCountdownMs } from '../utils/countdown';
+import { eventToKeySpecs, formatKeySpecsLabel } from '../utils/keySpec';
+import { formatHotkeyLabel } from '../utils/hotkey';
 import {
-  eventToKeySpecs,
-  findControlHotkeyConflict,
-  formatKeySpecsLabel,
-} from '../utils/keySpec';
-import { HOTKEY_FIELD_LABELS } from '../utils/hotkey';
-
-interface ClickerFormState {
-  inputType: ClickerInputType;
-  button: MouseButton;
-  clickMode: ClickMode;
-  hours: number;
-  minutes: number;
-  seconds: number;
-  millis: number;
-  timesMode: 'fixed' | 'continuous';
-  times: number;
-  useCurrentPos: boolean;
-  posX: number;
-  posY: number;
-  keys: KeySpec[];
-  pressDurationMs: number;
-}
-
-/** How long each mouse click keeps the button down (sent as pressDurationMs for mouse mode). */
-const MOUSE_PRESS_MS = 30;
-
-const CLICKER_DEFAULTS: ClickerFormState = {
-  inputType: 'mouse',
-  button: 'left',
-  clickMode: 'single',
-  hours: 0,
-  minutes: 0,
-  seconds: 0,
-  millis: 500,
-  timesMode: 'continuous',
-  times: 10,
-  useCurrentPos: true,
-  posX: 960,
-  posY: 540,
-  keys: [],
-  pressDurationMs: 30,
-};
+  CLICKER_DEFAULTS,
+  CLICKER_FORM_KEY,
+  MOUSE_PRESS_MS,
+  buildClickerConfig,
+  clickerIntervalMs,
+} from '../utils/clickerConfig';
 
 export function AutoClicker(qoderProps: Record<string, any>) {
   const {
@@ -65,7 +30,7 @@ export function AutoClicker(qoderProps: Record<string, any>) {
     state,
     settings,
   } = useService();
-  const [form, setForm] = usePersistedFormState('clicker', CLICKER_DEFAULTS);
+  const [form, setForm] = usePersistedFormState(CLICKER_FORM_KEY, CLICKER_DEFAULTS);
   const [capturing, setCapturing] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const {
@@ -91,7 +56,7 @@ export function AutoClicker(qoderProps: Record<string, any>) {
   const isPaused = state.snapshot.operationType === 'clicker' && state.runState === 'paused';
   const isKeyboard = inputType === 'keyboard';
 
-  const intervalMs = hours * 3600000 + minutes * 60000 + seconds * 1000 + millis;
+  const intervalMs = clickerIntervalMs(form);
   // Mouse clicks are held for MOUSE_PRESS_MS (and double clicks are separated by the same gap)
   // so that games polling input once per frame register them.
   const mouseClicks = clickMode === 'double' ? 2 : 1;
@@ -99,17 +64,6 @@ export function AutoClicker(qoderProps: Record<string, any>) {
     ? Math.max(10, pressDurationMs) + Math.max(50, intervalMs)
     : (2 * mouseClicks - 1) * MOUSE_PRESS_MS + Math.max(50, intervalMs);
   const estimatedHz = cycleMs > 0 ? (1000 / cycleMs).toFixed(1) : '—';
-
-  const controlHotkeys = useMemo(
-    () => ({
-      emergencyHotkey: settings.emergencyHotkey || 'F12',
-      recordStartHotkey: settings.recordStartHotkey || '',
-      recordStopHotkey: settings.recordStopHotkey || '',
-      playbackStartHotkey: settings.playbackStartHotkey || '',
-      playbackStopHotkey: settings.playbackStopHotkey || '',
-    }),
-    [settings],
-  );
 
   const handleCaptureKey = useCallback(
     (event: KeyboardEvent<HTMLInputElement>) => {
@@ -127,54 +81,12 @@ export function AutoClicker(qoderProps: Record<string, any>) {
 
   const handleStart = useCallback(() => {
     setFormError(null);
-    if (isKeyboard) {
-      if (!keys.length) {
-        setFormError('请先捕获按键组合');
-        return;
-      }
-      const conflict = findControlHotkeyConflict(keys, controlHotkeys);
-      if (conflict) {
-        const label = HOTKEY_FIELD_LABELS[conflict] ?? conflict;
-        setFormError(`按键组合不能与${label}相同`);
-        return;
-      }
-      if (pressDurationMs < 10 || pressDurationMs > 60000) {
-        setFormError('按下时长需在 10～60000 ms');
-        return;
-      }
+    const result = buildClickerConfig(form, settings);
+    if (!result.ok) {
+      setFormError(result.error);
+      return;
     }
-
-    const config: ClickerConfig = isKeyboard
-      ? {
-          inputType: 'keyboard',
-          button: 'left',
-          clickCount: 1,
-          intervalMs: Math.max(50, intervalMs),
-          repeatMode: timesMode === 'continuous' ? 'infinite' : 'count',
-          repeatCount: timesMode === 'continuous' ? 1 : times,
-          positionMode: 'current',
-          x: null,
-          y: null,
-          countdownMs: resolveCountdownMs(settings),
-          keys,
-          pressDurationMs: Math.max(10, Math.min(60000, pressDurationMs)),
-        }
-      : {
-          inputType: 'mouse',
-          button,
-          clickCount: clickMode === 'double' ? 2 : 1,
-          intervalMs: Math.max(50, intervalMs),
-          repeatMode: timesMode === 'continuous' ? 'infinite' : 'count',
-          repeatCount: timesMode === 'continuous' ? 1 : times,
-          positionMode: useCurrentPos ? 'current' : 'fixed',
-          x: useCurrentPos ? null : posX,
-          y: useCurrentPos ? null : posY,
-          countdownMs: resolveCountdownMs(settings),
-          keys: [],
-          pressDurationMs: MOUSE_PRESS_MS,
-        };
-
-    void startClicker(config)
+    void startClicker(result.config)
       .then(() => {
         void showSystemAlert(
           '连点器',
@@ -183,22 +95,7 @@ export function AutoClicker(qoderProps: Record<string, any>) {
         );
       })
       .catch(() => undefined);
-  }, [
-    startClicker,
-    isKeyboard,
-    keys,
-    controlHotkeys,
-    pressDurationMs,
-    button,
-    clickMode,
-    intervalMs,
-    timesMode,
-    times,
-    useCurrentPos,
-    posX,
-    posY,
-    settings,
-  ]);
+  }, [startClicker, form, settings, isKeyboard]);
 
   const handlePause = useCallback(() => {
     if (isPaused) void resumeClicker().catch(() => undefined);
@@ -500,6 +397,16 @@ export function AutoClicker(qoderProps: Record<string, any>) {
               </Button>
             </>
           )}
+          <div className="text-sm text-tertiary" style={{ lineHeight: 1.6 }}>
+            {settings.clickerToggleHotkey ? (
+              <>
+                快捷键 <span className="kbd">{formatHotkeyLabel(settings.clickerToggleHotkey)}</span>
+                ：在任意窗口按下即开始 / 停止，不倒计时，使用当前设置
+              </>
+            ) : (
+              '可在「设置 → 全局快捷键」中设置连点器开关键，在游戏里直接开始 / 停止'
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -46,6 +46,12 @@ const ACTION_LABELS = {
   recordStop: '停止录制',
   playbackStart: '开始回放',
   playbackStop: '停止回放',
+  clickerToggle: '连点器开关',
+}
+
+function hotkeyActionLabel(actionId) {
+  if (typeof actionId === 'string' && actionId.startsWith('script:')) return '脚本快捷键'
+  return ACTION_LABELS[actionId] || actionId
 }
 
 const IPC_HANDLERS = [
@@ -226,7 +232,7 @@ function registerIpcHandlers() {
     ) {
       hotkeyFailureSignature = failureSignature
       const lines = result.failed.map((item) => {
-        const label = ACTION_LABELS[item.actionId] || item.actionId
+        const label = hotkeyActionLabel(item.actionId)
         return `${label}: ${item.hotkey || item.accelerator || '未知'}`
       })
       void dialog.showMessageBox(mainWindow, {

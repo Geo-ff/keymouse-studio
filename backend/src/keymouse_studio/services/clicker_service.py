@@ -50,6 +50,8 @@ CONTROL_HOTKEY_LABELS = {
     "record_stop_hotkey": "停止录制",
     "playback_start_hotkey": "开始回放",
     "playback_stop_hotkey": "停止回放",
+    "clicker_toggle_hotkey": "连点器开关",
+    "script_hotkeys": "脚本快捷键",
 }
 
 
@@ -462,14 +464,16 @@ class ClickerService:
             normalized_chord = normalize_hotkey(chord)
         except ValueError:
             return
-        reserved = {
-            "emergency_stop_hotkey": settings.emergency_stop_hotkey,
-            "record_start_hotkey": settings.record_start_hotkey,
-            "record_stop_hotkey": settings.record_stop_hotkey,
-            "playback_start_hotkey": settings.playback_start_hotkey,
-            "playback_stop_hotkey": settings.playback_stop_hotkey,
-        }
-        for field, hotkey in reserved.items():
+        reserved = [
+            ("emergency_stop_hotkey", settings.emergency_stop_hotkey),
+            ("record_start_hotkey", settings.record_start_hotkey),
+            ("record_stop_hotkey", settings.record_stop_hotkey),
+            ("playback_start_hotkey", settings.playback_start_hotkey),
+            ("playback_stop_hotkey", settings.playback_stop_hotkey),
+            ("clicker_toggle_hotkey", settings.clicker_toggle_hotkey),
+            *(("script_hotkeys", hotkey) for hotkey in settings.script_hotkeys.values()),
+        ]
+        for field, hotkey in reserved:
             if not hotkey:
                 continue
             if normalize_hotkey(hotkey) == normalized_chord:

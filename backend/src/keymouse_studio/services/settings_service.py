@@ -1,4 +1,5 @@
 import asyncio
+from uuid import UUID
 
 from keymouse_studio.api.schemas.settings import (
     ApplicationSettings,
@@ -41,6 +42,20 @@ class SettingsService:
             self._settings = saved
             self._loaded = True
             return saved
+
+    async def remove_script_hotkey(self, script_id: UUID) -> None:
+        """Drop the hotkey bound to a deleted script so it is not left registered."""
+        current = await self.load()
+        if script_id not in current.script_hotkeys:
+            return
+        async with self._lock:
+            hotkeys = {
+                key: value
+                for key, value in self._settings.script_hotkeys.items()
+                if key != script_id
+            }
+            updated = self._settings.model_copy(update={"script_hotkeys": hotkeys})
+            self._settings = await self._repository.save(updated)
 
     def validate_hotkey(self, hotkey: str) -> HotkeyValidationResponse:
         normalized = normalize_hotkey(hotkey)

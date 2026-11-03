@@ -14,6 +14,8 @@ import {
   Clock,
   ListChecks,
   Pencil,
+  Play,
+  Square,
 } from 'lucide-react';
 import { useService } from '../hooks/useService';
 import { Button, ConfirmDialog, Input, IconButton, EmptyState } from '../components/ui';
@@ -21,16 +23,27 @@ import { useToast } from '../providers/ToastProvider';
 import { formatDuration, calcScriptDuration } from '../data/mockData';
 import type { Script } from '../types';
 import type { PageId } from '../components/Layout';
+import { HotkeyCaptureInput } from '../components/HotkeyCaptureInput';
+import {
+  collectReservedHotkeys,
+  findHotkeyConflict,
+  hotkeyFieldLabel,
+  scriptHotkeyField,
+} from '../utils/hotkey';
 
 interface ScriptManagerProps {
   onNavigate: (page: PageId) => void;
   onLoadScript: (script: Script) => void;
   onNewScript: () => void;
   onScriptDeleted?: (id: string) => void;
+  /** Script currently playing because it was started from a list or its hotkey. */
+  runningScriptId?: string | null;
+  /** Start the script with its saved settings, or stop it if it is the one running. */
+  onRunScript?: (scriptId: string) => void;
 }
 
-export function ScriptManager({ onNavigate, onLoadScript, onNewScript, onScriptDeleted, ...qoderProps }: ScriptManagerProps & Record<string, any>) {
-  const { loadScript, saveScript, deleteScript, duplicateScript, scripts: allScripts, refreshScripts } = useService();
+export function ScriptManager({ onNavigate, onLoadScript, onNewScript, onScriptDeleted, runningScriptId = null, onRunScript, ...qoderProps }: ScriptManagerProps & Record<string, any>) {
+  const { loadScript, saveScript, deleteScript, duplicateScript, scripts: allScripts, refreshScripts, settings, updateSettings } = useService();
   const toast = useToast();
   const [search, setSearch] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Script | null>(null);
@@ -85,6 +98,21 @@ export function ScriptManager({ onNavigate, onLoadScript, onNewScript, onScriptD
       toast.success('脚本复制成功');
     } catch { }
   }, [duplicateScript, refreshScripts, toast]);
+
+  const handleBindHotkey = useCallback((script: Script, hotkey: string) => {
+    const field = scriptHotkeyField(script.id);
+    if (hotkey) {
+      const conflict = findHotkeyConflict(field, hotkey, collectReservedHotkeys(settings));
+      if (conflict) {
+        toast.error(`${hotkey} 已用作${hotkeyFieldLabel(conflict, allScripts)}，请换一个按键`);
+        return;
+      }
+    }
+    const { [script.id]: _previous, ...others } = settings.scriptHotkeys;
+    const next = hotkey ? { ...others, [script.id]: hotkey } : others;
+    // The field shows the stored binding; a rejected update surfaces in the global error banner.
+    void updateSettings({ scriptHotkeys: next });
+  }, [settings, updateSettings, allScripts, toast]);
 
   const handleRename = useCallback(async (script: Script) => {
     const name = editingName.trim();
@@ -186,7 +214,8 @@ export function ScriptManager({ onNavigate, onLoadScript, onNewScript, onScriptD
                 <th style={{ width: 100 }} data-qoder-id="qel-th-bb112076" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-th-bb112076&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;th&quot;,&quot;loc&quot;:{&quot;line&quot;:151,&quot;column&quot;:17}}">总时长</th>
                 <th style={{ width: 100 }} data-qoder-id="qel-th-3e0e1d18" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-th-3e0e1d18&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;th&quot;,&quot;loc&quot;:{&quot;line&quot;:152,&quot;column&quot;:17}}">创建时间</th>
                 <th style={{ width: 100 }} data-qoder-id="qel-th-3f0e1eab" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-th-3f0e1eab&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;th&quot;,&quot;loc&quot;:{&quot;line&quot;:153,&quot;column&quot;:17}}">最后使用</th>
-                <th style={{ width: 100 }} data-qoder-id="qel-th-400e203e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-th-400e203e&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;th&quot;,&quot;loc&quot;:{&quot;line&quot;:154,&quot;column&quot;:17}}">操作</th>
+                <th style={{ width: 150 }} title="在任意窗口按下即运行该脚本，再按一次停止">快捷键</th>
+                <th style={{ width: 136 }} data-qoder-id="qel-th-400e203e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-th-400e203e&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;th&quot;,&quot;loc&quot;:{&quot;line&quot;:154,&quot;column&quot;:17}}">操作</th>
               </tr>
             </thead>
             <tbody data-qoder-id="qel-tbody-a7132a99" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-tbody-a7132a99&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;tbody&quot;,&quot;loc&quot;:{&quot;line&quot;:157,&quot;column&quot;:13}}">
@@ -231,8 +260,24 @@ export function ScriptManager({ onNavigate, onLoadScript, onNewScript, onScriptD
                   <td data-label="最后使用" className="text-sm text-tertiary" data-qoder-id="qel-text-sm-4851ba6e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-4851ba6e&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:175,&quot;column&quot;:19}}">
                     {new Date(script.updatedAt).toLocaleDateString('zh-CN')}
                   </td>
+                  <td data-label="快捷键" onClick={e => e.stopPropagation()}>
+                    <HotkeyCaptureInput
+                      value={settings.scriptHotkeys[script.id] ?? ''}
+                      onChange={hotkey => handleBindHotkey(script, hotkey)}
+                    />
+                  </td>
                   <td data-label="操作" onClick={e => e.stopPropagation()} data-qoder-id="qel-td-d3de0993" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-td-d3de0993&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;td&quot;,&quot;loc&quot;:{&quot;line&quot;:178,&quot;column&quot;:19}}">
                     <div style={{ display: 'flex', gap: 'var(--space-xs)' }} data-qoder-id="qel-div-ac64253c" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-ac64253c&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:179,&quot;column&quot;:21}}">
+                      {onRunScript && (
+                        <IconButton
+                          tooltip={runningScriptId === script.id ? '停止运行' : '运行（使用脚本保存的循环与速度）'}
+                          aria-label={runningScriptId === script.id ? '停止运行' : '运行'}
+                          onClick={() => onRunScript(script.id)}
+                          style={{ color: runningScriptId === script.id ? 'var(--color-danger)' : 'var(--color-running)' }}
+                        >
+                          {runningScriptId === script.id ? <Square size={14} fill="currentColor" /> : <Play size={14} />}
+                        </IconButton>
+                      )}
                       <IconButton tooltip="打开" onClick={() => handleOpen(script)} data-qoder-id="qel-iconbutton-c9584d53" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-iconbutton-c9584d53&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;iconbutton&quot;,&quot;loc&quot;:{&quot;line&quot;:180,&quot;column&quot;:23}}">
                         <FolderOpen size={14}  data-qoder-id="qel-folderopen-47d57c4a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-folderopen-47d57c4a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;folderopen&quot;,&quot;loc&quot;:{&quot;line&quot;:181,&quot;column&quot;:25}}"/>
                       </IconButton>

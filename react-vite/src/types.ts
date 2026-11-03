@@ -274,6 +274,10 @@ export interface AppSettings {
   recordStopHotkey: string;
   playbackStartHotkey: string;
   playbackStopHotkey: string;
+  /** Global hotkey that starts/stops the auto clicker with the clicker page's last settings. */
+  clickerToggleHotkey: string;
+  /** Global hotkey per script id: press to run that script, press again to stop it. */
+  scriptHotkeys: Record<string, string>;
   countdownEnabled: boolean;
   countdownSeconds: number;
   theme: 'light' | 'dark';
@@ -294,6 +298,8 @@ export interface BackendSettings {
   recordStopHotkey: string;
   playbackStartHotkey: string;
   playbackStopHotkey: string;
+  clickerToggleHotkey?: string;
+  scriptHotkeys?: Record<string, string>;
 }
 
 export interface HotkeyValidationResponse {
@@ -454,6 +460,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   recordStopHotkey: '',
   playbackStartHotkey: '',
   playbackStopHotkey: '',
+  clickerToggleHotkey: '',
+  scriptHotkeys: {},
   countdownEnabled: true,
   countdownSeconds: 3,
   theme: 'light',

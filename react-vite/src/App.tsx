@@ -3,7 +3,7 @@
    状态管理（主题、当前页面、当前脚本）、页面路由、主题切换
    ========================================================================= */
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Layout, type PageId } from './components/Layout';
 import { AboutDialog } from './components/AboutDialog';
 import { UpdateAnnouncementDialog, type UpdateAnnouncementMode } from './components/UpdateAnnouncementDialog';
@@ -40,6 +40,8 @@ import type {
 import { ApiError } from './services/ApiClient';
 import { buildPlaybackOptionsFromScript } from './utils/playbackOptions';
 import { buildRecordingConfig } from './utils/recordingConfig';
+import { buildClickerConfig, readClickerForm } from './utils/clickerConfig';
+import { usePageHotkeys } from './hooks/usePageHotkeys';
 
 const MOCK_SCRIPT_IDS = new Set(mockScripts.map(script => script.id));
 
@@ -60,7 +62,7 @@ function toErrorDetail(err: unknown): ErrorDetail {
 export default function App() {
   const {
     emergencyStop, state, settings, error, clearError, updateSettings, saveScript, refreshScripts,
-    startRecording, stopRecording, playback, stopPlayback,
+    startRecording, stopRecording, playback, stopPlayback, scripts, loadScript, startClicker, stopClicker,
   } = useService();
   const toast = useToast();
 
@@ -88,6 +90,112 @@ export default function App() {
   settingsRef.current = settings;
   const stateRef = useRef(state);
   stateRef.current = state;
+  /** Script started from the list or its own hotkey (so the same trigger can stop it). */
+  const [runningScriptId, setRunningScriptId] = useState<string | null>(null);
+  const runningScriptIdRef = useRef<string | null>(null);
+  const playbackActive = state.snapshot.operationType === 'playback' && state.runState !== 'idle';
+
+  useEffect(() => {
+    if (playbackActive) return;
+    runningScriptIdRef.current = null;
+    setRunningScriptId(null);
+  }, [playbackActive]);
+
+  const reportFailure = useCallback((title: string, err: unknown) => {
+    const friendly = formatErrorForDisplay(toErrorDetail(err));
+    toast.error(`${friendly.title}：${friendly.message}`);
+    void showSystemAlert(title, friendly.title, friendly.message);
+  }, [toast]);
+
+  /** Run a saved script (its own loop/speed settings); calling it again for that script stops it. */
+  const runScript = useCallback(async (scriptId: string, viaHotkey: boolean) => {
+    const liveState = stateRef.current;
+    const busy = Boolean(liveState.snapshot.operationType) && liveState.runState !== 'idle';
+    if (busy) {
+      if (liveState.snapshot.operationType === 'playback' && runningScriptIdRef.current === scriptId) {
+        try {
+          await stopPlayback();
+          void showSystemAlert('回放', '回放已停止');
+        } catch (err) {
+          reportFailure('回放', err);
+        }
+        return;
+      }
+      const message = '当前已有任务在运行，请先停止或急停后再运行脚本';
+      toast.error(message);
+      if (viaHotkey) void showSystemAlert('回放', '无法运行脚本', message);
+      return;
+    }
+    let script: Script;
+    try {
+      script = await loadScript(scriptId);
+    } catch (err) {
+      reportFailure('回放', err);
+      return;
+    }
+    const enabled = script.actions.filter(action => action.enabled);
+    if (enabled.length === 0) {
+      const message = `脚本「${script.name}」没有可回放的动作`;
+      toast.error(message);
+      if (viaHotkey) void showSystemAlert('回放', '无法运行脚本', message);
+      return;
+    }
+    const options = buildPlaybackOptionsFromScript(script, settingsRef.current);
+    runningScriptIdRef.current = scriptId;
+    setRunningScriptId(scriptId);
+    try {
+      // A hotkey is pressed from inside the target window, so start right away.
+      await playback({ ...script, actions: enabled }, viaHotkey ? { ...options, countdownMs: 0 } : options);
+      void showSystemAlert('回放', '回放已开始', `脚本：${script.name}`);
+    } catch (err) {
+      runningScriptIdRef.current = null;
+      setRunningScriptId(null);
+      reportFailure('回放', err);
+    }
+  }, [loadScript, playback, stopPlayback, reportFailure, toast]);
+
+  /** Global clicker hotkey: start with the clicker page's last settings, or stop it. */
+  const toggleClicker = useCallback(async () => {
+    const liveState = stateRef.current;
+    const busy = Boolean(liveState.snapshot.operationType) && liveState.runState !== 'idle';
+    if (busy) {
+      if (liveState.snapshot.operationType === 'clicker') {
+        try {
+          await stopClicker();
+          void showSystemAlert('连点器', '连点已停止');
+        } catch (err) {
+          reportFailure('连点器', err);
+        }
+        return;
+      }
+      const message = '当前已有任务在运行，请先停止或急停后再启动连点器';
+      toast.error(message);
+      void showSystemAlert('连点器', '无法启动连点器', message);
+      return;
+    }
+    const result = buildClickerConfig(readClickerForm(), settingsRef.current, { countdownMs: 0 });
+    if (!result.ok) {
+      toast.error(`连点器无法启动：${result.error}`);
+      void showSystemAlert('连点器', '无法启动连点器', result.error);
+      return;
+    }
+    try {
+      await startClicker(result.config);
+      void showSystemAlert(
+        '连点器',
+        result.config.inputType === 'keyboard' ? '键盘连点已开始' : '连点已开始',
+        '再按一次快捷键停止',
+      );
+    } catch (err) {
+      reportFailure('连点器', err);
+    }
+  }, [startClicker, stopClicker, reportFailure, toast]);
+
+  const runScriptRef = useRef(runScript);
+  runScriptRef.current = runScript;
+  const toggleClickerRef = useRef(toggleClicker);
+  toggleClickerRef.current = toggleClicker;
+  const scriptIds = useMemo(() => new Set(scripts.map(script => script.id)), [scripts]);
 
 
   useEffect(() => {
@@ -114,7 +222,12 @@ export default function App() {
       recordStop: settings.recordStopHotkey,
       playbackStart: settings.playbackStartHotkey,
       playbackStop: settings.playbackStopHotkey,
+      clickerToggle: settings.clickerToggleHotkey,
     };
+    for (const [scriptId, hotkey] of Object.entries(settings.scriptHotkeys)) {
+      // Skip bindings whose script no longer exists.
+      if (scriptIds.has(scriptId)) bindings[`script:${scriptId}`] = hotkey;
+    }
     void window.desktop.setGlobalHotkeys(bindings).catch(() => undefined);
   }, [
     settings.emergencyHotkey,
@@ -122,7 +235,24 @@ export default function App() {
     settings.recordStopHotkey,
     settings.playbackStartHotkey,
     settings.playbackStopHotkey,
+    settings.clickerToggleHotkey,
+    settings.scriptHotkeys,
+    scriptIds,
   ]);
+
+  // Without the desktop bridge (browser preview) these work while the window is focused.
+  usePageHotkeys(useMemo(() => {
+    if (typeof window !== 'undefined' && window.desktop?.setGlobalHotkeys) return [];
+    return [
+      { hotkey: settings.clickerToggleHotkey, handler: () => { void toggleClickerRef.current(); } },
+      ...Object.entries(settings.scriptHotkeys)
+        .filter(([scriptId]) => scriptIds.has(scriptId))
+        .map(([scriptId, hotkey]) => ({
+          hotkey,
+          handler: () => { void runScriptRef.current(scriptId, true); },
+        })),
+    ];
+  }, [settings.clickerToggleHotkey, settings.scriptHotkeys, scriptIds]));
 
   useEffect(() => {
     if (!window.desktop?.onGlobalHotkey) return;
@@ -135,6 +265,15 @@ export default function App() {
       const liveState = stateRef.current;
       const liveSettings = settingsRef.current;
       const liveScript = currentScriptRef.current;
+      if (actionId === 'clickerToggle') {
+        runOnce(() => toggleClickerRef.current());
+        return;
+      }
+      if (actionId.startsWith('script:')) {
+        const scriptId = actionId.slice('script:'.length);
+        runOnce(() => runScriptRef.current(scriptId, true));
+        return;
+      }
       if (actionId === 'emergency') {
         runOnce(() => emergencyStop()
           .then(() => { void showSystemAlert('急停', '已紧急停止', '所有输入注入已中止'); })
@@ -383,12 +522,17 @@ export default function App() {
   }, []);
 
   const handleScriptDeleted = useCallback((id: string) => {
+    const hotkeys = settingsRef.current.scriptHotkeys;
+    if (hotkeys[id]) {
+      const { [id]: _removed, ...rest } = hotkeys;
+      void updateSettings({ scriptHotkeys: rest });
+    }
     setCurrentScript(prev => {
       if (prev.id !== id) return prev;
       setSaved(true);
       return createEmptyScript();
     });
-  }, []);
+  }, [updateSettings]);
 
   // Handle recorded actions
   const handleRecordedActions = useCallback(async (actions: ScriptAction[], name: string) => {
@@ -414,7 +558,7 @@ export default function App() {
   const renderPage = () => {
     switch (page) {
       case 'dashboard':
-        return <Dashboard onNavigate={setPage} onLoadScript={handleLoadScript}  data-qoder-id="qel-dashboard-84159909" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-dashboard-84159909&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;dashboard&quot;,&quot;loc&quot;:{&quot;line&quot;:90,&quot;column&quot;:16}}"/>;
+        return <Dashboard onNavigate={setPage} onLoadScript={handleLoadScript} runningScriptId={runningScriptId} onRunScript={(scriptId: string) => { void runScript(scriptId, false); }}  data-qoder-id="qel-dashboard-84159909" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-dashboard-84159909&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;dashboard&quot;,&quot;loc&quot;:{&quot;line&quot;:90,&quot;column&quot;:16}}"/>;
       case 'clicker':
         return <AutoClicker  data-qoder-id="qel-autoclicker-73789248" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-autoclicker-73789248&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;autoclicker&quot;,&quot;loc&quot;:{&quot;line&quot;:92,&quot;column&quot;:16}}"/>;
       case 'timed':
@@ -434,11 +578,11 @@ export default function App() {
            data-qoder-id="qel-scripteditor-9f5415e1" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-scripteditor-9f5415e1&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;scripteditor&quot;,&quot;loc&quot;:{&quot;line&quot;:99,&quot;column&quot;:11}}"/>
         );
       case 'manager':
-        return <ScriptManager onNavigate={setPage} onLoadScript={handleLoadScript} onNewScript={handleNewScript} onScriptDeleted={handleScriptDeleted}  data-qoder-id="qel-scriptmanager-6f7a5cc0" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-scriptmanager-6f7a5cc0&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;scriptmanager&quot;,&quot;loc&quot;:{&quot;line&quot;:107,&quot;column&quot;:16}}"/>;
+        return <ScriptManager onNavigate={setPage} onLoadScript={handleLoadScript} onNewScript={handleNewScript} onScriptDeleted={handleScriptDeleted} runningScriptId={runningScriptId} onRunScript={(scriptId: string) => { void runScript(scriptId, false); }}  data-qoder-id="qel-scriptmanager-6f7a5cc0" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-scriptmanager-6f7a5cc0&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;scriptmanager&quot;,&quot;loc&quot;:{&quot;line&quot;:107,&quot;column&quot;:16}}"/>;
       case 'settings':
         return <Settings settings={settings} onUpdate={handleUpdateSettings}  data-qoder-id="qel-settings-0722e165" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-settings-0722e165&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;settings&quot;,&quot;loc&quot;:{&quot;line&quot;:109,&quot;column&quot;:16}}"/>;
       default:
-        return <Dashboard onNavigate={setPage} onLoadScript={handleLoadScript}  data-qoder-id="qel-dashboard-8b15a40e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-dashboard-8b15a40e&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;dashboard&quot;,&quot;loc&quot;:{&quot;line&quot;:111,&quot;column&quot;:16}}"/>;
+        return <Dashboard onNavigate={setPage} onLoadScript={handleLoadScript} runningScriptId={runningScriptId} onRunScript={(scriptId: string) => { void runScript(scriptId, false); }}  data-qoder-id="qel-dashboard-8b15a40e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-dashboard-8b15a40e&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;dashboard&quot;,&quot;loc&quot;:{&quot;line&quot;:111,&quot;column&quot;:16}}"/>;
     }
   };
 

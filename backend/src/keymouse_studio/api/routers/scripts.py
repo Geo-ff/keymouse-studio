@@ -10,8 +10,9 @@ from keymouse_studio.api.schemas.scripts import (
     ScriptValidationRequest,
     ScriptValidationResponse,
 )
-from keymouse_studio.dependencies import get_script_service
+from keymouse_studio.dependencies import get_script_service, get_settings_service
 from keymouse_studio.services.script_service import ScriptService
+from keymouse_studio.services.settings_service import SettingsService
 
 router = APIRouter(prefix="/scripts", tags=["scripts"])
 
@@ -68,6 +69,8 @@ async def duplicate_script(
 async def delete_script(
     script_id: UUID,
     service: Annotated[ScriptService, Depends(get_script_service)],
+    settings: Annotated[SettingsService, Depends(get_settings_service)],
 ) -> Response:
     await service.delete(script_id)
+    await settings.remove_script_hotkey(script_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

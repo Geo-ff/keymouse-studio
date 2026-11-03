@@ -1,3 +1,5 @@
+import type { AppSettings, Script } from '../types';
+
 const MODIFIER_ORDER = ['Ctrl', 'Alt', 'Shift', 'Win'] as const;
 
 const KEY_ALIASES: Record<string, string> = {
@@ -115,7 +117,49 @@ export const HOTKEY_FIELD_LABELS: Record<string, string> = {
   recordStopHotkey: '停止录制',
   playbackStartHotkey: '开始回放',
   playbackStopHotkey: '停止回放',
+  clickerToggleHotkey: '连点器开关',
 };
+
+/** Field key used for a per-script binding in conflict maps. */
+export function scriptHotkeyField(scriptId: string): string {
+  return `script:${scriptId}`;
+}
+
+type HotkeySettings = Pick<
+  AppSettings,
+  | 'emergencyHotkey'
+  | 'recordStartHotkey'
+  | 'recordStopHotkey'
+  | 'playbackStartHotkey'
+  | 'playbackStopHotkey'
+  | 'clickerToggleHotkey'
+  | 'scriptHotkeys'
+>;
+
+/** Every global hotkey keyed by field (script bindings as `script:<id>`); empty values skipped. */
+export function collectReservedHotkeys(settings: HotkeySettings): Record<string, string> {
+  const reserved: Record<string, string> = {
+    emergencyHotkey: settings.emergencyHotkey || 'F12',
+    recordStartHotkey: settings.recordStartHotkey,
+    recordStopHotkey: settings.recordStopHotkey,
+    playbackStartHotkey: settings.playbackStartHotkey,
+    playbackStopHotkey: settings.playbackStopHotkey,
+    clickerToggleHotkey: settings.clickerToggleHotkey,
+  };
+  for (const [scriptId, hotkey] of Object.entries(settings.scriptHotkeys ?? {})) {
+    reserved[scriptHotkeyField(scriptId)] = hotkey;
+  }
+  return Object.fromEntries(Object.entries(reserved).filter(([, value]) => value?.trim()));
+}
+
+/** Human label for a conflicting field, naming the script for per-script bindings. */
+export function hotkeyFieldLabel(field: string, scripts: Pick<Script, 'id' | 'name'>[] = []): string {
+  if (field.startsWith('script:')) {
+    const name = scripts.find(script => script.id === field.slice('script:'.length))?.name;
+    return name ? `脚本「${name}」的快捷键` : '脚本快捷键';
+  }
+  return HOTKEY_FIELD_LABELS[field] ?? field;
+}
 
 /** Find another configured field that shares the same chord (display form). */
 export function findHotkeyConflict(
