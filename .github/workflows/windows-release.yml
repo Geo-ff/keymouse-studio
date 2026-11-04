@@ -96,8 +96,10 @@ jobs:
         shell: pwsh
         run: |
           $asarFiles = npx --no-install asar list "dist/win-unpacked/resources/app.asar"
-          if ($asarFiles -notcontains "\global-hotkeys.mjs") {
-            throw "app.asar is missing global-hotkeys.mjs"
+          foreach ($module in @("global-hotkeys.mjs", "desktop-shell.mjs", "desktop-utils.mjs")) {
+            if ($asarFiles -notcontains "\$module") {
+              throw "app.asar is missing $module"
+            }
           }
 
       - name: List dist artifacts
@@ -107,6 +109,17 @@ jobs:
           ls -la dist || true
           ls -la dist/*.yml dist/*.exe dist/*.blockmap 2>/dev/null || true
 
+      - name: Resolve release notes
+        id: notes
+        shell: bash
+        run: |
+          NOTES="docs/release-notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$NOTES" ]; then
+            echo "path=$NOTES" >> "$GITHUB_OUTPUT"
+          else
+            echo "No $NOTES; the release uses generated notes only"
+          fi
+
       - name: Upload Release assets
         uses: softprops/action-gh-release@v2
         with:
@@ -114,6 +127,9 @@ jobs:
           name: KeyMouse Studio ${{ github.ref_name }}
           draft: false
           prerelease: false
+          # Hand-written notes (shown in the in-app update dialog) come first when present;
+          # GitHub appends the generated change list after them.
+          body_path: ${{ steps.notes.outputs.path }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           # Do not list both *.blockmap and *.exe.blockmap — they match the same file
