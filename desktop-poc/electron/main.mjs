@@ -14,7 +14,6 @@ import {
   setUpdateStateBroadcaster,
 } from './auto-updater.mjs'
 import {
-  ALLOWED_EXTERNAL_URLS,
   APP_DESCRIPTION,
   APP_TITLE,
   GITHUB_OWNER,
@@ -27,7 +26,7 @@ import {
   stopSidecar,
 } from './sidecar-manager.mjs'
 import { setGlobalHotkeys, unregisterAll as unregisterGlobalHotkeys } from './global-hotkeys.mjs'
-import { isSameRenderer, sanitizeFileName } from './desktop-utils.mjs'
+import { isAllowedExternalUrl, isSameRenderer, sanitizeFileName } from './desktop-utils.mjs'
 import {
   destroyDesktopShell,
   getDesktopPrefs,
@@ -272,11 +271,15 @@ function registerIpcHandlers() {
   })
   ipcMain.handle('prefs:set', (event, update = {}) => {
     assertTrusted(event)
-    return setDesktopPrefs({ closeBehavior: update?.closeBehavior })
+    return setDesktopPrefs({
+      closeBehavior: update?.closeBehavior,
+      // The renderer may only mark the running version as seen.
+      lastRunVersion: update?.lastRunVersion === app.getVersion() ? update.lastRunVersion : undefined,
+    })
   })
   ipcMain.handle('shell:openExternal', async (event, url) => {
     assertTrusted(event)
-    if (typeof url !== 'string' || !ALLOWED_EXTERNAL_URLS.includes(url)) {
+    if (!isAllowedExternalUrl(url, GITHUB_REPO_URL)) {
       throw new Error('blocked external url')
     }
     await shell.openExternal(url)

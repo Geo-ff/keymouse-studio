@@ -136,6 +136,13 @@ npx electron-builder --win nsis --config electron-builder.yml --publish never
 - 开发模式（`!app.isPackaged`）不执行正式更新安装
 - 更新安装前会停止后端 sidecar
 
+### 更新说明
+
+- 来源：`docs/release-notes/vX.Y.Z.md`（Markdown）。发版时工作流把它写进 `latest.yml` 的 `releaseNotes`（旧客户端的更新弹窗读这里）和 GitHub Release 正文；前端构建时也会把全部说明打包进应用，用于「关于」页的更新日志和更新后的提示。
+- 写法：只用 `##` / `###` 标题、`-` 列表、普通段落，可以用 `` `代码` `` 和链接；不要用 `**加粗**`（1.0.x 的更新弹窗会原样显示星号）。链接只有指向本仓库的才能点开。
+- 更新前：发现新版本时弹窗一次（每个版本一次）；横幅可以按版本关闭；侧边栏「关于」有红点，「关于」页一直显示该版本的完整说明。
+- 更新后：第一次启动新版本时弹一次「已更新到 vX」，列出上次运行的版本之后所有版本的说明（跳过的版本也在内）；关闭后不再出现。上次运行的版本记在 `%APPDATA%\KeyMouse Studio\desktop-prefs.json` 的 `lastRunVersion`（1.0.x 记在 localStorage，会自动沿用）。全新安装不弹。
+
 ## 发布流程
 
 版本唯一来源：`desktop-poc/electron/package.json` 的 `version`。
@@ -143,7 +150,7 @@ npx electron-builder --win nsis --config electron-builder.yml --publish never
 标签格式：`vX.Y.Z`（去掉 `v` 后必须与 package.json 一致）。
 
 ```powershell
-# 1. 更新版本号并完成验证
+# 1. 更新版本号，写好 docs/release-notes/vX.Y.Z.md，并完成验证
 # 2. 提交并推送 main
 git push origin main
 
@@ -153,7 +160,7 @@ git push origin v0.1.2
 ```
 
 工作流：`.github/workflows/windows-release.yml`  
-会运行前端检查与构建、Python 测试、Electron 测试、sidecar 构建、NSIS 打包，并将安装包与 `latest.yml` 等上传到 GitHub Release。
+会运行前端检查与构建、Python 测试、Electron 测试、sidecar 构建、NSIS 打包，并将安装包与 `latest.yml` 等上传到 GitHub Release。缺少 `docs/release-notes/<标签>.md` 时工作流会直接失败，构建后还会检查 `latest.yml` 是否带上了 `releaseNotes`。
 
 **请勿**把证书、密码或 Token 提交进仓库。代码签名可在 Actions 中配置 `CSC_LINK` / `CSC_KEY_PASSWORD` 等密钥。
 

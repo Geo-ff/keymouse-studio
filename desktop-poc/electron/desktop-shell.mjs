@@ -4,6 +4,7 @@ import path from 'node:path'
 import {
   CLOSE_BEHAVIORS,
   DEFAULT_DESKTOP_PREFS,
+  isVersionString,
   normalizeDesktopPrefs,
   positionOnScreen,
   trayTooltip,
@@ -44,11 +45,16 @@ async function savePrefs() {
 }
 
 export function getDesktopPrefs() {
-  return { closeBehavior: prefs.closeBehavior, miniVisible: isMiniVisible() }
+  return {
+    closeBehavior: prefs.closeBehavior,
+    miniVisible: isMiniVisible(),
+    lastRunVersion: prefs.lastRunVersion ?? null,
+  }
 }
 
 export async function setDesktopPrefs(update = {}) {
   if (CLOSE_BEHAVIORS.includes(update.closeBehavior)) prefs.closeBehavior = update.closeBehavior
+  if (isVersionString(update.lastRunVersion)) prefs.lastRunVersion = update.lastRunVersion
   await savePrefs()
   rebuildTrayMenu()
   return getDesktopPrefs()

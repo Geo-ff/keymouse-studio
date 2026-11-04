@@ -5,17 +5,20 @@
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Layout, type PageId } from './components/Layout';
-import { AboutDialog } from './components/AboutDialog';
 import { UpdateAnnouncementDialog, type UpdateAnnouncementMode } from './components/UpdateAnnouncementDialog';
 import { UpdateProgressBar } from './components/UpdateProgressBar';
 import { AlertDialog } from './components/ui';
 import {
   cacheReleaseNotes,
-  completeWhatsNew,
+  decideWhatsNew,
+  dismissUpdateBanner,
+  getCachedReleaseNotes,
+  getLegacyLastRunVersion,
   hasSeenUpdateAnnouncement,
+  isUpdateBannerDismissed,
   markUpdateAnnouncementSeen,
-  shouldShowWhatsNew,
 } from './utils/updateAnnouncement';
+import type { ReleaseNote } from './utils/releaseNotes';
 import { Dashboard } from './pages/Dashboard';
 import { AutoClicker } from './pages/AutoClicker';
 import { TimedClick } from './pages/TimedClick';
@@ -23,6 +26,7 @@ import { Recording } from './pages/Recording';
 import { ScriptEditor } from './pages/ScriptEditor';
 import { ScriptManager } from './pages/ScriptManager';
 import { Settings } from './pages/Settings';
+import { AboutUpdates } from './pages/AboutUpdates';
 import { useService } from './hooks/useService';
 import { createEmptyScript, mockScripts } from './data/mockData';
 import { useToast } from './providers/ToastProvider';
@@ -73,16 +77,21 @@ export default function App() {
   const theme = settings.theme;
   const [currentScript, setCurrentScript] = useState<Script>(createEmptyScript);
   const [saved, setSaved] = useState(true);
-  const [aboutOpen, setAboutOpen] = useState(false);
   const [aboutInfo, setAboutInfo] = useState<DesktopAboutInfo | null>(null);
   const [updateState, setUpdateState] = useState<DesktopUpdateState | null>(null);
-  const [updateBannerDismissed, setUpdateBannerDismissed] = useState(false);
+  /** Bumped when the banner is closed, so the stored dismissal is read again. */
+  const [bannerDismissals, setBannerDismissals] = useState(0);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [privilegeDialog, setPrivilegeDialog] = useState<{ title: string; description: string } | null>(null);
   const [announceOpen, setAnnounceOpen] = useState(false);
   const [announceMode, setAnnounceMode] = useState<UpdateAnnouncementMode>('available');
-  const [whatsNewNotes, setWhatsNewNotes] = useState<string | null>(null);
-  const [whatsNewVersion, setWhatsNewVersion] = useState<string | null>(null);
+  /** First launch after updating: what changed since the previously run version. */
+  const [whatsNew, setWhatsNew] = useState<{ version: string; previous: string; notes: ReleaseNote[] } | null>(null);
+  /**
+   * At most one dialog per launch: 'checking' until the after-update check is done, then
+   * 'whats-new' if it was shown (the 「发现新版本」 dialog then waits for the next launch).
+   */
+  const [launchPopup, setLaunchPopup] = useState<'checking' | 'whats-new' | 'none'>('checking');
   const pendingHotkeyActions = useRef(new Set<string>());
   const autoAnnouncedVersionRef = useRef<string | null>(null);
   /** Latest options from ScriptEditor UI (loop/duration/speed); falls back to script.settings. */
@@ -444,75 +453,84 @@ export default function App() {
     }
   }, []);
 
-  const openUpdateAnnouncement = useCallback((mode: UpdateAnnouncementMode = 'available') => {
-    setAnnounceMode(mode);
-    setAnnounceOpen(true);
-  }, []);
-
   useEffect(() => {
     void refreshAbout();
     void window.desktop?.getUpdateState?.().then((s) => {
       if (s) setUpdateState(s);
     }).catch(() => undefined);
 
-    // What's New after version bump (uses notes cached when user previously saw available update).
+    // First launch after an update: show what changed, once.
     void (async () => {
       try {
-        const version =
-          (await window.desktop?.getAppVersion?.()) ||
-          (await window.desktop?.getAboutInfo?.())?.version ||
-          null;
-        if (!version) return;
-        const result = shouldShowWhatsNew(version);
-        if (result.show) {
-          setWhatsNewVersion(version);
-          setWhatsNewNotes(result.notes);
+        const desktop = window.desktop;
+        const version = (await desktop?.getAppVersion?.()) || null;
+        if (!desktop?.getDesktopPrefs || !desktop.setDesktopPrefs || !version) {
+          setLaunchPopup('none');
+          return;
+        }
+        const prefs = await desktop.getDesktopPrefs();
+        const decision = decideWhatsNew(version, prefs.lastRunVersion ?? getLegacyLastRunVersion(), {
+          cachedNotes: getCachedReleaseNotes(version),
+        });
+        if (decision.show) {
+          setWhatsNew({ version, previous: decision.previous, notes: decision.notes });
           setAnnounceMode('whats-new');
           setAnnounceOpen(true);
+          setLaunchPopup('whats-new');
+          return;
         }
+        if (decision.record) await desktop.setDesktopPrefs({ lastRunVersion: version });
       } catch {
-        // ignore
+        // Not critical: worst case the notes show on a later launch, or not at all.
       }
+      setLaunchPopup('none');
     })();
 
     const offState = window.desktop?.onUpdateState?.((next) => {
       setUpdateState(next);
       setCheckingUpdate(next.status === 'checking');
-      if (next.status === 'available' || next.status === 'downloading' || next.status === 'downloaded') {
-        setUpdateBannerDismissed(false);
-      }
       if (next.version && next.releaseNotes) {
         cacheReleaseNotes(next.version, next.releaseNotes);
       }
     });
-    const offAbout = window.desktop?.onOpenAbout?.(() => {
-      void refreshAbout();
-      setAboutOpen(true);
-    });
-    const offUpdate = window.desktop?.onOpenUpdatePrompt?.(() => {
-      void refreshAbout();
-      openUpdateAnnouncement('available');
-    });
+    // Menu 「关于」 / update prompt: both live on the 关于 page now.
+    const offAbout = window.desktop?.onOpenAbout?.(() => setPage('about'));
+    const offUpdate = window.desktop?.onOpenUpdatePrompt?.(() => setPage('about'));
     return () => {
       offState?.();
       offAbout?.();
       offUpdate?.();
     };
-  }, [refreshAbout, openUpdateAnnouncement]);
+  }, [refreshAbout]);
 
-  // Auto-open update announcement once per remote version.
+  useEffect(() => {
+    if (page === 'about') void refreshAbout();
+  }, [page, refreshAbout]);
+
+  // Open the 「发现新版本」 dialog once per version (not in a launch that already showed 已更新到).
   useEffect(() => {
     const status = updateState?.status;
     const version = updateState?.version;
     if (!version) return;
     if (status !== 'available' && status !== 'downloaded') return;
     if (updateState?.releaseNotes) cacheReleaseNotes(version, updateState.releaseNotes);
+    if (launchPopup !== 'none') return;
     if (hasSeenUpdateAnnouncement(version)) return;
     if (autoAnnouncedVersionRef.current === version) return;
     autoAnnouncedVersionRef.current = version;
     setAnnounceMode('available');
     setAnnounceOpen(true);
-  }, [updateState?.status, updateState?.version, updateState?.releaseNotes]);
+  }, [updateState?.status, updateState?.version, updateState?.releaseNotes, launchPopup]);
+
+  const closeAnnouncement = useCallback(() => {
+    if (announceMode === 'whats-new') {
+      // Shown once: record this version whichever way the dialog was closed.
+      if (whatsNew) void window.desktop?.setDesktopPrefs?.({ lastRunVersion: whatsNew.version }).catch(() => undefined);
+    } else {
+      markUpdateAnnouncementSeen(updateState?.version);
+    }
+    setAnnounceOpen(false);
+  }, [announceMode, whatsNew, updateState?.version]);
 
   const handleCheckUpdate = useCallback(async () => {
     if (!window.desktop?.checkForUpdates) {
@@ -537,7 +555,6 @@ export default function App() {
 
   const handleDownloadUpdate = useCallback(async () => {
     if (!window.desktop?.downloadUpdate) return;
-    setUpdateBannerDismissed(false);
     try {
       const result = await window.desktop.downloadUpdate();
       setUpdateState((prev) => ({ ...(prev ?? { status: 'idle' }), ...result, status: result.status }));
@@ -631,6 +648,22 @@ export default function App() {
     toast.success('录制脚本保存成功');
   }, [currentScript, saveScript, refreshScripts, toast]);
 
+  const updatePending = updateState?.status === 'available'
+    || updateState?.status === 'downloading'
+    || updateState?.status === 'downloaded';
+  const hasUnsavedRecording = state.recordingState === 'stopped' && state.recordingActions.length > 0;
+  const bannerDismissed = useMemo(
+    () => isUpdateBannerDismissed(updateState?.version, updateState?.status),
+    // bannerDismissals: re-read after the banner is closed.
+    [updateState?.version, updateState?.status, bannerDismissals],
+  );
+  const navBadges = useMemo(() => {
+    const badges: Partial<Record<PageId, string>> = {};
+    if (hasUnsavedRecording) badges.recording = '有未保存的录制结果';
+    if (updatePending) badges.about = '有可用更新';
+    return badges;
+  }, [hasUnsavedRecording, updatePending]);
+
   // Render current page
   const renderPage = () => {
     switch (page) {
@@ -657,6 +690,17 @@ export default function App() {
         );
       case 'manager':
         return <ScriptManager onNavigate={setPage} onLoadScript={handleLoadScript} onNewScript={handleNewScript} onScriptDeleted={handleScriptDeleted} runningScriptId={runningScriptId} onRunScript={(scriptId: string) => { void runScript(scriptId, false); }}  data-qoder-id="qel-scriptmanager-6f7a5cc0" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-scriptmanager-6f7a5cc0&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;scriptmanager&quot;,&quot;loc&quot;:{&quot;line&quot;:107,&quot;column&quot;:16}}"/>;
+      case 'about':
+        return (
+          <AboutUpdates
+            about={aboutInfo}
+            update={updateState}
+            checking={checkingUpdate}
+            onCheckUpdate={() => { void handleCheckUpdate(); }}
+            onDownload={() => { void handleDownloadUpdate(); }}
+            onInstall={() => { void handleInstallUpdate(); }}
+          />
+        );
       case 'settings':
         return <Settings settings={settings} onUpdate={handleUpdateSettings}  data-qoder-id="qel-settings-0722e165" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-settings-0722e165&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;settings&quot;,&quot;loc&quot;:{&quot;line&quot;:109,&quot;column&quot;:16}}"/>;
       default:
@@ -677,17 +721,16 @@ export default function App() {
           </div>
         );
       })()}
-      {!updateBannerDismissed && (
+      {page !== 'about' && !bannerDismissed && (
         <UpdateProgressBar
           update={updateState}
           onDownload={() => { void handleDownloadUpdate(); }}
           onInstall={() => { void handleInstallUpdate(); }}
-          onDismiss={() => setUpdateBannerDismissed(true)}
-          onOpenAbout={() => {
-            void refreshAbout();
-            setAboutOpen(true);
+          onDismiss={() => {
+            dismissUpdateBanner(updateState?.version, updateState?.status);
+            setBannerDismissals(count => count + 1);
           }}
-          onOpenAnnouncement={() => openUpdateAnnouncement('available')}
+          onOpenAbout={() => setPage('about')}
         />
       )}
       <Layout
@@ -699,16 +742,9 @@ export default function App() {
         theme={theme}
         onToggleTheme={handleToggleTheme}
         onEmergencyStop={handleEmergencyStop}
-        onOpenAbout={() => {
-          void refreshAbout();
-          setAboutOpen(true);
-        }}
+        onOpenAbout={() => setPage('about')}
         updateStatus={updateState?.status}
-        navBadges={
-          state.recordingState === 'stopped' && state.recordingActions.length > 0
-            ? { recording: '有未保存的录制结果' }
-            : undefined
-        }
+        navBadges={navBadges}
        data-qoder-id="qel-layout-c21360f5" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-layout-c21360f5&quot;,&quot;filePath&quot;:&quot;react-vite/src/App.tsx&quot;,&quot;componentName&quot;:&quot;App&quot;,&quot;elementRole&quot;:&quot;layout&quot;,&quot;loc&quot;:{&quot;line&quot;:117,&quot;column&quot;:7}}">
         {renderPage()}
       </Layout>
@@ -720,31 +756,17 @@ export default function App() {
         confirmLabel="知道了"
         onClose={() => setPrivilegeDialog(null)}
       />
-      <AboutDialog
-        open={aboutOpen}
-        onClose={() => setAboutOpen(false)}
-        about={aboutInfo}
-        update={updateState}
-        checking={checkingUpdate}
-        onCheckUpdate={() => { void handleCheckUpdate(); }}
-        onDownload={() => { void handleDownloadUpdate(); }}
-        onInstall={() => { void handleInstallUpdate(); }}
-        onOpenAnnouncement={() => openUpdateAnnouncement('available')}
-      />
       <UpdateAnnouncementDialog
         open={announceOpen}
         mode={announceMode}
         update={updateState}
-        notes={announceMode === 'whats-new' ? whatsNewNotes : updateState?.releaseNotes}
-        version={announceMode === 'whats-new' ? whatsNewVersion : updateState?.version}
-        releaseDate={updateState?.releaseDate}
-        onClose={() => {
-          if (announceMode === 'whats-new') {
-            completeWhatsNew(whatsNewVersion);
-          } else {
-            markUpdateAnnouncementSeen(updateState?.version);
-          }
-          setAnnounceOpen(false);
+        version={whatsNew?.version}
+        previousVersion={whatsNew?.previous}
+        notes={whatsNew?.notes}
+        onClose={closeAnnouncement}
+        onOpenAbout={() => {
+          closeAnnouncement();
+          setPage('about');
         }}
         onDownload={() => {
           markUpdateAnnouncementSeen(updateState?.version);

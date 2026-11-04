@@ -479,13 +479,16 @@ export interface DesktopApi {
   /** Text shown in the tray icon tooltip. */
   setShellStatus?(text: string): Promise<{ ok: boolean }>;
   getDesktopPrefs?(): Promise<DesktopPrefs>;
-  setDesktopPrefs?(update: Partial<Pick<DesktopPrefs, 'closeBehavior'>>): Promise<DesktopPrefs>;
+  /** `lastRunVersion` is accepted only as the running app's own version. */
+  setDesktopPrefs?(update: Partial<Pick<DesktopPrefs, 'closeBehavior' | 'lastRunVersion'>>): Promise<DesktopPrefs>;
 }
 
 export type CloseBehavior = 'ask' | 'tray' | 'quit';
 export interface DesktopPrefs {
   closeBehavior: CloseBehavior;
   miniVisible: boolean;
+  /** Version whose 「已更新到」 notes were last shown (or that was freshly installed). */
+  lastRunVersion?: string | null;
 }
 
 declare global {

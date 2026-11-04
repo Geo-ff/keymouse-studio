@@ -18,6 +18,11 @@ export const DEFAULT_DESKTOP_PREFS = Object.freeze({
   mini: Object.freeze({ visible: false }),
 })
 
+/** A plain app version such as 1.1.0 or 1.2.0-beta.1. */
+export function isVersionString(value) {
+  return typeof value === 'string' && value.length <= 64 && /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(value)
+}
+
 /** Validate the saved desktop preferences file; anything unexpected falls back to defaults. */
 export function normalizeDesktopPrefs(raw) {
   const source = raw && typeof raw === 'object' ? raw : {}
@@ -31,6 +36,8 @@ export function normalizeDesktopPrefs(raw) {
     result.mini.x = mini.x
     result.mini.y = mini.y
   }
+  // Version whose "what's new" was last shown; the renderer compares it with the running one.
+  if (isVersionString(source.lastRunVersion)) result.lastRunVersion = source.lastRunVersion
   return result
 }
 
@@ -65,4 +72,19 @@ export function positionOnScreen(position, workAreas, size) {
     position.y + 24 <= area.y + area.height,
   )
   return visible ? { x: position.x, y: position.y } : null
+}
+
+/** External links may only open pages of the project's own repository (https, same host). */
+export function isAllowedExternalUrl(url, repoUrl) {
+  if (typeof url !== 'string' || typeof repoUrl !== 'string') return false
+  let parsed
+  let repo
+  try {
+    parsed = new URL(url)
+    repo = new URL(repoUrl)
+  } catch {
+    return false
+  }
+  if (parsed.protocol !== 'https:' || parsed.host !== repo.host || parsed.username || parsed.password) return false
+  return parsed.pathname === repo.pathname || parsed.pathname.startsWith(`${repo.pathname}/`)
 }

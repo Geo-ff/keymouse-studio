@@ -299,6 +299,7 @@ V1 采用以下结构，详细后端基线见 `docs/backend-design.md`：
 
 - [x] 将 `https://github.com/Geo-ff/keymouse-studio` 配置为应用的固定官方仓库入口，仅通过系统浏览器打开该白名单地址。
 - [x] 将顶部“帮助”菜单改为“关于 KeyMouse Studio”，集中提供关于信息、当前版本、GitHub 仓库和“检查更新”入口。
+- [x] 更新说明改造：说明文件 `docs/release-notes/vX.Y.Z.md` 必填并写入 `latest.yml`；「关于」改为完整页面（侧边栏入口 + 有更新时红点），一直显示可用版本的完整说明和历次更新日志；横幅按版本关闭；更新后第一次启动弹一次「已更新到 vX」（含跳过的版本），关闭后不再出现。
 - [x] 使用 `electron-updater` 对接 GitHub Releases，支持启动后静默检查和用户手动检查更新（开发模式禁用正式安装）。
 - [x] 展示“已是最新版本、发现新版本、下载进度、下载失败、下载完成”等状态；下载完成后允许“立即重启安装”或“稍后安装”。
 - [x] 使用 GitHub Actions 构建 Windows 安装包，并在 Release 中发布安装程序、`latest.yml`、校验文件和发布说明（工作流已添加；需推送 `vX.Y.Z` 标签触发）。
@@ -349,7 +350,7 @@ npx electron-builder --win nsis --config electron-builder.yml --publish never
 **更新机制**
 
 - 提供方：`electron-updater` + GitHub Releases（`Geo-ff/keymouse-studio`）。
-- 启动后约 8 秒静默检查一次；菜单「检查更新」可手动触发。
+- 启动后约 5 秒静默检查一次；菜单「检查更新」和「关于」页可手动触发。
 - 开发态（`!app.isPackaged`）只提示“开发模式不可更新”，不下载/不安装。
 - 更新安装前 `before-quit` 会停止 sidecar。
 - 客户端无 GitHub Token。
@@ -362,7 +363,7 @@ npx electron-builder --win nsis --config electron-builder.yml --publish never
 
 **首次发布步骤（人工）**
 
-1. 将 `desktop-poc/electron/package.json` 版本改为目标版本（如 `0.1.0`）。
+1. 将 `desktop-poc/electron/package.json` 版本改为目标版本（如 `0.1.0`），并编写 `docs/release-notes/v0.1.0.md`（缺少时发版工作流会失败；写法见 `docs/development.md`「更新说明」）。
 2. 运行上述验证命令，确认全部通过。
 3. 提交代码并推送到 `main`（不要自动打标签）。
 4. 创建并推送标签：`git tag v0.1.0` → `git push origin v0.1.0`。

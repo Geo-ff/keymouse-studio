@@ -697,6 +697,16 @@ input, select, textarea {
   opacity: 0.95;
 }
 
+/* Sidebar tooltips open to the right: centred above, long ones were cut off at the window edge. */
+@media (min-width: 481px) {
+  .app-sidebar [data-tooltip]::after {
+    bottom: auto;
+    top: 50%;
+    left: calc(100% + 8px);
+    transform: translateY(-50%);
+  }
+}
+
 /* --- Inputs --- */
 .input {
   padding: var(--space-xs) var(--space-sm);
@@ -1520,17 +1530,7 @@ input, select, textarea {
   margin-top: 20px;
 }
 
-/* --- About dialog --- */
-.about-dialog {
-  position: relative;
-  width: min(440px, 100%);
-  padding: 28px 24px 20px;
-  background: var(--color-bg-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  box-shadow: var(--shadow-lg);
-  will-change: transform, opacity;
-}
+/* --- About page --- */
 
 .about-close {
   position: absolute;
@@ -1552,13 +1552,6 @@ input, select, textarea {
   color: var(--color-text-primary);
 }
 
-.about-hero {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 20px;
-  padding-right: 24px;
-}
 
 .about-logo {
   width: 72px;
@@ -1569,50 +1562,11 @@ input, select, textarea {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
 }
 
-.about-hero-text h2 {
-  margin: 0 0 6px;
-  font-size: 1.25rem;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-}
 
-.about-desc {
-  margin: 0;
-  color: var(--color-text-secondary);
-  font-size: var(--fs-sm);
-  line-height: 1.55;
-}
 
-.about-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
-  margin-bottom: 14px;
-  border-radius: 10px;
-  background: var(--color-bg-muted, var(--color-bg-hover));
-  border: 1px solid var(--color-border-subtle);
-}
 
-.about-meta-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: baseline;
-}
 
-.about-meta-label {
-  color: var(--color-text-secondary);
-  font-size: var(--fs-sm);
-  flex-shrink: 0;
-}
 
-.about-meta-value {
-  text-align: right;
-  font-size: var(--fs-sm);
-  color: var(--color-text-primary);
-  word-break: break-word;
-}
 
 .about-progress-block {
   display: flex;
@@ -1702,37 +1656,9 @@ input, select, textarea {
   text-align: center;
 }
 
-.about-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
 
-.about-actions .btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
 
-.about-notes-link {
-  width: 100%;
-  margin-bottom: 12px;
-  padding: 8px 12px;
-  border: 1px dashed var(--color-border);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--color-action-primary);
-  font-size: var(--fs-sm);
-  font-weight: 500;
-  cursor: pointer;
-  text-align: center;
-  transition: background 120ms ease, border-color 120ms ease;
-}
 
-.about-notes-link:hover {
-  background: color-mix(in srgb, var(--color-action-primary) 8%, transparent);
-  border-color: color-mix(in srgb, var(--color-action-primary) 40%, var(--color-border));
-}
 
 .about-spin {
   animation: about-spin 0.9s linear infinite;
@@ -1821,6 +1747,46 @@ input, select, textarea {
   margin-top: 0;
 }
 
+.update-notes-heading-1 {
+  font-size: 1.05rem;
+}
+
+.update-notes-heading-3 {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.update-notes-code {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--color-bg-muted);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  word-break: break-all;
+}
+
+.update-notes-link {
+  color: var(--color-action-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+/* A version's notes inside a list of versions (what's new / changelog) */
+.release-notes-version + .release-notes-version {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.release-notes-version-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+  font-weight: 650;
+}
+
 .update-notes-bullet {
   display: flex;
   gap: 8px;
@@ -1838,6 +1804,79 @@ input, select, textarea {
 
 .update-notes-spacer {
   height: 8px;
+}
+
+button.update-notes-link {
+  padding: 0;
+  text-decoration: none;
+}
+
+button.update-notes-link:hover {
+  text-decoration: underline;
+}
+
+.update-announce-hint {
+  margin-right: auto;
+  align-self: center;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+/* Sidebar entries pinned to the bottom (关于) */
+.nav-item-bottom {
+  margin-top: auto;
+}
+
+/* 关于 page: notes of the version that can be installed */
+.update-available-notes {
+  margin-top: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--color-action-primary) 30%, var(--color-border-subtle));
+  background: color-mix(in srgb, var(--color-action-primary) 5%, var(--color-bg-surface));
+}
+
+/* 关于 page: changelog, one collapsible entry per version */
+.release-history-item + .release-history-item {
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.release-history-item > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
+  font-weight: 650;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.release-history-item > summary::-webkit-details-marker {
+  display: none;
+}
+
+.release-history-chevron {
+  color: var(--color-text-tertiary);
+  transition: transform var(--transition-fast);
+}
+
+.release-history-item[open] .release-history-chevron {
+  transform: rotate(90deg);
+}
+
+.release-history-item > .update-notes-body,
+.release-history-item > .update-notes-empty {
+  padding: 0 0 var(--space-md) 22px;
+}
+
+.about-page-card .about-github {
+  margin-bottom: 0;
+}
+
+.about-page-card .about-support {
+  margin: 0;
+  text-align: left;
 }
 
 .update-announce-actions {

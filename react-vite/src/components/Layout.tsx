@@ -29,12 +29,14 @@ import type { DesktopUpdateState, OperationType, RunState } from '../types';
 import { formatHotkeyLabel, matchesHotkey } from '../utils/hotkey';
 import { isMockModeAllowed } from '../utils/runtime';
 
-export type PageId = 'dashboard' | 'clicker' | 'timed' | 'recording' | 'script' | 'manager' | 'settings';
+export type PageId = 'dashboard' | 'clicker' | 'timed' | 'recording' | 'script' | 'manager' | 'settings' | 'about';
 
 interface NavItem {
   id: PageId;
   label: string;
   icon: ReactNode;
+  /** Pinned to the bottom of the sidebar. */
+  bottom?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -44,6 +46,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'recording', label: '录制', icon: <Circle size={18}  data-qoder-id="qel-circle-c471470b" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-circle-c471470b&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Unknown&quot;,&quot;elementRole&quot;:&quot;circle&quot;,&quot;loc&quot;:{&quot;line&quot;:40,&quot;column&quot;:41}}"/> },
   { id: 'manager', label: '脚本', icon: <FileCode2 size={18}  data-qoder-id="qel-filecode2-de4d8be0" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-filecode2-de4d8be0&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Unknown&quot;,&quot;elementRole&quot;:&quot;filecode2&quot;,&quot;loc&quot;:{&quot;line&quot;:41,&quot;column&quot;:38}}"/> },
   { id: 'settings', label: '设置', icon: <Settings size={18}  data-qoder-id="qel-settings-b1a4688f" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-settings-b1a4688f&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Unknown&quot;,&quot;elementRole&quot;:&quot;settings&quot;,&quot;loc&quot;:{&quot;line&quot;:42,&quot;column&quot;:40}}"/> },
+  { id: 'about', label: '关于', icon: <Info size={18} />, bottom: true },
 ];
 
 /* --- Sidebar --- */
@@ -66,7 +69,7 @@ function Sidebar({ activePage, onNavigate, badges = {}, ...qoderProps }: { activ
         return (
         <button
           key={item.id}
-          className={`nav-item ${active ? 'active' : ''}`}
+          className={`nav-item${active ? ' active' : ''}${item.bottom ? ' nav-item-bottom' : ''}`}
           onClick={() => onNavigate(item.id)}
           data-tooltip={badges[item.id] ? `${item.label}（${badges[item.id]}）` : item.label}
           aria-label={item.label}

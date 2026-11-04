@@ -5,19 +5,13 @@ interface UpdateProgressBarProps {
   update: DesktopUpdateState | null;
   onDownload?(): void;
   onInstall?(): void;
+  /** Close the banner for this version (it returns once the download finishes). */
   onDismiss?(): void;
+  /** Open the 「关于」 page, which shows this version's full notes. */
   onOpenAbout?(): void;
-  onOpenAnnouncement?(): void;
 }
 
-export function UpdateProgressBar({
-  update,
-  onDownload,
-  onInstall,
-  onDismiss,
-  onOpenAbout,
-  onOpenAnnouncement,
-}: UpdateProgressBarProps) {
+export function UpdateProgressBar({ update, onDownload, onInstall, onDismiss, onOpenAbout }: UpdateProgressBarProps) {
   if (!update) return null;
 
   const { status, version, percent = 0, message } = update;
@@ -35,21 +29,14 @@ export function UpdateProgressBar({
       : status === 'downloading'
         ? `正在下载 v${version ?? ''} ${pct}%`
         : status === 'downloaded'
-          ? `v${version ?? ''} 已下载完成`
+          ? `v${version ?? ''} 已下载完成，重启后生效`
           : message || '正在安装更新…';
 
   return (
     <div className="update-banner" role="status" aria-live="polite">
       <div className="update-banner-main">
         <Download size={14} className="update-banner-icon" />
-        <button
-          type="button"
-          className="update-banner-text"
-          onClick={() => {
-            if (onOpenAnnouncement) onOpenAnnouncement();
-            else onOpenAbout?.();
-          }}
-        >
+        <button type="button" className="update-banner-text" onClick={onOpenAbout}>
           {label}
         </button>
         {(status === 'downloading' || status === 'downloaded' || status === 'installing') && (
@@ -60,9 +47,9 @@ export function UpdateProgressBar({
         <span className="update-banner-pct text-mono">{status === 'available' ? '' : `${pct}%`}</span>
       </div>
       <div className="update-banner-actions">
-        {onOpenAnnouncement && (status === 'available' || status === 'downloaded') && (
-          <button type="button" className="btn btn-sm btn-ghost" onClick={onOpenAnnouncement}>
-            更新说明
+        {onOpenAbout && status !== 'installing' && (
+          <button type="button" className="btn btn-sm btn-ghost" onClick={onOpenAbout}>
+            更新内容
           </button>
         )}
         {status === 'available' && onDownload && (
@@ -76,8 +63,14 @@ export function UpdateProgressBar({
             重启安装
           </button>
         )}
-        {onDismiss && status !== 'installing' && status !== 'downloading' && (
-          <button type="button" className="btn btn-ghost btn-icon btn-sm" onClick={onDismiss} aria-label="关闭">
+        {onDismiss && (status === 'available' || status === 'downloaded') && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-icon btn-sm"
+            onClick={onDismiss}
+            aria-label="关闭提示"
+            data-tooltip="关闭提示（侧边栏「关于」仍会显示红点）"
+          >
             <X size={14} />
           </button>
         )}

@@ -26,3 +26,5 @@ desktop-poc/electron/dist/
 
 .playwright-cli/
 output/
+# Copied from docs/release-notes/<tag>.md by the release workflow
+desktop-poc/electron/build/release-notes.md

@@ -82,6 +82,21 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Prepare release notes
+        id: notes
+        shell: bash
+        run: |
+          # Every release ships with written notes: they go into latest.yml (what the in-app
+          # update dialog reads, as Markdown), the GitHub Release body, and the app itself.
+          NOTES="docs/release-notes/${GITHUB_REF_NAME}.md"
+          if [ ! -s "$NOTES" ]; then
+            echo "::error::Missing $NOTES — write the release notes before tagging."
+            exit 1
+          fi
+          mkdir -p desktop-poc/electron/build
+          cp "$NOTES" desktop-poc/electron/build/release-notes.md
+          echo "path=$NOTES" >> "$GITHUB_OUTPUT"
+
       - name: Build unsigned NSIS installer
         working-directory: desktop-poc/electron
         env:
@@ -102,23 +117,21 @@ jobs:
             }
           }
 
+      - name: Verify release notes in latest.yml
+        working-directory: desktop-poc/electron
+        shell: bash
+        run: |
+          if ! grep -q "^releaseNotes:" dist/latest.yml; then
+            echo "::error::dist/latest.yml has no releaseNotes; the update dialog would fall back to GitHub's HTML feed."
+            exit 1
+          fi
+
       - name: List dist artifacts
         working-directory: desktop-poc/electron
         shell: bash
         run: |
           ls -la dist || true
           ls -la dist/*.yml dist/*.exe dist/*.blockmap 2>/dev/null || true
-
-      - name: Resolve release notes
-        id: notes
-        shell: bash
-        run: |
-          NOTES="docs/release-notes/${GITHUB_REF_NAME}.md"
-          if [ -f "$NOTES" ]; then
-            echo "path=$NOTES" >> "$GITHUB_OUTPUT"
-          else
-            echo "No $NOTES; the release uses generated notes only"
-          fi
 
       - name: Upload Release assets
         uses: softprops/action-gh-release@v2
@@ -127,8 +140,7 @@ jobs:
           name: KeyMouse Studio ${{ github.ref_name }}
           draft: false
           prerelease: false
-          # Hand-written notes (shown in the in-app update dialog) come first when present;
-          # GitHub appends the generated change list after them.
+          # The written notes come first; GitHub appends its generated change list after them.
           body_path: ${{ steps.notes.outputs.path }}
           generate_release_notes: true
           fail_on_unmatched_files: true

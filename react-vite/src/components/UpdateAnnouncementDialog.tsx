@@ -2,81 +2,47 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, RotateCcw, Sparkles, X } from 'lucide-react';
 import { Button } from './ui';
+import { ReleaseNotesView } from './ReleaseNotesView';
 import type { DesktopUpdateState } from '../types';
-import { formatReleaseNotesLines } from '../utils/updateAnnouncement';
+import { findReleaseNote, normalizeNotes, type ReleaseNote } from '../utils/releaseNotes';
 
 export type UpdateAnnouncementMode = 'available' | 'whats-new';
 
 interface UpdateAnnouncementDialogProps {
   open: boolean;
+  /** available: a newer version can be installed. whats-new: first launch after updating. */
   mode: UpdateAnnouncementMode;
   update: DesktopUpdateState | null;
-  /** Override notes (e.g. cached notes for whats-new). */
-  notes?: string | null;
+  /** whats-new: the version now running and the one that ran before. */
   version?: string | null;
-  releaseDate?: string | null;
+  previousVersion?: string | null;
+  /** whats-new: notes of every version since the previous one, newest first. */
+  notes?: ReleaseNote[];
   onClose(): void;
   onDownload?(): void;
   onInstall?(): void;
+  /** Open the 「关于」 page (full changelog). */
+  onOpenAbout?(): void;
 }
 
 function formatReleaseDate(value?: string | null) {
   if (!value) return null;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function NotesBody({ notes }: { notes: string | null | undefined }) {
-  const lines = formatReleaseNotesLines(notes);
-  if (!lines.length) {
-    return <p className="update-notes-empty">暂无详细更新说明。发布时请在 GitHub Release 正文中填写更新公告。</p>;
-  }
-  return (
-    <div className="update-notes-body">
-      {lines.map((line, index) => {
-        if (!line.trim()) return <div key={index} className="update-notes-spacer" />;
-        if (/^#{1,3}\s+/.test(line)) {
-          return (
-            <div key={index} className="update-notes-heading">
-              {line.replace(/^#{1,3}\s+/, '')}
-            </div>
-          );
-        }
-        if (/^[-*•]\s+/.test(line)) {
-          return (
-            <div key={index} className="update-notes-bullet">
-              <span className="update-notes-bullet-mark">•</span>
-              <span>{line.replace(/^[-*•]\s+/, '')}</span>
-            </div>
-          );
-        }
-        return (
-          <p key={index} className="update-notes-paragraph">
-            {line}
-          </p>
-        );
-      })}
-    </div>
-  );
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
 export function UpdateAnnouncementDialog({
   open,
   mode,
   update,
-  notes,
   version,
-  releaseDate,
+  previousVersion,
+  notes = [],
   onClose,
   onDownload,
   onInstall,
+  onOpenAbout,
 }: UpdateAnnouncementDialogProps) {
   const [visible, setVisible] = useState(open);
   const [leaving, setLeaving] = useState(false);
@@ -107,28 +73,33 @@ export function UpdateAnnouncementDialog({
 
   if (!visible) return null;
 
+  const whatsNew = mode === 'whats-new';
   const status = update?.status ?? '';
-  const displayVersion = version ?? update?.version ?? update?.currentVersion ?? '';
-  const displayDate = formatReleaseDate(releaseDate ?? update?.releaseDate);
-  const displayNotes = notes ?? update?.releaseNotes ?? null;
-  const canDownload = mode === 'available' && status === 'available' && onDownload;
-  const canInstall = mode === 'available' && status === 'downloaded' && onInstall;
-  const isDownloading = mode === 'available' && status === 'downloading';
   const percent = Math.max(0, Math.min(100, Math.round(update?.percent ?? 0)));
+  const canDownload = !whatsNew && status === 'available' && onDownload;
+  const canInstall = !whatsNew && status === 'downloaded' && onInstall;
+  const isDownloading = !whatsNew && status === 'downloading';
 
-  const title =
-    mode === 'whats-new'
-      ? `欢迎使用 v${displayVersion}`
-      : status === 'downloaded'
-        ? `更新已就绪 v${displayVersion}`
-        : `发现新版本 v${displayVersion}`;
+  let title: string;
+  let subtitle: string;
+  if (whatsNew) {
+    title = `已更新到 v${version ?? ''}`;
+    subtitle = notes.length > 1
+      ? `从 v${previousVersion ?? ''} 升级而来，下面是期间 ${notes.length} 个版本的更新内容`
+      : '下面是这次更新的内容';
+  } else {
+    const updateVersion = update?.version ?? '';
+    title = status === 'downloaded' ? `新版本 v${updateVersion} 已下载` : `发现新版本 v${updateVersion}`;
+    const date = formatReleaseDate(update?.releaseDate);
+    subtitle = [
+      update?.currentVersion ? `当前版本 v${update.currentVersion}` : null,
+      date ? `发布于 ${date}` : null,
+    ].filter(Boolean).join(' · ') || '下面是这个版本的更新内容';
+  }
 
-  const subtitle =
-    mode === 'whats-new'
-      ? '本次安装包含以下更新'
-      : displayDate
-        ? `发布时间：${displayDate}`
-        : '以下为该版本更新说明';
+  const availableNotes = whatsNew
+    ? null
+    : normalizeNotes(update?.releaseNotes) ?? findReleaseNote(update?.version)?.markdown ?? null;
 
   return createPortal(
     <div
@@ -158,7 +129,22 @@ export function UpdateAnnouncementDialog({
         </div>
 
         <div className="update-notes-scroll">
-          <NotesBody notes={displayNotes} />
+          {whatsNew ? (
+            notes.length === 0 ? (
+              <ReleaseNotesView markdown={null} />
+            ) : notes.length === 1 ? (
+              <ReleaseNotesView markdown={notes[0].markdown} />
+            ) : (
+              notes.map(note => (
+                <section key={note.version} className="release-notes-version">
+                  <div className="release-notes-version-title">v{note.version}</div>
+                  <ReleaseNotesView markdown={note.markdown} />
+                </section>
+              ))
+            )
+          ) : (
+            <ReleaseNotesView markdown={availableNotes} />
+          )}
         </div>
 
         {isDownloading && (
@@ -171,18 +157,32 @@ export function UpdateAnnouncementDialog({
         )}
 
         <div className="update-announce-actions">
-          <Button variant="ghost" onClick={onClose}>
-            {mode === 'whats-new' ? '知道了' : '稍后'}
-          </Button>
-          {canInstall ? (
-            <Button onClick={onInstall} icon={<RotateCcw size={14} />}>
-              立即重启安装
+          <span className="update-announce-hint">
+            {whatsNew ? '以后可以在「关于」页面查看历次更新' : '关闭后可以在「关于」页面随时查看'}
+          </span>
+          {onOpenAbout && whatsNew && (
+            <Button variant="ghost" onClick={onOpenAbout}>
+              查看更新日志
             </Button>
-          ) : canDownload ? (
-            <Button onClick={onDownload} icon={<Download size={14} />}>
-              下载更新
-            </Button>
-          ) : null}
+          )}
+          {whatsNew ? (
+            <Button variant="primary" onClick={onClose}>知道了</Button>
+          ) : (
+            <>
+              <Button variant="ghost" onClick={onClose}>
+                稍后
+              </Button>
+              {canInstall ? (
+                <Button variant="primary" onClick={onInstall} icon={<RotateCcw size={14} />}>
+                  立即重启安装
+                </Button>
+              ) : canDownload ? (
+                <Button variant="primary" onClick={onDownload} icon={<Download size={14} />}>
+                  下载更新
+                </Button>
+              ) : null}
+            </>
+          )}
         </div>
       </div>
     </div>,

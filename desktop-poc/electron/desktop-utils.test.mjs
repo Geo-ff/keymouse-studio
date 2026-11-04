@@ -11,7 +11,7 @@ test('sanitizeFileName keeps a plain .json base name', () => {
   assert.equal(sanitizeFileName(undefined), 'keymouse-scripts.json')
 })
 
-import { isSameRenderer, normalizeDesktopPrefs, positionOnScreen, trayTooltip } from './desktop-utils.mjs'
+import { isSameRenderer, isVersionString, normalizeDesktopPrefs, positionOnScreen, trayTooltip } from './desktop-utils.mjs'
 
 test('normalizeDesktopPrefs falls back to safe defaults', () => {
   assert.deepEqual(normalizeDesktopPrefs(null), { closeBehavior: 'ask', trayHintShown: false, mini: { visible: false } })
@@ -23,6 +23,17 @@ test('normalizeDesktopPrefs falls back to safe defaults', () => {
     normalizeDesktopPrefs({ closeBehavior: 'explode', mini: { visible: 'yes', x: 1.5, y: 2 } }),
     { closeBehavior: 'ask', trayHintShown: false, mini: { visible: false } },
   )
+  assert.equal(normalizeDesktopPrefs({ lastRunVersion: '1.1.0' }).lastRunVersion, '1.1.0')
+  assert.equal('lastRunVersion' in normalizeDesktopPrefs({ lastRunVersion: '<b>' }), false)
+})
+
+test('isVersionString accepts app versions only', () => {
+  assert.equal(isVersionString('1.1.0'), true)
+  assert.equal(isVersionString('1.2.0-beta.1'), true)
+  assert.equal(isVersionString('v1.1.0'), false)
+  assert.equal(isVersionString('1.1'), false)
+  assert.equal(isVersionString(110), false)
+  assert.equal(isVersionString(`1.1.0-${'x'.repeat(80)}`), false)
 })
 
 test('trayTooltip names the status and respects the Windows limit', () => {
@@ -47,4 +58,18 @@ test('positionOnScreen drops positions on a disconnected monitor', () => {
   assert.deepEqual(positionOnScreen({ x: 1500, y: 20 }, areas, size), { x: 1500, y: 20 })
   assert.equal(positionOnScreen({ x: 2500, y: 20 }, areas, size), null)
   assert.equal(positionOnScreen(undefined, areas, size), null)
+})
+
+import { isAllowedExternalUrl } from './desktop-utils.mjs'
+
+test('isAllowedExternalUrl only opens pages of the project repository', () => {
+  const repo = 'https://github.com/Geo-ff/keymouse-studio'
+  assert.equal(isAllowedExternalUrl(repo, repo), true)
+  assert.equal(isAllowedExternalUrl(`${repo}/releases/tag/v1.1.0`, repo), true)
+  assert.equal(isAllowedExternalUrl(`${repo}/issues/1`, repo), true)
+  assert.equal(isAllowedExternalUrl('https://github.com/Geo-ff/keymouse-studio-evil', repo), false)
+  assert.equal(isAllowedExternalUrl('http://github.com/Geo-ff/keymouse-studio', repo), false)
+  assert.equal(isAllowedExternalUrl('https://evil.example/Geo-ff/keymouse-studio', repo), false)
+  assert.equal(isAllowedExternalUrl('https://user:pw@github.com/Geo-ff/keymouse-studio', repo), false)
+  assert.equal(isAllowedExternalUrl('javascript:alert(1)', repo), false)
 })
