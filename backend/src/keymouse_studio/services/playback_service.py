@@ -456,12 +456,14 @@ class PlaybackService:
 
         Not scaled by playback speed and not paused: the button is always released promptly.
         """
-        remaining_ns = MOUSE_CLICK_HOLD_MS * 1_000_000
-        while remaining_ns > 0 and not self._cancelled.is_set():
-            slice_ns = min(remaining_ns, int(self._poll_seconds * 1_000_000_000))
-            before = self._clock.now_ns()
-            await self._clock.sleep(slice_ns / 1_000_000_000)
-            remaining_ns -= max(slice_ns, self._clock.now_ns() - before)
+        # Count measured time (like every other wait): on Windows with Python 3.12 the monotonic
+        # clock ticks every ~15.6 ms, so counting requested sleep time could release too early.
+        deadline_ns = self._clock.now_ns() + MOUSE_CLICK_HOLD_MS * 1_000_000
+        while not self._cancelled.is_set():
+            remaining_ns = deadline_ns - self._clock.now_ns()
+            if remaining_ns <= 0:
+                return
+            await self._clock.sleep(min(remaining_ns / 1_000_000_000, self._poll_seconds))
 
     async def _wait_countdown(self, duration_ms: int, operation_id: UUID) -> None:
         remaining_ns = duration_ms * 1_000_000

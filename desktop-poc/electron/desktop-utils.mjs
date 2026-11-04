@@ -1,10 +1,10 @@
-import path from 'node:path'
-
 // Pure helpers for the main process (kept free of Electron imports so they can be unit tested).
 
 /** Keep a suggested file name to a plain base name (no folders, no reserved characters). */
 export function sanitizeFileName(name, fallback = 'keymouse-scripts.json') {
-  const base = typeof name === 'string' ? path.basename(name) : ''
+  // Split on both separators ourselves: path.basename differs per platform (on Windows "a:b"
+  // is a drive-relative path), and the result must be the same everywhere.
+  const base = typeof name === 'string' ? name.split(/[\\/]/).pop() : ''
   const cleaned = base.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').trim().slice(0, 120)
   if (!cleaned || cleaned === '.' || cleaned === '..') return fallback
   return cleaned.toLowerCase().endsWith('.json') ? cleaned : `${cleaned}.json`
