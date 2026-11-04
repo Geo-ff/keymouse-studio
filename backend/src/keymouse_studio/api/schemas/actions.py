@@ -59,6 +59,10 @@ class KeyPayload(ApiModel):
     extended: bool = False
 
 
+class EmptyPayload(ApiModel):
+    pass
+
+
 class WaitPayload(ApiModel):
     duration_ms: Annotated[int, Field(ge=0, le=86_400_000)]
 
@@ -109,6 +113,20 @@ class KeyUpAction(ActionBase):
     payload: KeyPayload
 
 
+class MousePositionSaveAction(ActionBase):
+    """Remember where the cursor is now (replaces the position remembered at playback start)."""
+
+    type: Literal["mouse_position_save"]
+    payload: EmptyPayload = Field(default_factory=EmptyPayload)
+
+
+class MousePositionRestoreAction(ActionBase):
+    """Move the cursor back to the remembered position (playback start, or the last save)."""
+
+    type: Literal["mouse_position_restore"]
+    payload: EmptyPayload = Field(default_factory=EmptyPayload)
+
+
 class WaitAction(ActionBase):
     type: Literal["wait"]
     payload: WaitPayload
@@ -123,6 +141,8 @@ ScriptAction = Annotated[
     | MouseWheelAction
     | KeyDownAction
     | KeyUpAction
+    | MousePositionSaveAction
+    | MousePositionRestoreAction
     | WaitAction,
     Field(discriminator="type"),
 ]

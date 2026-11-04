@@ -10,6 +10,7 @@ const withBindings: AppSettings = {
   ...DEFAULT_SETTINGS,
   recordStartHotkey: 'F9',
   clickerToggleHotkey: 'F8',
+  pauseToggleHotkey: 'F7',
   scriptHotkeys: { [SCRIPT_A]: 'Ctrl+1' },
 };
 
@@ -21,6 +22,7 @@ describe('reserved hotkeys', () => {
       emergencyHotkey: 'F12',
       recordStartHotkey: 'F9',
       clickerToggleHotkey: 'F8',
+      pauseToggleHotkey: 'F7',
       [scriptHotkeyField(SCRIPT_A)]: 'Ctrl+1',
     });
     const conflict = findHotkeyConflict('script:other', 'ctrl+1', reserved);
@@ -79,6 +81,7 @@ describe('settings round trip with the backend', () => {
       playbackStartHotkey: '',
       playbackStopHotkey: '',
       clickerToggleHotkey: 'f8',
+      pauseToggleHotkey: 'f7',
       scriptHotkeys: { [SCRIPT_A]: 'ctrl+page_up' },
     };
     Object.assign(service, {
@@ -99,11 +102,13 @@ describe('settings round trip with the backend', () => {
 
     const loaded = await service.getSettings();
     expect(loaded.clickerToggleHotkey).toBe('F8');
+    expect(loaded.pauseToggleHotkey).toBe('F7');
     expect(loaded.scriptHotkeys).toEqual({ [SCRIPT_A]: 'Ctrl+PageUp' });
 
     const updated = await service.updateSettings({ scriptHotkeys: { [SCRIPT_A]: 'Ctrl+PageUp', other: '' } });
     expect(sent!.scriptHotkeys).toEqual({ [SCRIPT_A]: 'ctrl+page_up' });
     expect(sent!.clickerToggleHotkey).toBe('f8');
+    expect(sent!.pauseToggleHotkey).toBe('f7');
     expect(updated.scriptHotkeys).toEqual({ [SCRIPT_A]: 'Ctrl+PageUp' });
   });
 });

@@ -24,12 +24,16 @@ import {
   Scroll,
   Keyboard,
   Clock,
+  MapPin,
+  LocateFixed,
   Plus,
   ChevronUp,
   ChevronDown,
   Repeat,
   Infinity as InfinityIcon,
   Timer,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 import { useService } from '../hooks/useService';
 import { usePageHotkeys } from '../hooks/usePageHotkeys';
@@ -46,6 +50,18 @@ import { KeyComboDialog } from '../components/KeyComboDialog';
 import { isPlayableKeyCode } from '../utils/keySpec';
 import { expandKeyPress, keyActionLabel, updateActionWithKeyPartner } from '../utils/keyActions';
 import { formatHotkeyLabel } from '../utils/hotkey';
+import {
+  EMPTY_HISTORY,
+  cloneWithNewIds,
+  insertAfterSelection,
+  recordChange,
+  redo as redoHistory,
+  undo as undoHistory,
+  type ActionHistory,
+} from '../utils/actionHistory';
+
+/** Copied actions; module level so they can be pasted into another script. */
+let actionClipboard: ScriptAction[] = [];
 
 const ACTION_ICONS: Record<ActionType, typeof MousePointer> = {
   mouse_move: MousePointer,
@@ -56,6 +72,8 @@ const ACTION_ICONS: Record<ActionType, typeof MousePointer> = {
   mouse_wheel: Scroll,
   key_down: Keyboard,
   key_up: Keyboard,
+  mouse_position_save: MapPin,
+  mouse_position_restore: LocateFixed,
   wait: Clock,
 };
 
@@ -68,6 +86,8 @@ const ACTION_COLORS: Record<ActionType, string> = {
   mouse_wheel: 'var(--color-paused)',
   key_down: 'var(--color-running)',
   key_up: 'var(--color-running)',
+  mouse_position_save: 'var(--color-action-primary)',
+  mouse_position_restore: 'var(--color-action-primary)',
   wait: 'var(--color-text-tertiary)',
 };
 
@@ -80,6 +100,8 @@ const ACTION_LABELS: Record<ActionType, string> = {
   mouse_wheel: '滚轮滚动',
   key_down: '键盘按下',
   key_up: '键盘释放',
+  mouse_position_save: '记录鼠标位置',
+  mouse_position_restore: '回到记录位置',
   wait: '等待',
 };
 
@@ -108,6 +130,8 @@ function summarizeAction(a: ScriptAction): string {
       const text = `${a.type === 'key_down' ? '按下' : '释放'} ${keyActionLabel(a.payload)}`;
       return isPlayableKeyCode(a.payload.keyCode, a.payload.scanCode) ? text : `⚠ ${text}（无法回放，请重新设置按键）`;
     }
+    case 'mouse_position_save': return '记录当前鼠标位置';
+    case 'mouse_position_restore': return '鼠标回到记录的位置';
     case 'wait': return formatDuration(a.payload.durationMs);
   }
 }
@@ -129,6 +153,7 @@ export function ScriptEditor({
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [showKeyComboDialog, setShowKeyComboDialog] = useState(false);
+  const [history, setHistory] = useState<ActionHistory>(EMPTY_HISTORY);
   const [loopMode, setLoopMode] = useState<EditorLoopMode>(
     script.settings.loopMode === 'infinite' ? 'infinite' : 'count',
   );
@@ -173,6 +198,8 @@ export function ScriptEditor({
       setSelectedIds(new Set());
       setEditingId(null);
     }
+    // A different script (not the first save of a new one): its own undo history starts empty.
+    if (prev.id !== script.id && prev.id !== '') setHistory(EMPTY_HISTORY);
   }
 
   // Reload loop/speed when switching scripts
@@ -228,10 +255,23 @@ export function ScriptEditor({
     settings,
   ]);
 
-  const updateActions = useCallback((newActions: ScriptAction[]) => {
+  const updateActions = useCallback((newActions: ScriptAction[], record = true) => {
+    if (record && newActions !== actions) setHistory(h => recordChange(h, actions));
     setActions(newActions);
     onScriptChange({ ...script, actions: newActions, updatedAt: new Date().toISOString() });
-  }, [script, onScriptChange]);
+  }, [script, actions, onScriptChange]);
+
+  /* --- Undo / redo --- */
+  const applyHistory = useCallback((step: { history: ActionHistory; actions: ScriptAction[] } | null) => {
+    if (!step) return;
+    setHistory(step.history);
+    updateActions(step.actions, false);
+    const ids = new Set(step.actions.map(action => action.id));
+    setSelectedIds(prev => new Set([...prev].filter(id => ids.has(id))));
+    setEditingId(prev => (prev && ids.has(prev) ? prev : null));
+  }, [updateActions]);
+  const handleUndo = useCallback(() => applyHistory(undoHistory(history, actions)), [applyHistory, history, actions]);
+  const handleRedo = useCallback(() => applyHistory(redoHistory(history, actions)), [applyHistory, history, actions]);
 
   /* --- Selection --- */
   const handleSelect = useCallback((id: string, e: React.MouseEvent) => {
@@ -284,6 +324,20 @@ export function ScriptEditor({
     updateActions(actions.filter(a => !selectedIds.has(a.id)));
     setSelectedIds(new Set());
     setEditingId(null);
+  }, [actions, selectedIds, updateActions]);
+
+  /* --- Copy / paste (Ctrl+C / Ctrl+V) --- */
+  const handleCopySelected = useCallback(() => {
+    const copied = actions.filter(action => selectedIds.has(action.id));
+    if (copied.length) actionClipboard = copied;
+  }, [actions, selectedIds]);
+
+  const handlePaste = useCallback(() => {
+    if (!actionClipboard.length) return;
+    const pasted = cloneWithNewIds(actionClipboard);
+    updateActions(insertAfterSelection(actions, selectedIds, pasted));
+    setSelectedIds(new Set(pasted.map(action => action.id)));
+    setEditingId(pasted[0].id);
   }, [actions, selectedIds, updateActions]);
 
   /* --- Duplicate --- */
@@ -389,6 +443,44 @@ export function ScriptEditor({
       },
     });
   }, [onScriptSave, script, actions, loopMode, loopCount, speedMultiplier]);
+
+  /* --- Editor keyboard shortcuts --- */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || showKeyComboDialog) return;
+      const mod = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+      if (mod && key === 's') {
+        // Works while typing the script name, like in any editor.
+        event.preventDefault();
+        handleSave();
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)) return;
+      if (mod && key === 'z' && !event.shiftKey) {
+        event.preventDefault();
+        handleUndo();
+      } else if (mod && (key === 'y' || (key === 'z' && event.shiftKey))) {
+        event.preventDefault();
+        handleRedo();
+      } else if (mod && key === 'c' && selectedIds.size > 0) {
+        event.preventDefault();
+        handleCopySelected();
+      } else if (mod && key === 'v') {
+        event.preventDefault();
+        handlePaste();
+      } else if (mod && key === 'a') {
+        event.preventDefault();
+        setSelectedIds(new Set(actions.map(action => action.id)));
+      } else if (!mod && (event.key === 'Delete' || event.key === 'Backspace') && selectedIds.size > 0) {
+        event.preventDefault();
+        handleDeleteSelected();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showKeyComboDialog, handleSave, handleUndo, handleRedo, handleCopySelected, handlePaste, handleDeleteSelected, selectedIds, actions]);
 
   usePageHotkeys(useMemo(() => {
     if (typeof window !== 'undefined' && window.desktop?.setGlobalHotkeys) return [];
@@ -533,13 +625,19 @@ export function ScriptEditor({
           </>
         )}
         <div className="toolbar-spacer"  data-qoder-id="qel-toolbar-spacer-3fa4e0ef" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toolbar-spacer-3fa4e0ef&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;toolbar-spacer&quot;,&quot;loc&quot;:{&quot;line&quot;:379,&quot;column&quot;:9}}"/>
+        <IconButton tooltip="撤销（Ctrl+Z）" aria-label="撤销" onClick={handleUndo} disabled={history.past.length === 0}>
+          <Undo2 size={14} />
+        </IconButton>
+        <IconButton tooltip="重做（Ctrl+Y）" aria-label="重做" onClick={handleRedo} disabled={history.future.length === 0}>
+          <Redo2 size={14} />
+        </IconButton>
         {selectedIds.size > 0 && (
           <>
             <span className="text-sm text-tertiary" data-qoder-id="qel-text-sm-f43720c5" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-f43720c5&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:382,&quot;column&quot;:13}}">已选 {selectedIds.size} 项</span>
-            <IconButton tooltip="复制选中" onClick={handleDuplicateSelected} data-qoder-id="qel-iconbutton-02a551e8" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-iconbutton-02a551e8&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;iconbutton&quot;,&quot;loc&quot;:{&quot;line&quot;:383,&quot;column&quot;:13}}">
+            <IconButton tooltip="复制选中（也可 Ctrl+C / Ctrl+V 复制粘贴）" onClick={handleDuplicateSelected} data-qoder-id="qel-iconbutton-02a551e8" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-iconbutton-02a551e8&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;iconbutton&quot;,&quot;loc&quot;:{&quot;line&quot;:383,&quot;column&quot;:13}}">
               <Copy size={14}  data-qoder-id="qel-copy-f9db2f39" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-copy-f9db2f39&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;copy&quot;,&quot;loc&quot;:{&quot;line&quot;:384,&quot;column&quot;:15}}"/>
             </IconButton>
-            <IconButton tooltip="删除选中" onClick={handleDeleteSelected} data-qoder-id="qel-iconbutton-04a5550e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-iconbutton-04a5550e&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;iconbutton&quot;,&quot;loc&quot;:{&quot;line&quot;:386,&quot;column&quot;:13}}">
+            <IconButton tooltip="删除选中（Delete）" onClick={handleDeleteSelected} data-qoder-id="qel-iconbutton-04a5550e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-iconbutton-04a5550e&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;iconbutton&quot;,&quot;loc&quot;:{&quot;line&quot;:386,&quot;column&quot;:13}}">
               <Trash2 size={14}  data-qoder-id="qel-trash2-e0895b45" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-trash2-e0895b45&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;trash2&quot;,&quot;loc&quot;:{&quot;line&quot;:387,&quot;column&quot;:15}}"/>
             </IconButton>
             <div className="toolbar-divider"  data-qoder-id="qel-toolbar-divider-4bc483ee" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toolbar-divider-4bc483ee&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;toolbar-divider&quot;,&quot;loc&quot;:{&quot;line&quot;:389,&quot;column&quot;:13}}"/>
@@ -563,7 +661,7 @@ export function ScriptEditor({
               zIndex: 100,
               minWidth: 160,
             }} data-qoder-id="qel-div-af6f457d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-div-af6f457d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;ScriptEditor&quot;,&quot;elementRole&quot;:&quot;div&quot;,&quot;loc&quot;:{&quot;line&quot;:398,&quot;column&quot;:13}}">
-              {(['mouse_move', 'mouse_move_relative', 'mouse_button_down', 'mouse_button_up', 'mouse_click', 'mouse_wheel', 'key_down', 'key_up', 'wait'] as ActionType[]).map(type => {
+              {(['mouse_move', 'mouse_move_relative', 'mouse_button_down', 'mouse_button_up', 'mouse_click', 'mouse_wheel', 'key_down', 'key_up', 'mouse_position_save', 'mouse_position_restore', 'wait'] as ActionType[]).map(type => {
                 const Icon = ACTION_ICONS[type];
                 return (
                   <button
@@ -786,6 +884,18 @@ function PropertyEditor({ action, onUpdate, ...qoderProps }: { action: ScriptAct
               <Input type="number" variant="number" value={action.payload.y ?? 0} onChange={e => onUpdate(action.type === 'mouse_move' ? { ...action, payload: { ...action.payload, y: +e.target.value } } : { ...action, payload: { ...action.payload, y: +e.target.value } })}  data-qoder-id="qel-input-4ff60ece" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-4ff60ece&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptEditor.tsx&quot;,&quot;componentName&quot;:&quot;PropertyEditor&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:605,&quot;column&quot;:15}}"/>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 记录 / 回到鼠标位置 */}
+      {(action.type === 'mouse_position_save' || action.type === 'mouse_position_restore') && (
+        <div className="prop-group">
+          <span className="text-sm text-tertiary" style={{ lineHeight: 1.6 }}>
+            {action.type === 'mouse_position_save'
+              ? '回放到这一步时记下鼠标当前所在的位置，供后面的「回到记录位置」使用。'
+              : '把鼠标移回记下的位置。如果之前没有「记录鼠标位置」，就回到开始回放时鼠标所在的位置。'}
+            {' '}常见用法：在脚本最后加一个「回到记录位置」，脚本跑完后鼠标回到你启动前指着的地方。
+          </span>
         </div>
       )}
 

@@ -3,7 +3,7 @@
    脚本列表、搜索、新建、打开、复制、删除
    ========================================================================= */
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef, type ChangeEvent } from 'react';
 import {
   Search,
   FilePlus2,
@@ -16,6 +16,8 @@ import {
   Pencil,
   Play,
   Square,
+  Download,
+  Upload,
 } from 'lucide-react';
 import { useService } from '../hooks/useService';
 import { Button, ConfirmDialog, Input, IconButton, EmptyState } from '../components/ui';
@@ -24,6 +26,13 @@ import { formatDuration, calcScriptDuration } from '../data/mockData';
 import type { Script } from '../types';
 import type { PageId } from '../components/Layout';
 import { HotkeyCaptureInput } from '../components/HotkeyCaptureInput';
+import {
+  buildExportContent,
+  exportFileName,
+  parseImportContent,
+  saveTextFile,
+  uniqueScriptName,
+} from '../utils/scriptTransfer';
 import {
   collectReservedHotkeys,
   findHotkeyConflict,
@@ -44,7 +53,7 @@ interface ScriptManagerProps {
 }
 
 export function ScriptManager({ onNavigate, onLoadScript, onNewScript, onScriptDeleted, runningScriptId = null, onRunScript, ...qoderProps }: ScriptManagerProps & Record<string, any>) {
-  const { loadScript, saveScript, deleteScript, duplicateScript, scripts: allScripts, refreshScripts, settings, updateSettings } = useService();
+  const { loadScript, saveScript, deleteScript, duplicateScript, validateScript, scripts: allScripts, refreshScripts, settings, updateSettings } = useService();
   const toast = useToast();
   const [search, setSearch] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Script | null>(null);
@@ -99,6 +108,85 @@ export function ScriptManager({ onNavigate, onLoadScript, onNewScript, onScriptD
       toast.success('脚本复制成功');
     } catch { }
   }, [duplicateScript, refreshScripts, toast]);
+
+  /* --- Selection, export and import --- */
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Ignore ids of scripts that no longer exist.
+  const checkedScripts = useMemo(() => allScripts.filter(script => checkedIds.has(script.id)), [allScripts, checkedIds]);
+  const allFilteredChecked = filteredScripts.length > 0 && filteredScripts.every(script => checkedIds.has(script.id));
+
+  const toggleChecked = useCallback((id: string) => {
+    setCheckedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleAllFiltered = useCallback(() => {
+    setCheckedIds(prev => {
+      const next = new Set(prev);
+      for (const script of filteredScripts) {
+        if (allFilteredChecked) next.delete(script.id);
+        else next.add(script.id);
+      }
+      return next;
+    });
+  }, [filteredScripts, allFilteredChecked]);
+
+  const handleExport = useCallback(async (scripts: Script[]) => {
+    if (!scripts.length) return;
+    try {
+      const result = await saveTextFile(exportFileName(scripts), buildExportContent(scripts));
+      if (result === 'saved') {
+        toast.success(scripts.length === 1 ? `已导出「${scripts[0].name}」` : `已导出 ${scripts.length} 个脚本`);
+      }
+    } catch {
+      toast.error('导出失败，请换一个保存位置后重试');
+    }
+  }, [toast]);
+
+  const handleImportFiles = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (!files.length || importing) return;
+    setImporting(true);
+    const taken = new Set(allScripts.map(script => script.name));
+    const failures: string[] = [];
+    let imported = 0;
+    try {
+      for (const file of files) {
+        let items: unknown[];
+        try {
+          items = parseImportContent(await file.text());
+        } catch (error) {
+          failures.push(`${file.name}：${error instanceof Error ? error.message : '无法读取'}`);
+          continue;
+        }
+        for (const [index, item] of items.entries()) {
+          const label = items.length > 1 ? `${file.name} 第 ${index + 1} 个脚本` : file.name;
+          try {
+            // The backend validates and migrates older script formats.
+            const { script } = await validateScript(item as Script);
+            const name = uniqueScriptName(script.name, taken);
+            await saveScript({ ...script, id: '', name });
+            taken.add(name);
+            imported += 1;
+          } catch {
+            failures.push(`${label}：不是有效的脚本或版本过新`);
+          }
+        }
+      }
+      await refreshScripts();
+    } finally {
+      setImporting(false);
+    }
+    if (imported) toast.success(`已导入 ${imported} 个脚本。运行前请先在编辑器里检查动作，别人的脚本可以执行任何键鼠操作。`);
+    if (failures.length) toast.error(`有 ${failures.length} 项未能导入：${failures.slice(0, 3).join('；')}${failures.length > 3 ? '…' : ''}`);
+  }, [allScripts, importing, validateScript, saveScript, refreshScripts, toast]);
 
   const handleBindHotkey = useCallback((script: Script, hotkey: string) => {
     const field = scriptHotkeyField(script.id);
@@ -186,6 +274,26 @@ export function ScriptManager({ onNavigate, onLoadScript, onNewScript, onScriptD
           设置快捷键后，在任何窗口按下即运行该脚本（不倒计时），再按一次停止；运行的是已保存的版本。
         </span>
         <div className="toolbar-spacer"  data-qoder-id="qel-toolbar-spacer-8ff8e32f" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toolbar-spacer-8ff8e32f&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;toolbar-spacer&quot;,&quot;loc&quot;:{&quot;line&quot;:119,&quot;column&quot;:9}}"/>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json,application/json"
+          multiple
+          hidden
+          onChange={event => { void handleImportFiles(event); }}
+        />
+        <Button variant="secondary" size="sm" icon={<Upload size={13} />} onClick={() => fileInputRef.current?.click()} disabled={importing}>
+          {importing ? '导入中…' : '导入'}
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={<Download size={13} />}
+          onClick={() => { void handleExport(checkedScripts.length ? checkedScripts : allScripts); }}
+          disabled={!allScripts.length}
+        >
+          {checkedScripts.length ? `导出所选（${checkedScripts.length}）` : '全部导出'}
+        </Button>
         <Button variant="primary" size="sm" icon={<FilePlus2 size={13}  data-qoder-id="qel-fileplus2-4e495f8a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-fileplus2-4e495f8a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;fileplus2&quot;,&quot;loc&quot;:{&quot;line&quot;:120,&quot;column&quot;:51}}"/>} onClick={onNewScript} data-qoder-id="qel-button-0c0c810f" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-0c0c810f&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:120,&quot;column&quot;:9}}">
           新建脚本
         </Button>
@@ -210,6 +318,9 @@ export function ScriptManager({ onNavigate, onLoadScript, onNewScript, onScriptD
               <tr data-qoder-id="qel-tr-57931760" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-tr-57931760&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;tr&quot;,&quot;loc&quot;:{&quot;line&quot;:141,&quot;column&quot;:15}}">
                 <th style={{ width: 40 }} data-qoder-id="qel-th-c81134ed" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-th-c81134ed&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;th&quot;,&quot;loc&quot;:{&quot;line&quot;:142,&quot;column&quot;:17}}">
                   <input
+                    checked={allFilteredChecked}
+                    onChange={toggleAllFiltered}
+                    aria-label="全选"
                     type="checkbox"
                     style={{ cursor: 'pointer' }}
                    data-qoder-id="qel-input-9d5c64fa" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-9d5c64fa&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:143,&quot;column&quot;:19}}"/>
@@ -221,7 +332,7 @@ export function ScriptManager({ onNavigate, onLoadScript, onNewScript, onScriptD
                 <th style={{ width: 100 }} data-qoder-id="qel-th-3e0e1d18" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-th-3e0e1d18&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;th&quot;,&quot;loc&quot;:{&quot;line&quot;:152,&quot;column&quot;:17}}">创建时间</th>
                 <th style={{ width: 100 }} data-qoder-id="qel-th-3f0e1eab" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-th-3f0e1eab&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;th&quot;,&quot;loc&quot;:{&quot;line&quot;:153,&quot;column&quot;:17}}">最后使用</th>
                 <th style={{ width: 150 }} title="在任意窗口按下即运行该脚本，再按一次停止">快捷键</th>
-                <th style={{ width: 136 }} data-qoder-id="qel-th-400e203e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-th-400e203e&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;th&quot;,&quot;loc&quot;:{&quot;line&quot;:154,&quot;column&quot;:17}}">操作</th>
+                <th style={{ width: 172 }} data-qoder-id="qel-th-400e203e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-th-400e203e&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;th&quot;,&quot;loc&quot;:{&quot;line&quot;:154,&quot;column&quot;:17}}">操作</th>
               </tr>
             </thead>
             <tbody data-qoder-id="qel-tbody-a7132a99" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-tbody-a7132a99&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;tbody&quot;,&quot;loc&quot;:{&quot;line&quot;:157,&quot;column&quot;:13}}">
@@ -232,7 +343,7 @@ export function ScriptManager({ onNavigate, onLoadScript, onNewScript, onScriptD
                   onClick={() => setSelectedId(script.id)}
                  data-qoder-id="qel-tr-5890da5c" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-tr-5890da5c&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;tr&quot;,&quot;loc&quot;:{&quot;line&quot;:159,&quot;column&quot;:17}}">
                   <td data-label="" onClick={e => e.stopPropagation()} data-qoder-id="qel-td-d2ccbedf" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-td-d2ccbedf&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;td&quot;,&quot;loc&quot;:{&quot;line&quot;:164,&quot;column&quot;:19}}">
-                    <input type="checkbox" style={{ cursor: 'pointer' }}  data-qoder-id="qel-input-9a5a21aa" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-9a5a21aa&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:165,&quot;column&quot;:21}}"/>
+                    <input type="checkbox" style={{ cursor: 'pointer' }} checked={checkedIds.has(script.id)} onChange={() => toggleChecked(script.id)} aria-label={`选择 ${script.name}`}  data-qoder-id="qel-input-9a5a21aa" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-input-9a5a21aa&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;input&quot;,&quot;loc&quot;:{&quot;line&quot;:165,&quot;column&quot;:21}}"/>
                   </td>
                   <td data-label="名称" style={{ fontWeight: 500 }} data-qoder-id="qel-td-d4ccc205" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-td-d4ccc205&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;td&quot;,&quot;loc&quot;:{&quot;line&quot;:167,&quot;column&quot;:19}}">
                     {editingId === script.id ? (
@@ -292,6 +403,9 @@ export function ScriptManager({ onNavigate, onLoadScript, onNewScript, onScriptD
                       </IconButton>
                       <IconButton tooltip="复制" onClick={() => handleDuplicate(script)} data-qoder-id="qel-iconbutton-d758635d" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-iconbutton-d758635d&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;iconbutton&quot;,&quot;loc&quot;:{&quot;line&quot;:183,&quot;column&quot;:23}}">
                         <Copy size={14}  data-qoder-id="qel-copy-7ca5c09a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-copy-7ca5c09a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;copy&quot;,&quot;loc&quot;:{&quot;line&quot;:184,&quot;column&quot;:25}}"/>
+                      </IconButton>
+                      <IconButton tooltip="导出为文件" onClick={() => { void handleExport([script]); }}>
+                        <Download size={14} />
                       </IconButton>
                       <IconButton tooltip="删除" onClick={() => setDeleteTarget(script)} data-qoder-id="qel-iconbutton-c9560ebc" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-iconbutton-c9560ebc&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;iconbutton&quot;,&quot;loc&quot;:{&quot;line&quot;:186,&quot;column&quot;:23}}">
                         <Trash2 size={14}  data-qoder-id="qel-trash2-27547afd" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-trash2-27547afd&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/ScriptManager.tsx&quot;,&quot;componentName&quot;:&quot;ScriptManager&quot;,&quot;elementRole&quot;:&quot;trash2&quot;,&quot;loc&quot;:{&quot;line&quot;:187,&quot;column&quot;:25}}"/>

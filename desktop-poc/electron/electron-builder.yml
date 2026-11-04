@@ -13,6 +13,8 @@ files:
   - constants.mjs
   - sidecar-manager.mjs
   - global-hotkeys.mjs
+  - desktop-utils.mjs
+  - desktop-shell.mjs
   - package.json
   - assets/**
   - "!**/*.map"

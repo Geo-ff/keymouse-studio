@@ -83,6 +83,18 @@ export interface KeyUpAction extends ActionBase {
   payload: { keyCode: string; scanCode: number | null; extended: boolean };
 }
 
+/** Remember the current cursor position (playback start is remembered automatically). */
+export interface MousePositionSaveAction extends ActionBase {
+  type: 'mouse_position_save';
+  payload: Record<string, never>;
+}
+
+/** Move the cursor back to the remembered position. */
+export interface MousePositionRestoreAction extends ActionBase {
+  type: 'mouse_position_restore';
+  payload: Record<string, never>;
+}
+
 export interface WaitAction extends ActionBase {
   type: 'wait';
   payload: { durationMs: number };
@@ -97,6 +109,8 @@ export type ScriptAction =
   | MouseWheelAction
   | KeyDownAction
   | KeyUpAction
+  | MousePositionSaveAction
+  | MousePositionRestoreAction
   | WaitAction;
 export type ActionType = ScriptAction['type'];
 
@@ -279,6 +293,8 @@ export interface AppSettings {
   playbackStopHotkey: string;
   /** Global hotkey that starts/stops the auto clicker with the clicker page's last settings. */
   clickerToggleHotkey: string;
+  /** Global hotkey that pauses or resumes whatever is running. */
+  pauseToggleHotkey: string;
   /** Global hotkey per script id: press to run that script, press again to stop it. */
   scriptHotkeys: Record<string, string>;
   countdownEnabled: boolean;
@@ -302,6 +318,7 @@ export interface BackendSettings {
   playbackStartHotkey: string;
   playbackStopHotkey: string;
   clickerToggleHotkey?: string;
+  pauseToggleHotkey?: string;
   scriptHotkeys?: Record<string, string>;
 }
 
@@ -453,6 +470,22 @@ export interface DesktopApi {
     failed: Array<{ actionId: string; hotkey: string; accelerator: string }>;
   }>;
   onGlobalHotkey?(handler: (payload: { actionId: string }) => void): () => void;
+  /** Ask where to save and write a text file (desktop only). */
+  saveTextFile?(options: { defaultName: string; content: string }): Promise<{ ok: boolean; canceled?: boolean; path?: string }>;
+  /** Show / hide the always-on-top mini status window. */
+  toggleMiniWindow?(force?: boolean): Promise<{ visible: boolean }>;
+  /** From the mini window: ask the main window to act (it owns the task state). */
+  sendMiniCommand?(command: 'pauseToggle' | 'stopActive' | 'emergency' | 'showMain'): Promise<{ ok: boolean }>;
+  /** Text shown in the tray icon tooltip. */
+  setShellStatus?(text: string): Promise<{ ok: boolean }>;
+  getDesktopPrefs?(): Promise<DesktopPrefs>;
+  setDesktopPrefs?(update: Partial<Pick<DesktopPrefs, 'closeBehavior'>>): Promise<DesktopPrefs>;
+}
+
+export type CloseBehavior = 'ask' | 'tray' | 'quit';
+export interface DesktopPrefs {
+  closeBehavior: CloseBehavior;
+  miniVisible: boolean;
 }
 
 declare global {
@@ -466,6 +499,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   playbackStartHotkey: '',
   playbackStopHotkey: '',
   clickerToggleHotkey: '',
+  pauseToggleHotkey: '',
   scriptHotkeys: {},
   countdownEnabled: true,
   countdownSeconds: 3,

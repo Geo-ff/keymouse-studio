@@ -11,3 +11,7 @@ export function resolveServiceMode(requested?: 'mock' | 'real'): 'mock' | 'real'
   if (!isMockModeAllowed()) return 'real';
   return requested ?? 'real';
 }
+/** The always-on-top mini status window (desktop app) loads the renderer with #mini. */
+export function isMiniView(): boolean {
+  return typeof window !== 'undefined' && window.location?.hash === '#mini';
+}

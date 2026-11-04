@@ -103,6 +103,7 @@ OPTIONAL_HOTKEY_FIELDS = (
     "playback_start_hotkey",
     "playback_stop_hotkey",
     "clicker_toggle_hotkey",
+    "pause_toggle_hotkey",
 )
 ScriptHotkeys = Annotated[dict[UUID, str], Field(max_length=MAX_SCRIPT_HOTKEYS)]
 
@@ -134,6 +135,7 @@ class ApplicationSettings(ApiModel):
     playback_start_hotkey: str = ""
     playback_stop_hotkey: str = ""
     clicker_toggle_hotkey: str = ""
+    pause_toggle_hotkey: str = ""
     script_hotkeys: ScriptHotkeys = Field(default_factory=dict)
 
     @field_validator("emergency_stop_hotkey")
@@ -165,6 +167,7 @@ class ApplicationSettings(ApiModel):
             self.playback_start_hotkey,
             self.playback_stop_hotkey,
             self.clicker_toggle_hotkey,
+            self.pause_toggle_hotkey,
         ]
 
 
@@ -179,6 +182,7 @@ class ApplicationSettingsUpdate(ApiModel):
     playback_start_hotkey: str = ""
     playback_stop_hotkey: str = ""
     clicker_toggle_hotkey: str = ""
+    pause_toggle_hotkey: str = ""
     script_hotkeys: ScriptHotkeys = Field(default_factory=dict)
 
     @field_validator("emergency_stop_hotkey")
@@ -206,6 +210,7 @@ class ApplicationSettingsUpdate(ApiModel):
                 self.playback_start_hotkey,
                 self.playback_stop_hotkey,
                 self.clicker_toggle_hotkey,
+                self.pause_toggle_hotkey,
             ],
             self.script_hotkeys,
         )

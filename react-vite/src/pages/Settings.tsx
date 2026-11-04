@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { Zap, Clock, Palette, Cpu, MousePointerClick, Play, Keyboard } from 'lucide-react';
 import { useService } from '../hooks/useService';
 import { Toggle, Input, Select, Button } from '../components/ui';
-import type { AppSettings } from '../types';
+import type { AppSettings, CloseBehavior } from '../types';
 import {
   collectReservedHotkeys,
   eventToHotkey,
@@ -25,7 +25,7 @@ interface SettingsProps {
   onUpdate: (settings: Partial<AppSettings>) => void;
 }
 
-type HotkeyField = 'emergencyHotkey' | 'recordStartHotkey' | 'recordStopHotkey' | 'playbackStartHotkey' | 'playbackStopHotkey' | 'clickerToggleHotkey';
+type HotkeyField = 'emergencyHotkey' | 'recordStartHotkey' | 'recordStopHotkey' | 'playbackStartHotkey' | 'playbackStopHotkey' | 'clickerToggleHotkey' | 'pauseToggleHotkey';
 
 const HOTKEY_SUGGESTIONS = [
   { label: '开始录制', value: 'F9' },
@@ -38,6 +38,17 @@ const HOTKEY_SUGGESTIONS = [
 export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & Record<string, any>) {
   const { mode, capabilities, hotkey, scripts } = useService();
   const toast = useToast();
+  const canSetCloseBehavior = typeof window !== 'undefined' && Boolean(window.desktop?.setDesktopPrefs);
+  const [closeBehavior, setCloseBehavior] = useState<CloseBehavior>('ask');
+  useEffect(() => {
+    void window.desktop?.getDesktopPrefs?.().then(prefs => setCloseBehavior(prefs.closeBehavior)).catch(() => undefined);
+  }, []);
+  const changeCloseBehavior = (value: CloseBehavior) => {
+    setCloseBehavior(value);
+    void window.desktop?.setDesktopPrefs?.({ closeBehavior: value })
+      .then(prefs => setCloseBehavior(prefs.closeBehavior))
+      .catch(() => toast.error('保存失败，请重试'));
+  };
   const [hotkeyDrafts, setHotkeyDrafts] = useState<Record<HotkeyField, string>>({
     emergencyHotkey: settings.emergencyHotkey,
     recordStartHotkey: settings.recordStartHotkey,
@@ -45,6 +56,7 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
     playbackStartHotkey: settings.playbackStartHotkey,
     playbackStopHotkey: settings.playbackStopHotkey,
     clickerToggleHotkey: settings.clickerToggleHotkey,
+    pauseToggleHotkey: settings.pauseToggleHotkey,
   });
 
   useEffect(() => {
@@ -55,6 +67,7 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
       playbackStartHotkey: settings.playbackStartHotkey,
       playbackStopHotkey: settings.playbackStopHotkey,
       clickerToggleHotkey: settings.clickerToggleHotkey,
+      pauseToggleHotkey: settings.pauseToggleHotkey,
     });
   }, [
     settings.emergencyHotkey,
@@ -63,6 +76,7 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
     settings.playbackStartHotkey,
     settings.playbackStopHotkey,
     settings.clickerToggleHotkey,
+    settings.pauseToggleHotkey,
   ]);
 
   /** All bound hotkeys (including per-script ones) with the editor drafts applied on top. */
@@ -238,6 +252,17 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
             </span>
           </div>
         ) : null}
+        {canSetCloseBehavior && (
+          <div className="field-row" style={{ marginTop: 'var(--space-sm)' }}>
+            <label className="field-label" style={{ width: 140 }}>关闭主窗口时</label>
+            <Select value={closeBehavior} onChange={e => changeCloseBehavior(e.target.value as CloseBehavior)} style={{ width: 160 }}>
+              <option value="ask">每次询问</option>
+              <option value="tray">最小化到托盘</option>
+              <option value="quit">退出程序</option>
+            </Select>
+            <span className="text-sm text-tertiary">最小化到托盘后，快捷键和定时任务继续工作</span>
+          </div>
+        )}
         <p className="text-sm text-tertiary mt-sm" style={{ paddingLeft: isMockModeAllowed() ? 140 : 0 }} data-qoder-id="qel-text-sm-4c0f698a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-4c0f698a&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Settings.tsx&quot;,&quot;componentName&quot;:&quot;Settings&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:129,&quot;column&quot;:9}}">
           输入能力：{capabilities?.input.status === 'available' ? '可用' : '不可用'} · 全局热键：{hotkey?.registered ? `${hotkey.key} 已配置${hotkey.available ? '' : '（占用状态未知）'}` : '不可用'}
           {mode === 'real' && !capabilities ? ' · 服务未就绪' : ''}
@@ -257,10 +282,12 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
           {renderHotkeyRow('playbackStartHotkey', '开始回放')}
           {renderHotkeyRow('playbackStopHotkey', '停止回放')}
           {renderHotkeyRow('clickerToggleHotkey', '连点器 开始/停止')}
+          {renderHotkeyRow('pauseToggleHotkey', '暂停 / 继续')}
           <div className="text-sm text-tertiary" style={{ paddingLeft: 140, lineHeight: 1.6 }}>
             默认为空。推荐：{HOTKEY_SUGGESTIONS.map(item => `${item.label} ${item.value}`).join(' · ')}。
             可自定义任意功能键或 Ctrl/Alt/Shift 组合；请勿与急停热键冲突。桌面版中这些快捷键在任何窗口都可触发。
             连点器开关使用连点器页面最近一次的设置，按下立即开始（不倒计时），再按一次停止。
+            暂停 / 继续对正在运行的连点、定时、录制和回放都有效。
             单个脚本的快捷键可在「脚本」页面的列表中设置。
           </div>
         </div>

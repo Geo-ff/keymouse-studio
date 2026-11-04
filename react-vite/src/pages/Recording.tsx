@@ -17,6 +17,8 @@ import {
   Scroll,
   Keyboard,
   Clock,
+  MapPin,
+  LocateFixed,
 } from 'lucide-react';
 import { useService } from '../hooks/useService';
 import { usePageHotkeys } from '../hooks/usePageHotkeys';
@@ -46,6 +48,8 @@ const ACTION_ICONS: Record<ActionType, typeof MousePointer> = {
   mouse_wheel: Scroll,
   key_down: Keyboard,
   key_up: Keyboard,
+  mouse_position_save: MapPin,
+  mouse_position_restore: LocateFixed,
   wait: Clock,
 };
 
@@ -58,6 +62,8 @@ const ACTION_COLORS: Record<ActionType, string> = {
   mouse_wheel: 'var(--color-paused)',
   key_down: 'var(--color-running)',
   key_up: 'var(--color-running)',
+  mouse_position_save: 'var(--color-action-primary)',
+  mouse_position_restore: 'var(--color-action-primary)',
   wait: 'var(--color-text-tertiary)',
 };
 
@@ -70,6 +76,8 @@ const ACTION_LABELS: Record<ActionType, string> = {
   mouse_wheel: '滚轮滚动',
   key_down: '键盘按下',
   key_up: '键盘释放',
+  mouse_position_save: '记录鼠标位置',
+  mouse_position_restore: '回到记录位置',
   wait: '等待',
 };
 
@@ -83,6 +91,8 @@ function summarizeAction(a: ScriptAction): string {
     case 'mouse_wheel': return `滚动 ${a.payload.deltaY}`;
     case 'key_down': return `按下 ${a.payload.keyCode}`;
     case 'key_up': return `释放 ${a.payload.keyCode}`;
+    case 'mouse_position_save': return '记录鼠标位置';
+    case 'mouse_position_restore': return '回到记录位置';
     case 'wait': return formatDuration(a.payload.durationMs);
   }
 }

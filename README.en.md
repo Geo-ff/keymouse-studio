@@ -53,10 +53,11 @@ If GitHub is slow, use the [domestic download mirror (Quark Drive)](./docs/domes
 | Auto-clicker | Click or press keys at a set interval (count or continuous; coordinates or current position); a toggle hotkey starts/stops it from inside a game |
 | Timed | After a wait or at a set time of day (optionally daily): click, press a key, or run a script |
 | Recording | Capture keyboard/mouse input into an editable script |
-| Script editor | Add, edit, reorder, enable/disable actions |
-| Playback | Replay with speed and loops; pause / resume / stop |
-| Script manager | Save, load, duplicate, and delete local scripts; run one from the list and give frequent scripts their own hotkey |
+| Script editor | Add, edit, reorder, enable/disable actions; undo/redo (Ctrl+Z / Ctrl+Y), copy/paste actions, Ctrl+S to save; insert key chords and "remember / return to mouse position" |
+| Playback | Replay with speed and loops; pause / resume / stop; optional global pause/resume hotkey |
+| Script manager | Save, load, duplicate, and delete local scripts; run one from the list and give frequent scripts their own hotkey; import / export .json files to share scripts |
 | Safety | Global emergency stop; best-effort release of held keys/buttons |
+| Tray & mini window | Closing the main window can minimize to the tray and keep running; an always-on-top mini window shows the current task with pause / stop / emergency stop |
 | Auto-update | Checks for new versions after launch; manual check in About |
 
 **Not in the current version**: cloud sync, accounts, online script marketplace, macOS / Linux, image recognition / OCR, and similar.
@@ -90,6 +91,8 @@ If GitHub is slow, use the [domestic download mirror (Quark Drive)](./docs/domes
 - Emergency-stop hotkey is configurable; confirm it works before long runs
 - A key bound as a global hotkey is taken over system-wide: pressing it in a game or another program only triggers KeyMouse Studio and no longer types what it used to. Prefer F-keys or Ctrl / Alt combinations
 - Script hotkeys and the run buttons in the list run the **saved** script; save editor changes first
+- Check imported scripts in the editor before running them: a script can perform any keyboard or mouse action
+- If you choose "minimize to tray" when closing the main window, the app keeps running; quit from the tray icon menu, or set the close behaviour to "quit" under Settings → System
 
 ## Not working in a game?
 

@@ -169,6 +169,8 @@ V1 动作及 `payload`：
 |---|---|
 | `mouse_move` | `x`、`y`、可选 `durationMs` |
 | `mouse_move_relative` | `dx`、`dy`（鼠标原始位移，±1,000,000）、可选 `durationMs`（在该时长内平滑完成） |
+| `mouse_position_save` | 无（`{}`）：记录当前鼠标位置 |
+| `mouse_position_restore` | 无（`{}`）：移回记录的位置；未记录时为回放开始时的位置 |
 | `mouse_button_down` | `button` |
 | `mouse_button_up` | `button` |
 | `mouse_click` | `button`、`clickCount`、可选 `x`、`y`、`intervalMs` |

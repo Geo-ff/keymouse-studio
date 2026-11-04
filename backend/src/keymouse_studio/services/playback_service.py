@@ -10,6 +10,8 @@ from keymouse_studio.api.schemas.actions import (
     MouseClickAction,
     MouseMoveAction,
     MouseMoveRelativeAction,
+    MousePositionRestoreAction,
+    MousePositionSaveAction,
     MouseWheelAction,
     ScriptAction,
     WaitAction,
@@ -68,6 +70,7 @@ class PlaybackService:
         self._round_duration_ns = 0
         self._loop_mode = LoopMode.COUNT
         self._loop_count = 1
+        self._remembered_position: tuple[int | None, int | None] = (None, None)
 
     async def start(self, request: PlaybackRequest) -> OperationTransition:
         script = await self._resolve_script(request)
@@ -227,6 +230,8 @@ class PlaybackService:
                 # Scheduled start; loop duration and progress count from the first action.
                 await self._wait_countdown(request.start_delay_ms, operation_id)
                 self._raise_if_cancelled()
+            # "回到记录位置" returns here unless the script records another position first.
+            self._remembered_position = await self._cursor_point()
             self._playback_started_ns = self._clock.now_ns()
             self._paused_ns = 0
             self._pause_started_ns = None
@@ -354,6 +359,14 @@ class PlaybackService:
                 action.payload.scan_code,
                 action.payload.extended,
             )
+        elif isinstance(action, MousePositionSaveAction):
+            point = await self._cursor_point()
+            if point != (None, None):
+                self._remembered_position = point
+        elif isinstance(action, MousePositionRestoreAction):
+            x, y = self._remembered_position
+            if x is not None and y is not None:
+                await self._input.move(x, y)
         elif isinstance(action, WaitAction):
             return await self._wait(action.payload.duration_ms, speed, duration_ns)
         return not self._duration_reached(duration_ns)

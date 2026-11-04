@@ -16,6 +16,7 @@ import {
   Moon,
   Save,
   Zap,
+  PictureInPicture2,
   Keyboard,
   MousePointer,
   Play,
@@ -133,6 +134,17 @@ function Toolbar({ scriptName, scriptOpen = true, saved, theme, onToggleTheme, o
 
       <div className="toolbar-spacer"  data-qoder-id="qel-toolbar-spacer-104dd2af" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toolbar-spacer-104dd2af&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;toolbar-spacer&quot;,&quot;loc&quot;:{&quot;line&quot;:111,&quot;column&quot;:7}}"/>
 
+      {/* 置顶小窗（桌面版） */}
+      {typeof window !== 'undefined' && window.desktop?.toggleMiniWindow && (
+        <button
+          className="btn btn-ghost btn-icon"
+          onClick={() => { void window.desktop?.toggleMiniWindow?.().catch(() => undefined); }}
+          data-tooltip="置顶小窗：在游戏或其他程序上方显示运行状态"
+          aria-label="置顶小窗"
+        >
+          <PictureInPicture2 size={16} />
+        </button>
+      )}
       {/* 主题切换 */}
       <button
         className="btn btn-ghost btn-icon"
@@ -234,6 +246,7 @@ function StatusBar({ scriptName, ...qoderProps }: { scriptName: string } & Recor
     settings.playbackStartHotkey ? `回放：${formatHotkeyLabel(settings.playbackStartHotkey)} → 编辑器中的${editorScript}` : null,
     settings.playbackStopHotkey ? `停放：${formatHotkeyLabel(settings.playbackStopHotkey)}` : null,
     settings.clickerToggleHotkey ? `连点器：${formatHotkeyLabel(settings.clickerToggleHotkey)}` : null,
+    settings.pauseToggleHotkey ? `暂停/继续：${formatHotkeyLabel(settings.pauseToggleHotkey)}` : null,
   ].filter(Boolean).join(' · ');
 
   return (

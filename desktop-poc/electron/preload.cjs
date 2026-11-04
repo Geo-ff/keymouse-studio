@@ -22,4 +22,10 @@ contextBridge.exposeInMainWorld('desktop', {
   onOpenUpdatePrompt: (handler) => subscribe('ui:open-update', handler),
   setGlobalHotkeys: (bindings) => ipcRenderer.invoke('hotkeys:set', bindings),
   onGlobalHotkey: (handler) => subscribe('hotkeys:action', handler),
+  saveTextFile: (options) => ipcRenderer.invoke('file:saveText', options),
+  toggleMiniWindow: (force) => ipcRenderer.invoke('mini:toggle', force),
+  sendMiniCommand: (command) => ipcRenderer.invoke('mini:command', command),
+  setShellStatus: (text) => ipcRenderer.invoke('shell:setStatus', text),
+  getDesktopPrefs: () => ipcRenderer.invoke('prefs:get'),
+  setDesktopPrefs: (update) => ipcRenderer.invoke('prefs:set', update),
 })

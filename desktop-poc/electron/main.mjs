@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, shell } from 'electron'
 import { existsSync } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
 import { createAppMenu, getAppTitle, setMenuUiHandlers } from './app-menu.mjs'
@@ -26,6 +27,18 @@ import {
   stopSidecar,
 } from './sidecar-manager.mjs'
 import { setGlobalHotkeys, unregisterAll as unregisterGlobalHotkeys } from './global-hotkeys.mjs'
+import { isSameRenderer, sanitizeFileName } from './desktop-utils.mjs'
+import {
+  destroyDesktopShell,
+  getDesktopPrefs,
+  handleMainWindowClose,
+  handleMiniCommand,
+  initDesktopShell,
+  setDesktopPrefs,
+  setShellStatus,
+  showMainWindow,
+  toggleMiniWindow,
+} from './desktop-shell.mjs'
 
 const directory = path.dirname(fileURLToPath(import.meta.url))
 const productionEntry = path.resolve(directory, '../../react-vite/dist/index.html')
@@ -39,6 +52,17 @@ let sidecarDetach = () => {}
 let mainWindow
 let ipcRegistered = false
 let hotkeyFailureSignature = ''
+/** Set as soon as a real quit starts, so closing the window is no longer turned into "hide". */
+let appIsQuitting = false
+
+// One instance only: with "close to tray" a second launch would start another engine and fight
+// over the global hotkeys. A second launch brings the existing window back instead.
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => showMainWindow())
+}
 
 const ACTION_LABELS = {
   emergency: '急停',
@@ -47,6 +71,7 @@ const ACTION_LABELS = {
   playbackStart: '开始回放',
   playbackStop: '停止回放',
   clickerToggle: '连点器开关',
+  pauseToggle: '暂停/继续',
 }
 
 function hotkeyActionLabel(actionId) {
@@ -66,7 +91,16 @@ const IPC_HANDLERS = [
   'update:download',
   'update:install',
   'hotkeys:set',
+  'file:saveText',
+  'mini:toggle',
+  'mini:command',
+  'shell:setStatus',
+  'prefs:get',
+  'prefs:set',
 ]
+
+const MAX_SAVE_TEXT_BYTES = 50 * 1024 * 1024
+
 
 function applyNativeTheme(theme) {
   if (theme === 'dark' || theme === 'light') {
@@ -97,12 +131,25 @@ function resolveRendererEntry() {
 }
 
 function isTrustedRenderer(url) {
-  if (!rendererOrigin) return false
-  if (rendererOrigin.startsWith('file:')) return url === rendererOrigin
-  try {
-    return new URL(url).origin === rendererOrigin
-  } catch {
-    return false
+  return isSameRenderer(url, rendererOrigin)
+}
+
+function secureWebContents(window) {
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.on('will-navigate', (event, url) => {
+    if (!isTrustedRenderer(url)) event.preventDefault()
+  })
+}
+
+/** Load the renderer; `view` selects a secondary view such as the mini window ("mini"). */
+async function loadRenderer(window, view) {
+  const developmentEntry = getDevelopmentEntry()
+  if (developmentEntry) {
+    const url = new URL(developmentEntry.href)
+    if (view) url.hash = view
+    await window.loadURL(url.href)
+  } else {
+    await window.loadFile(resolveRendererEntry(), view ? { hash: view } : undefined)
   }
 }
 
@@ -189,6 +236,43 @@ function registerIpcHandlers() {
       releaseDate: update.releaseDate,
       update,
     }
+  })
+  ipcMain.handle('file:saveText', async (event, options = {}) => {
+    assertTrusted(event)
+    const content = typeof options.content === 'string' ? options.content : ''
+    if (!content || Buffer.byteLength(content, 'utf8') > MAX_SAVE_TEXT_BYTES) throw new Error('invalid content')
+    const defaultPath = path.join(app.getPath('documents'), sanitizeFileName(options.defaultName))
+    const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined
+    const result = await dialog.showSaveDialog(parent, {
+      title: '导出脚本',
+      defaultPath,
+      filters: [{ name: 'KeyMouse Studio 脚本', extensions: ['json'] }],
+    })
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+    await writeFile(result.filePath, content, 'utf8')
+    return { ok: true, path: result.filePath }
+  })
+  ipcMain.handle('mini:toggle', (event, force) => {
+    assertTrusted(event)
+    return { visible: toggleMiniWindow(typeof force === 'boolean' ? force : undefined) }
+  })
+  ipcMain.handle('mini:command', (event, command) => {
+    assertTrusted(event)
+    handleMiniCommand(command)
+    return { ok: true }
+  })
+  ipcMain.handle('shell:setStatus', (event, text) => {
+    assertTrusted(event)
+    setShellStatus(typeof text === 'string' ? text : '')
+    return { ok: true }
+  })
+  ipcMain.handle('prefs:get', (event) => {
+    assertTrusted(event)
+    return getDesktopPrefs()
+  })
+  ipcMain.handle('prefs:set', (event, update = {}) => {
+    assertTrusted(event)
+    return setDesktopPrefs({ closeBehavior: update?.closeBehavior })
   })
   ipcMain.handle('shell:openExternal', async (event, url) => {
     assertTrusted(event)
@@ -277,17 +361,16 @@ async function createWindow() {
   })
   mainWindow = window
   window.setTitle(TITLE)
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  window.webContents.on('will-navigate', (event, url) => {
-    if (!isTrustedRenderer(url)) event.preventDefault()
+  secureWebContents(window)
+  window.on('close', (event) => {
+    if (!appIsQuitting) void handleMainWindowClose(event, window)
   })
   window.webContents.on('page-title-updated', (event) => {
     event.preventDefault()
     window.setTitle(TITLE)
   })
 
-  if (developmentEntry) await window.loadURL(developmentEntry.href)
-  else await window.loadFile(rendererEntry)
+  await loadRenderer(window)
 
   const bridgeReady = await window.webContents.executeJavaScript(
     'typeof window.desktop?.getConnectionInfo === "function"',
@@ -337,6 +420,7 @@ async function shutdownSidecar() {
 }
 
 app.whenReady().then(async () => {
+  if (!hasSingleInstanceLock) return
   try {
     app.setName(APP_TITLE)
     applyNativeTheme('system')
@@ -356,6 +440,15 @@ app.whenReady().then(async () => {
     })
     sidecarDetach = sidecar.detach ?? (() => {})
     await createWindow()
+    await initDesktopShell({
+      icon: taskbarIcon,
+      preload: path.join(directory, 'preload.cjs'),
+      getMainWindow: () => mainWindow,
+      sendToMain: sendToRenderer,
+      loadRenderer,
+      secureWebContents,
+      backgroundColor: () => (nativeTheme.shouldUseDarkColors ? '#1a1b1e' : '#f5f5f5'),
+    })
     scheduleSilentUpdateCheck(5000)
   } catch (error) {
     console.error(error)
@@ -375,8 +468,10 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => app.quit())
 app.on('will-quit', () => {
   unregisterGlobalHotkeys()
+  destroyDesktopShell()
 })
 app.on('before-quit', async (event) => {
+  appIsQuitting = true
   unregisterGlobalHotkeys()
   if (quitting || !sidecar || (sidecar.child.exitCode !== null || sidecar.child.signalCode !== null)) {
     return

@@ -18,6 +18,8 @@ export function createAction(type: ActionType, delayBeforeMs = 200): ScriptActio
     case 'mouse_wheel': return { ...base, type, payload: { deltaX: 0, deltaY: -100 } };
     case 'key_down': return { ...base, type, payload: { keyCode: 'Enter', scanCode: null, extended: false } };
     case 'key_up': return { ...base, type, payload: { keyCode: 'Enter', scanCode: null, extended: false } };
+    case 'mouse_position_save': return { ...base, type, payload: {} };
+    case 'mouse_position_restore': return { ...base, type, payload: {} };
     case 'wait': return { ...base, type, payload: { durationMs: 1000 } };
   }
 }

@@ -52,6 +52,7 @@ CONTROL_HOTKEY_LABELS = {
     "playback_start_hotkey": "开始回放",
     "playback_stop_hotkey": "停止回放",
     "clicker_toggle_hotkey": "连点器开关",
+    "pause_toggle_hotkey": "暂停/继续",
     "script_hotkeys": "脚本快捷键",
 }
 
@@ -483,6 +484,7 @@ class ClickerService:
             ("playback_start_hotkey", settings.playback_start_hotkey),
             ("playback_stop_hotkey", settings.playback_stop_hotkey),
             ("clicker_toggle_hotkey", settings.clicker_toggle_hotkey),
+            ("pause_toggle_hotkey", settings.pause_toggle_hotkey),
             *(("script_hotkeys", hotkey) for hotkey in settings.script_hotkeys.values()),
         ]
         for field, hotkey in reserved:

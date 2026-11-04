@@ -495,3 +495,66 @@ async def test_start_delay_waits_while_running_and_publishes_remaining(tmp_path:
     assert remaining and max(remaining) > 0
     assert operations.state == EngineState.IDLE
     worker.close()
+
+
+def _position_script(actions: list[dict[str, object]]) -> Script:
+    return Script.model_validate(
+        {
+            "id": "00000000-0000-0000-0000-000000000001",
+            "name": "Return",
+            "createdAt": "2026-07-14T00:00:00Z",
+            "updatedAt": "2026-07-14T00:00:00Z",
+            "settings": {"countdownMs": 0},
+            "actions": [
+                {"id": f"00000000-0000-0000-0000-0000000001{index:02d}", **action}
+                for index, action in enumerate(actions)
+            ],
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_restore_returns_cursor_to_playback_start_or_last_saved_position(
+    tmp_path: Path,
+) -> None:
+    adapter = FakeInputAdapter(position=(640, 360))
+    worker = InputWorker(adapter)
+    operations = OperationService(EventService(1))
+    scripts = ScriptService(JsonScriptRepository(tmp_path / "scripts"))
+    service = PlaybackService(operations, scripts, worker, MonotonicClock(), 2)
+    move = lambda x, y: {"type": "mouse_move", "payload": {"x": x, "y": y}}  # noqa: E731
+
+    # Without an explicit save, restore goes back to where playback started.
+    await service.start(
+        PlaybackRequest(
+            inline_script=_position_script(
+                [move(10, 10), {"type": "mouse_position_restore", "payload": {}}]
+            ),
+            countdown_ms=0,
+        )
+    )
+    await asyncio.wait_for(service.wait_finished(), timeout=1)
+    assert adapter.actions[-1] == ("move", (640, 360))
+
+    # An explicit save replaces the remembered position (payload may be omitted).
+    adapter.actions.clear()
+    await service.start(
+        PlaybackRequest(
+            inline_script=_position_script(
+                [
+                    move(100, 200),
+                    {"type": "mouse_position_save"},
+                    move(5, 5),
+                    {"type": "mouse_position_restore"},
+                ]
+            ),
+            countdown_ms=0,
+        )
+    )
+    await asyncio.wait_for(service.wait_finished(), timeout=1)
+    assert [a for a in adapter.actions if a[0] == "move"] == [
+        ("move", (100, 200)),
+        ("move", (5, 5)),
+        ("move", (100, 200)),
+    ]
+    worker.close()

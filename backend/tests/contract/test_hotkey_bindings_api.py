@@ -39,6 +39,7 @@ async def test_clicker_and_script_hotkeys_are_normalized_and_persisted(
             headers=auth_headers,
             json=settings_payload(
                 clickerToggleHotkey="F6",
+                pauseToggleHotkey="F7",
                 scriptHotkeys={SCRIPT_ID: "Ctrl + 1", OTHER_ID: ""},
             ),
         )
@@ -47,6 +48,7 @@ async def test_clicker_and_script_hotkeys_are_normalized_and_persisted(
     assert initial.json()["scriptHotkeys"] == {}
     assert updated.status_code == 200, updated.text
     assert updated.json()["clickerToggleHotkey"] == "f6"
+    assert updated.json()["pauseToggleHotkey"] == "f7"
     # An empty hotkey unbinds instead of being stored.
     assert updated.json()["scriptHotkeys"] == {SCRIPT_ID: "ctrl+1"}
     stored = json.loads(app.state.settings.settings_file.read_text(encoding="utf-8"))
@@ -57,6 +59,8 @@ async def test_clicker_and_script_hotkeys_are_normalized_and_persisted(
     "overrides",
     [
         {"clickerToggleHotkey": "F9"},  # same as recordStartHotkey
+        {"pauseToggleHotkey": "F9"},  # same as recordStartHotkey
+        {"pauseToggleHotkey": "F7", "scriptHotkeys": {SCRIPT_ID: "f7"}},
         {"scriptHotkeys": {SCRIPT_ID: "f12"}},  # same as emergency stop
         {"clickerToggleHotkey": "F6", "scriptHotkeys": {SCRIPT_ID: "F6"}},
         {"scriptHotkeys": {SCRIPT_ID: "ctrl+1", OTHER_ID: "Ctrl+1"}},

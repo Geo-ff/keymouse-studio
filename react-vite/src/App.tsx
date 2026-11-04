@@ -42,6 +42,7 @@ import { buildPlaybackOptionsFromScript } from './utils/playbackOptions';
 import { buildRecordingConfig } from './utils/recordingConfig';
 import { buildClickerConfig, readClickerForm } from './utils/clickerConfig';
 import { usePageHotkeys } from './hooks/usePageHotkeys';
+import { activityLine } from './utils/activityStatus';
 
 const MOCK_SCRIPT_IDS = new Set(mockScripts.map(script => script.id));
 
@@ -63,6 +64,8 @@ export default function App() {
   const {
     emergencyStop, state, settings, error, clearError, updateSettings, saveScript, refreshScripts,
     startRecording, stopRecording, playback, stopPlayback, scripts, loadScript, startClicker, stopClicker,
+    pauseClicker, resumeClicker, pauseRecording, resumeRecording, pausePlayback, resumePlayback,
+    stopTimedClick,
   } = useService();
   const toast = useToast();
 
@@ -180,6 +183,64 @@ export default function App() {
     }
   }, [startClicker, stopClicker, reportFailure, toast]);
 
+  /** Global pause/resume hotkey: works for whichever task is running. */
+  const togglePause = useCallback(async () => {
+    const live = stateRef.current;
+    const operation = live.snapshot.operationType;
+    const refuse = (message: string) => {
+      toast.info(message);
+      void showSystemAlert('暂停 / 继续', message);
+    };
+    if (!operation || live.runState === 'idle') {
+      refuse('当前没有正在运行的任务');
+      return;
+    }
+    if (live.snapshot.state === 'countdown' || live.snapshot.state === 'stopping') {
+      refuse('任务正在倒计时或停止中，暂时不能暂停');
+      return;
+    }
+    const controls = {
+      clicker: { label: '连点器', pause: pauseClicker, resume: resumeClicker },
+      timed_click: { label: '定时任务', pause: pauseClicker, resume: resumeClicker },
+      recording: { label: '录制', pause: pauseRecording, resume: resumeRecording },
+      playback: { label: '回放', pause: pausePlayback, resume: resumePlayback },
+    }[operation];
+    try {
+      if (live.runState === 'paused') {
+        await controls.resume();
+        void showSystemAlert('暂停 / 继续', `${controls.label}已继续`);
+      } else {
+        await controls.pause();
+        void showSystemAlert('暂停 / 继续', `${controls.label}已暂停`, '再按一次快捷键继续');
+      }
+    } catch (err) {
+      reportFailure('暂停 / 继续', err);
+    }
+  }, [pauseClicker, resumeClicker, pauseRecording, resumeRecording, pausePlayback, resumePlayback, reportFailure, toast]);
+
+  /** Stop whatever is running (tray menu / mini window). Recording keeps its result for saving. */
+  const stopActive = useCallback(async () => {
+    const live = stateRef.current;
+    const operation = live.snapshot.operationType;
+    if (!operation || live.runState === 'idle') return;
+    try {
+      if (operation === 'clicker') await stopClicker();
+      else if (operation === 'timed_click') await stopTimedClick();
+      else if (operation === 'playback') await stopPlayback();
+      else {
+        await stopRecording();
+        setPage('recording');
+        void showSystemAlert('录制', '录制已结束', '打开主窗口可保存或丢弃本次录制结果');
+      }
+    } catch (err) {
+      reportFailure('停止', err);
+    }
+  }, [stopClicker, stopTimedClick, stopPlayback, stopRecording, reportFailure]);
+
+  const stopActiveRef = useRef(stopActive);
+  stopActiveRef.current = stopActive;
+  const togglePauseRef = useRef(togglePause);
+  togglePauseRef.current = togglePause;
   const runScriptRef = useRef(runScript);
   runScriptRef.current = runScript;
   const toggleClickerRef = useRef(toggleClicker);
@@ -212,6 +273,7 @@ export default function App() {
       playbackStart: settings.playbackStartHotkey,
       playbackStop: settings.playbackStopHotkey,
       clickerToggle: settings.clickerToggleHotkey,
+      pauseToggle: settings.pauseToggleHotkey,
     };
     for (const [scriptId, hotkey] of Object.entries(settings.scriptHotkeys)) {
       // Skip bindings whose script no longer exists.
@@ -225,6 +287,7 @@ export default function App() {
     settings.playbackStartHotkey,
     settings.playbackStopHotkey,
     settings.clickerToggleHotkey,
+    settings.pauseToggleHotkey,
     settings.scriptHotkeys,
     scriptIds,
   ]);
@@ -234,6 +297,7 @@ export default function App() {
     if (typeof window !== 'undefined' && window.desktop?.setGlobalHotkeys) return [];
     return [
       { hotkey: settings.clickerToggleHotkey, handler: () => { void toggleClickerRef.current(); } },
+      { hotkey: settings.pauseToggleHotkey, handler: () => { void togglePauseRef.current(); } },
       ...Object.entries(settings.scriptHotkeys)
         .filter(([scriptId]) => scriptIds.has(scriptId))
         .map(([scriptId, hotkey]) => ({
@@ -241,7 +305,7 @@ export default function App() {
           handler: () => { void runScriptRef.current(scriptId, true); },
         })),
     ];
-  }, [settings.clickerToggleHotkey, settings.scriptHotkeys, scriptIds]));
+  }, [settings.clickerToggleHotkey, settings.pauseToggleHotkey, settings.scriptHotkeys, scriptIds]));
 
   useEffect(() => {
     if (!window.desktop?.onGlobalHotkey) return;
@@ -256,6 +320,14 @@ export default function App() {
       const liveScript = currentScriptRef.current;
       if (actionId === 'clickerToggle') {
         runOnce(() => toggleClickerRef.current());
+        return;
+      }
+      if (actionId === 'pauseToggle') {
+        runOnce(() => togglePauseRef.current());
+        return;
+      }
+      if (actionId === 'stopActive') {
+        runOnce(() => stopActiveRef.current());
         return;
       }
       if (actionId.startsWith('script:')) {
@@ -347,6 +419,12 @@ export default function App() {
       }
     });
   }, [startRecording, stopRecording, playback, stopPlayback, emergencyStop, toast]);
+
+  // Tray tooltip follows what is running (desktop app only).
+  const shellStatus = activityLine(state);
+  useEffect(() => {
+    void window.desktop?.setShellStatus?.(shellStatus).catch(() => undefined);
+  }, [shellStatus]);
 
   // Apply theme to document and native window chrome
   useEffect(() => {

@@ -31,7 +31,7 @@ import type {
 import { DEFAULT_SETTINGS, INITIAL_SNAPSHOT } from '../types';
 import { isLocalOnlyUpdate, saveLocalSettings, withLocalSettings } from '../utils/localSettings';
 import { generateRandomAction, mockScripts } from '../data/mockData';
-import { resolveServiceMode } from '../utils/runtime';
+import { isMiniView, resolveServiceMode } from '../utils/runtime';
 import { hotkeyToBackend } from '../utils/hotkey';
 import { resolveCountdownMs } from '../utils/countdown';
 import { ApiClient, ApiError } from './ApiClient';
@@ -611,6 +611,8 @@ export class RealAutomationService extends AutomationServiceBase {
   }
 
   private startMousePositionPolling(): void {
+    // The mini window never shows the cursor position; keep it from polling the engine.
+    if (isMiniView()) return;
     if (this.mousePositionTimer) clearInterval(this.mousePositionTimer);
     this.mousePositionTimer = setInterval(() => {
       if (this.disposed || this.mousePositionPending) return;
@@ -774,6 +776,7 @@ export class RealAutomationService extends AutomationServiceBase {
       playbackStartHotkey: this.formatHotkeyFromBackend(backend.playbackStartHotkey ?? ''),
       playbackStopHotkey: this.formatHotkeyFromBackend(backend.playbackStopHotkey ?? ''),
       clickerToggleHotkey: this.formatHotkeyFromBackend(backend.clickerToggleHotkey ?? ''),
+      pauseToggleHotkey: this.formatHotkeyFromBackend(backend.pauseToggleHotkey ?? ''),
       scriptHotkeys: Object.fromEntries(
         Object.entries(backend.scriptHotkeys ?? {}).map(([id, hotkey]) => [id, this.formatHotkeyFromBackend(hotkey)]),
       ),
@@ -797,6 +800,7 @@ export class RealAutomationService extends AutomationServiceBase {
       playbackStartHotkey: hotkeyToBackend(settings.playbackStartHotkey),
       playbackStopHotkey: hotkeyToBackend(settings.playbackStopHotkey),
       clickerToggleHotkey: hotkeyToBackend(settings.clickerToggleHotkey),
+      pauseToggleHotkey: hotkeyToBackend(settings.pauseToggleHotkey),
       scriptHotkeys: Object.fromEntries(
         Object.entries(settings.scriptHotkeys)
           .map(([id, hotkey]) => [id, hotkeyToBackend(hotkey)])
@@ -816,7 +820,7 @@ export class RealAutomationService extends AutomationServiceBase {
       return clone(this.settings);
     }
     const next = { ...this.settings, ...updates, serviceMode: 'real' as const };
-    const hotkeyFields = ['emergencyHotkey', 'recordStartHotkey', 'recordStopHotkey', 'playbackStartHotkey', 'playbackStopHotkey', 'clickerToggleHotkey'] as const;
+    const hotkeyFields = ['emergencyHotkey', 'recordStartHotkey', 'recordStopHotkey', 'playbackStartHotkey', 'playbackStopHotkey', 'clickerToggleHotkey', 'pauseToggleHotkey'] as const;
     for (const field of hotkeyFields) {
       if (!(field in updates)) continue;
       const value = updates[field] ?? '';

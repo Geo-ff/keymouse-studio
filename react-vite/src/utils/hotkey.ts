@@ -118,6 +118,7 @@ export const HOTKEY_FIELD_LABELS: Record<string, string> = {
   playbackStartHotkey: '开始回放',
   playbackStopHotkey: '停止回放',
   clickerToggleHotkey: '连点器开关',
+  pauseToggleHotkey: '暂停/继续',
 };
 
 /** Field key used for a per-script binding in conflict maps. */
@@ -133,6 +134,7 @@ type HotkeySettings = Pick<
   | 'playbackStartHotkey'
   | 'playbackStopHotkey'
   | 'clickerToggleHotkey'
+  | 'pauseToggleHotkey'
   | 'scriptHotkeys'
 >;
 
@@ -145,6 +147,7 @@ export function collectReservedHotkeys(settings: HotkeySettings): Record<string,
     playbackStartHotkey: settings.playbackStartHotkey,
     playbackStopHotkey: settings.playbackStopHotkey,
     clickerToggleHotkey: settings.clickerToggleHotkey,
+    pauseToggleHotkey: settings.pauseToggleHotkey,
   };
   for (const [scriptId, hotkey] of Object.entries(settings.scriptHotkeys ?? {})) {
     reserved[scriptHotkeyField(scriptId)] = hotkey;
