@@ -17,6 +17,9 @@ class PlaybackRequest(ApiModel):
     loop_count: Annotated[int, Field(ge=1, le=1_000_000)] | None = None
     loop_duration_ms: Annotated[int, Field(ge=1, le=86_400_000)] | None = None
     countdown_ms: Annotated[int, Field(ge=0, le=86_400_000)] | None = None
+    # Scheduled start: wait this long (state "running", remaining time published as
+    # countdownRemainingMs) after any countdown before the first action. Used by timed tasks.
+    start_delay_ms: Annotated[int, Field(ge=0, le=86_400_000)] | None = None
 
     @model_validator(mode="after")
     def validate_source_and_loop(self) -> "PlaybackRequest":

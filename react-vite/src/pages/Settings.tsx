@@ -187,6 +187,9 @@ export function Settings({ settings, onUpdate, ...qoderProps }: SettingsProps & 
               <span className="text-sm text-tertiary" data-qoder-id="qel-text-sm-d0c6ad8f" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-sm-d0c6ad8f&quot;,&quot;filePath&quot;:&quot;react-vite/src/pages/Settings.tsx&quot;,&quot;componentName&quot;:&quot;Settings&quot;,&quot;elementRole&quot;:&quot;text-sm&quot;,&quot;loc&quot;:{&quot;line&quot;:80,&quot;column&quot;:15}}">秒</span>
             </div>
           )}
+          <span className="text-sm text-tertiary" style={{ paddingLeft: 140, lineHeight: 1.6 }}>
+            只在点击按钮启动时生效，留出切换到目标窗口的时间；用快捷键启动和定时任务会立即开始。
+          </span>
         </div>
       </div>
 

@@ -107,3 +107,35 @@ describe('settings round trip with the backend', () => {
     expect(updated.scriptHotkeys).toEqual({ [SCRIPT_A]: 'Ctrl+PageUp' });
   });
 });
+
+describe('playing script tracking', () => {
+  it('records the script of every playback request and sends the scheduled start delay', async () => {
+    const service = new RealAutomationService();
+    let request: Record<string, unknown> | null = null;
+    Object.assign(service, {
+      client: {
+        post: async (_path: string, body: Record<string, unknown>) => {
+          request = body;
+          throw new Error('offline');
+        },
+      },
+    });
+    const script = {
+      schemaVersion: 1 as const,
+      id: SCRIPT_A,
+      name: ' 每日签到 ',
+      description: '',
+      createdAt: '2026-11-04T00:00:00Z',
+      updatedAt: '2026-11-04T00:00:00Z',
+      settings: { speedMultiplier: 1, loopMode: 'count' as const, loopCount: 1, countdownMs: 0 },
+      actions: [],
+    };
+
+    await expect(
+      service.playback(script, { times: 1, speedMultiplier: 1, loop: false, loopMode: 'count', countdownMs: 0, startDelayMs: 5000 }),
+    ).rejects.toThrow('offline');
+
+    expect((await service.getState()).playbackScript).toEqual({ id: SCRIPT_A, name: '每日签到' });
+    expect(request).toMatchObject({ countdownMs: 0, startDelayMs: 5000 });
+  });
+});

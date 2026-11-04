@@ -84,6 +84,8 @@ function Sidebar({ activePage, onNavigate, badges = {}, ...qoderProps }: { activ
 /* --- Toolbar --- */
 interface ToolbarProps {
   scriptName: string;
+  /** False when the editor has no script at all (no name, no actions, never saved). */
+  scriptOpen?: boolean;
   saved: boolean;
   currentPage: PageId;
   theme: 'light' | 'dark';
@@ -94,7 +96,7 @@ interface ToolbarProps {
   onQuickAction?: (action: 'run' | 'pause' | 'stop' | 'save') => void;
 }
 
-function Toolbar({ scriptName, saved, theme, onToggleTheme, onEmergencyStop, onOpenAbout, updateStatus, ...qoderProps }: ToolbarProps & Record<string, any>) {
+function Toolbar({ scriptName, scriptOpen = true, saved, theme, onToggleTheme, onEmergencyStop, onOpenAbout, updateStatus, ...qoderProps }: ToolbarProps & Record<string, any>) {
   const { state, settings } = useService();
   const updateAvailable = updateStatus === 'available' || updateStatus === 'downloading' || updateStatus === 'downloaded';
 
@@ -112,7 +114,7 @@ function Toolbar({ scriptName, saved, theme, onToggleTheme, onEmergencyStop, onO
       <div className="toolbar-section" data-qoder-id="qel-toolbar-section-b7c8c037" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toolbar-section-b7c8c037&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;toolbar-section&quot;,&quot;loc&quot;:{&quot;line&quot;:91,&quot;column&quot;:7}}">
         <FileCode2 size={15} className="text-secondary"  data-qoder-id="qel-text-secondary-c2fd4f21" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-secondary-c2fd4f21&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;text-secondary&quot;,&quot;loc&quot;:{&quot;line&quot;:92,&quot;column&quot;:9}}"/>
         <span className="text-md" style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }} data-qoder-id="qel-text-md-2e2eb21a" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-text-md-2e2eb21a&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;text-md&quot;,&quot;loc&quot;:{&quot;line&quot;:93,&quot;column&quot;:9}}">{scriptName}</span>
-        {saved ? (
+        {!scriptOpen ? null : saved ? (
           <span className="badge toolbar-hide-mobile" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }} data-qoder-id="qel-badge-eac1b571" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-badge-eac1b571&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;badge&quot;,&quot;loc&quot;:{&quot;line&quot;:95,&quot;column&quot;:11}}">
             <Save size={10}  data-qoder-id="qel-save-1afcc903" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-save-1afcc903&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;save&quot;,&quot;loc&quot;:{&quot;line&quot;:96,&quot;column&quot;:13}}"/> 已保存
           </span>
@@ -130,17 +132,6 @@ function Toolbar({ scriptName, saved, theme, onToggleTheme, onEmergencyStop, onO
       </div>
 
       <div className="toolbar-spacer"  data-qoder-id="qel-toolbar-spacer-104dd2af" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toolbar-spacer-104dd2af&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;toolbar-spacer&quot;,&quot;loc&quot;:{&quot;line&quot;:111,&quot;column&quot;:7}}"/>
-
-      {/* 急停提示 */}
-      <div className="toolbar-section toolbar-hide-mobile" data-qoder-id="qel-toolbar-section-1ecba0f3" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toolbar-section-1ecba0f3&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;toolbar-section&quot;,&quot;loc&quot;:{&quot;line&quot;:114,&quot;column&quot;:7}}">
-        <span className="estop-hint" data-qoder-id="qel-estop-hint-2d29d525" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-estop-hint-2d29d525&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;estop-hint&quot;,&quot;loc&quot;:{&quot;line&quot;:115,&quot;column&quot;:9}}">
-          <Zap size={13}  data-qoder-id="qel-zap-fe1c9c77" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-zap-fe1c9c77&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;zap&quot;,&quot;loc&quot;:{&quot;line&quot;:116,&quot;column&quot;:11}}"/>
-          <span data-qoder-id="qel-span-28e8d206" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-span-28e8d206&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;span&quot;,&quot;loc&quot;:{&quot;line&quot;:117,&quot;column&quot;:11}}">急停</span>
-          <kbd className="kbd" data-qoder-id="qel-kbd-67c91175" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-kbd-67c91175&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;kbd&quot;,&quot;loc&quot;:{&quot;line&quot;:118,&quot;column&quot;:11}}">{settings.emergencyHotkey}</kbd>
-        </span>
-      </div>
-
-      <div className="toolbar-divider toolbar-hide-mobile"  data-qoder-id="qel-toolbar-divider-641b9d58" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-toolbar-divider-641b9d58&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;toolbar-divider&quot;,&quot;loc&quot;:{&quot;line&quot;:122,&quot;column&quot;:7}}"/>
 
       {/* 主题切换 */}
       <button
@@ -170,11 +161,12 @@ function Toolbar({ scriptName, saved, theme, onToggleTheme, onEmergencyStop, onO
       <button
         className="btn btn-danger btn-sm"
         onClick={onEmergencyStop}
-        data-tooltip="立即停止所有操作"
+        data-tooltip={`立即停止所有操作（任意窗口按 ${formatHotkeyLabel(settings.emergencyHotkey, 'F12')} 同样有效）`}
         aria-label="紧急停止"
        data-qoder-id="qel-button-67635e9f" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-button-67635e9f&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;button&quot;,&quot;loc&quot;:{&quot;line&quot;:135,&quot;column&quot;:7}}">
         <Square size={13} fill="currentColor"  data-qoder-id="qel-square-0a5dbc0e" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-square-0a5dbc0e&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Toolbar&quot;,&quot;elementRole&quot;:&quot;square&quot;,&quot;loc&quot;:{&quot;line&quot;:141,&quot;column&quot;:9}}"/>
         急停
+        <kbd className="kbd estop-kbd">{formatHotkeyLabel(settings.emergencyHotkey, 'F12')}</kbd>
       </button>
     </header>
   );
@@ -203,12 +195,23 @@ const OPERATION_LABELS: Record<OperationType, string> = {
   playback: '脚本回放',
 };
 
+function formatSeconds(totalSeconds: number): string {
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
+}
+
 /* --- StatusBar --- */
 function StatusBar({ scriptName, ...qoderProps }: { scriptName: string } & Record<string, any>) {
   const { state, settings, mode } = useService();
   const isActive = state.runState === 'running' || state.runState === 'paused';
   const operationType = state.snapshot.operationType;
-  const showScript = operationType === 'playback' && scriptName.trim() && scriptName !== '暂未选择脚本';
+  const playingName = state.playbackScript?.name || '未命名脚本';
+  const showScript = operationType === 'playback' && isActive;
+  const editorScript = scriptName.trim() && scriptName !== '暂未选择脚本' ? `「${scriptName.trim()}」` : '（未打开脚本）';
 
   const runStateLabel: Record<RunState, string> = {
     idle: '空闲',
@@ -228,8 +231,9 @@ function StatusBar({ scriptName, ...qoderProps }: { scriptName: string } & Recor
     `急停：${formatHotkeyLabel(settings.emergencyHotkey, '—')}`,
     settings.recordStartHotkey ? `录制：${formatHotkeyLabel(settings.recordStartHotkey)}` : null,
     settings.recordStopHotkey ? `停录：${formatHotkeyLabel(settings.recordStopHotkey)}` : null,
-    settings.playbackStartHotkey ? `回放：${formatHotkeyLabel(settings.playbackStartHotkey)}` : null,
+    settings.playbackStartHotkey ? `回放：${formatHotkeyLabel(settings.playbackStartHotkey)} → 编辑器中的${editorScript}` : null,
     settings.playbackStopHotkey ? `停放：${formatHotkeyLabel(settings.playbackStopHotkey)}` : null,
+    settings.clickerToggleHotkey ? `连点器：${formatHotkeyLabel(settings.clickerToggleHotkey)}` : null,
   ].filter(Boolean).join(' · ');
 
   return (
@@ -263,10 +267,10 @@ function StatusBar({ scriptName, ...qoderProps }: { scriptName: string } & Recor
       )}
 
       {showScript && (
-        <div className="flex items-center gap-xs" title={scriptName}>
+        <div className="flex items-center gap-xs" title={playingName}>
           <FileCode2 size={12} />
           <span>脚本：</span>
-          <span className="statusbar-truncate">{scriptName}</span>
+          <span className="statusbar-truncate">{playingName}</span>
         </div>
       )}
 
@@ -282,7 +286,7 @@ function StatusBar({ scriptName, ...qoderProps }: { scriptName: string } & Recor
 
       {state.countdownRemaining > 0 && (
         <div className="badge" style={{ color: 'var(--color-action-primary)', background: 'var(--color-info-bg)' }}>
-          倒计时 {state.countdownRemaining}s
+          {state.snapshot.state === 'countdown' ? '倒计时' : '距离执行'} {formatSeconds(state.countdownRemaining)}
         </div>
       )}
     </footer>
@@ -294,6 +298,7 @@ interface LayoutProps {
   activePage: PageId;
   onPageChange: (page: PageId) => void;
   scriptName: string;
+  scriptOpen?: boolean;
   saved: boolean;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
@@ -326,6 +331,7 @@ export function Layout(props: LayoutProps & Record<string, any>) {
       <div className="app-main" data-component="app-main" data-qoder-id="qel-app-main-721867b0" data-qoder-source="{&quot;qoderId&quot;:&quot;qel-app-main-721867b0&quot;,&quot;filePath&quot;:&quot;react-vite/src/components/Layout.tsx&quot;,&quot;componentName&quot;:&quot;Layout&quot;,&quot;elementRole&quot;:&quot;app-main&quot;,&quot;loc&quot;:{&quot;line&quot;:250,&quot;column&quot;:7}}">
         <Toolbar
           scriptName={props.scriptName}
+          scriptOpen={props.scriptOpen}
           saved={props.saved}
           currentPage={props.activePage}
           theme={props.theme}

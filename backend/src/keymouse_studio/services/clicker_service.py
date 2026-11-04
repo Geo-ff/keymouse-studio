@@ -32,6 +32,7 @@ from keymouse_studio.infrastructure.system.privilege import (
     AlwaysAllowPrivilegeChecker,
     PrivilegeChecker,
 )
+from keymouse_studio.infrastructure.system.timer import high_resolution_timer
 from keymouse_studio.services.operation_service import OperationService
 
 
@@ -201,6 +202,17 @@ class ClickerService:
         )
 
     async def _run(
+        self,
+        operation_id: UUID,
+        config: ClickerConfig,
+        startup_wait_ms: int,
+        delay_ms: int,
+    ) -> None:
+        # 1 ms timer resolution keeps intervals and scheduled (timed) clicks on time.
+        with high_resolution_timer():
+            await self._run_clicker(operation_id, config, startup_wait_ms, delay_ms)
+
+    async def _run_clicker(
         self,
         operation_id: UUID,
         config: ClickerConfig,

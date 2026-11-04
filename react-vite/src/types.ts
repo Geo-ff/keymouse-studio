@@ -204,6 +204,7 @@ export interface PlaybackRequest {
   loopCount: number;
   loopDurationMs: number | null;
   countdownMs: number;
+  startDelayMs?: number | null;
 }
 
 export interface PlaybackOptions {
@@ -213,6 +214,8 @@ export interface PlaybackOptions {
   loopMode: EditorLoopMode;
   loopDurationMs?: number;
   countdownMs?: number;
+  /** Scheduled start: wait this long (after any countdown) before the first action. */
+  startDelayMs?: number;
 }
 
 export interface EmergencyStopResponse {
@@ -341,6 +344,8 @@ export interface ServiceState {
   timedClickCount: number;
   timedClickRunningTime: number;
   timedClickCountdown: number;
+  /** Script of the most recent playback request (id is null for an unsaved script). */
+  playbackScript: { id: string | null; name: string } | null;
 }
 
 export type StateChangeListener = (state: ServiceState) => void;

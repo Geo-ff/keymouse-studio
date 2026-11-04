@@ -444,3 +444,54 @@ async def test_playback_rejects_chord_key_actions_before_starting(tmp_path: Path
     assert adapter.actions == []
     assert operations.state == EngineState.IDLE
     worker.close()
+
+
+@pytest.mark.asyncio
+async def test_start_delay_waits_while_running_and_publishes_remaining(tmp_path: Path) -> None:
+    adapter = TimelineInputAdapter()
+    worker = InputWorker(adapter)
+    events = EventService(1)
+    operations = OperationService(events)
+    scripts = ScriptService(JsonScriptRepository(tmp_path / "scripts"))
+    service = PlaybackService(operations, scripts, worker, MonotonicClock(), 5)
+    queue = events.subscribe()
+    script = Script.model_validate(
+        {
+            "id": "00000000-0000-0000-0000-000000000001",
+            "name": "Scheduled",
+            "createdAt": "2026-07-14T00:00:00Z",
+            "updatedAt": "2026-07-14T00:00:00Z",
+            "settings": {"countdownMs": 0},
+            "actions": [
+                {
+                    "id": "00000000-0000-0000-0000-000000000002",
+                    "type": "mouse_button_down",
+                    "payload": {"button": "left"},
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000003",
+                    "type": "mouse_button_up",
+                    "payload": {"button": "left"},
+                },
+            ],
+        }
+    )
+    started_ns = time.monotonic_ns()
+
+    transition = await service.start(
+        PlaybackRequest(inline_script=script, countdown_ms=0, start_delay_ms=120)
+    )
+    await asyncio.wait_for(service.wait_finished(), timeout=2)
+
+    # No full-screen countdown state: the scheduled wait happens while "running".
+    assert transition.state == EngineState.RUNNING
+    first_press_ns = adapter.timeline[0][1]
+    assert first_press_ns - started_ns >= 120 * 1_000_000
+    remaining = []
+    while not queue.empty():
+        event = queue.get_nowait()
+        if event.type == "operation.progress":
+            remaining.append(event.payload.countdown_remaining_ms)
+    assert remaining and max(remaining) > 0
+    assert operations.state == EngineState.IDLE
+    worker.close()

@@ -3,6 +3,7 @@ import type { AppSettings, Capabilities, ErrorDetail, HotkeyStatus, IAutomationS
 import { DEFAULT_SETTINGS, INITIAL_SNAPSHOT } from '../types';
 import { createService } from '../services/AutomationService';
 import { isMockModeAllowed, resolveServiceMode } from '../utils/runtime';
+import { withLocalSettings } from '../utils/localSettings';
 
 interface AutomationContextValue {
   service: IAutomationService;
@@ -24,12 +25,14 @@ const fallbackState: ServiceState = {
   playbackCurrentIndex: -1, playbackCurrentLoop: 0, playbackLoopRemainingMs: 0, mousePos: { x: 960, y: 540 },
   keyboardListening: false, countdownRemaining: 0, timedClickCount: 0, timedClickRunningTime: 0,
   timedClickCountdown: 0,
+  playbackScript: null,
 };
 
 const AutomationContext = createContext<AutomationContextValue | null>(null);
 
 export function AutomationProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<AppSettings>(() => ({
+  // Saved theme / recording options apply from the first render (no light-theme flash).
+  const [settings, setSettings] = useState<AppSettings>(() => withLocalSettings({
     ...DEFAULT_SETTINGS,
     serviceMode: resolveServiceMode(DEFAULT_SETTINGS.serviceMode),
   }));

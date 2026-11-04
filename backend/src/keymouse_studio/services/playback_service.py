@@ -223,6 +223,10 @@ class PlaybackService:
                 self._raise_if_cancelled()
                 self._elapsed_ns = 0
                 await self._operations.transition(EngineState.RUNNING, operation_id)
+            if request.start_delay_ms:
+                # Scheduled start; loop duration and progress count from the first action.
+                await self._wait_countdown(request.start_delay_ms, operation_id)
+                self._raise_if_cancelled()
             self._playback_started_ns = self._clock.now_ns()
             self._paused_ns = 0
             self._pause_started_ns = None

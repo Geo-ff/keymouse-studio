@@ -51,7 +51,7 @@ If GitHub is slow, use the [domestic download mirror (Quark Drive)](./docs/domes
 | Feature | What it does |
 | --- | --- |
 | Auto-clicker | Click or press keys at a set interval (count or continuous; coordinates or current position); a toggle hotkey starts/stops it from inside a game |
-| Timed click | Click after a delay |
+| Timed | After a wait or at a set time of day (optionally daily): click, press a key, or run a script |
 | Recording | Capture keyboard/mouse input into an editable script |
 | Script editor | Add, edit, reorder, enable/disable actions |
 | Playback | Replay with speed and loops; pause / resume / stop |

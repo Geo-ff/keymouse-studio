@@ -90,16 +90,9 @@ export default function App() {
   settingsRef.current = settings;
   const stateRef = useRef(state);
   stateRef.current = state;
-  /** Script started from the list or its own hotkey (so the same trigger can stop it). */
-  const [runningScriptId, setRunningScriptId] = useState<string | null>(null);
-  const runningScriptIdRef = useRef<string | null>(null);
+  /** Saved script that is currently playing, however it was started (list, hotkey, editor…). */
   const playbackActive = state.snapshot.operationType === 'playback' && state.runState !== 'idle';
-
-  useEffect(() => {
-    if (playbackActive) return;
-    runningScriptIdRef.current = null;
-    setRunningScriptId(null);
-  }, [playbackActive]);
+  const runningScriptId = playbackActive ? state.playbackScript?.id ?? null : null;
 
   const reportFailure = useCallback((title: string, err: unknown) => {
     const friendly = formatErrorForDisplay(toErrorDetail(err));
@@ -112,7 +105,7 @@ export default function App() {
     const liveState = stateRef.current;
     const busy = Boolean(liveState.snapshot.operationType) && liveState.runState !== 'idle';
     if (busy) {
-      if (liveState.snapshot.operationType === 'playback' && runningScriptIdRef.current === scriptId) {
+      if (liveState.snapshot.operationType === 'playback' && liveState.playbackScript?.id === scriptId) {
         try {
           await stopPlayback();
           void showSystemAlert('回放', '回放已停止');
@@ -141,15 +134,11 @@ export default function App() {
       return;
     }
     const options = buildPlaybackOptionsFromScript(script, settingsRef.current);
-    runningScriptIdRef.current = scriptId;
-    setRunningScriptId(scriptId);
     try {
       // A hotkey is pressed from inside the target window, so start right away.
       await playback({ ...script, actions: enabled }, viaHotkey ? { ...options, countdownMs: 0 } : options);
       void showSystemAlert('回放', '回放已开始', `脚本：${script.name}`);
     } catch (err) {
-      runningScriptIdRef.current = null;
-      setRunningScriptId(null);
       reportFailure('回放', err);
     }
   }, [loadScript, playback, stopPlayback, reportFailure, toast]);
@@ -308,22 +297,32 @@ export default function App() {
         return;
       }
       if (actionId === 'playbackStart') {
+        // The user is usually inside another window, so explain problems via a system notification too.
+        const refuse = (message: string) => {
+          toast.error(message);
+          void showSystemAlert('回放', '无法开始回放', message);
+        };
         const enabled = liveScript.actions.filter(a => a.enabled);
         if (enabled.length === 0) {
-          toast.error('当前脚本没有可回放的动作');
+          const opened = Boolean(liveScript.id || liveScript.name.trim() || liveScript.actions.length);
+          refuse(opened
+            ? `回放快捷键运行的是编辑器中打开的脚本，「${liveScript.name.trim() || '未命名脚本'}」没有可回放的动作`
+            : '回放快捷键运行的是编辑器中打开的脚本，当前没有打开脚本。也可以在「脚本」页面为常用脚本单独设置快捷键');
           return;
         }
         if (liveState.runState !== 'idle' && liveState.snapshot.operationType === 'playback') {
-          toast.error('回放正在运行，请先停止或急停后再重新开始');
+          refuse('回放正在运行，请先停止或急停后再重新开始');
           return;
         }
         if (liveState.runState !== 'idle' && liveState.snapshot.operationType) {
-          toast.error('当前已有任务在运行，请先停止或急停后再开始回放');
+          refuse('当前已有任务在运行，请先停止或急停后再开始回放');
           return;
         }
-        const options =
-          playbackOptionsRef.current ??
-          buildPlaybackOptionsFromScript(liveScript, liveSettings);
+        // Started from a hotkey: run immediately, like every other hotkey (the countdown is for buttons).
+        const options = {
+          ...(playbackOptionsRef.current ?? buildPlaybackOptionsFromScript(liveScript, liveSettings)),
+          countdownMs: 0,
+        };
         setPage('script');
         runOnce(() => playback({ ...liveScript, actions: enabled }, options)
           .then(() => { void showSystemAlert('回放', '回放已开始', liveScript.name.trim() ? `脚本：${liveScript.name.trim()}` : undefined); })
@@ -617,6 +616,7 @@ export default function App() {
         activePage={page}
         onPageChange={setPage}
         scriptName={currentScript.name.trim() || '暂未选择脚本'}
+        scriptOpen={Boolean(currentScript.id || currentScript.name.trim() || currentScript.actions.length)}
         saved={saved}
         theme={theme}
         onToggleTheme={handleToggleTheme}

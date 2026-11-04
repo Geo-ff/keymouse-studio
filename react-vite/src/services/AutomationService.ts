@@ -29,6 +29,7 @@ import type {
   TimedClickConfig,
 } from '../types';
 import { DEFAULT_SETTINGS, INITIAL_SNAPSHOT } from '../types';
+import { isLocalOnlyUpdate, saveLocalSettings, withLocalSettings } from '../utils/localSettings';
 import { generateRandomAction, mockScripts } from '../data/mockData';
 import { resolveServiceMode } from '../utils/runtime';
 import { hotkeyToBackend } from '../utils/hotkey';
@@ -60,6 +61,7 @@ function createState(snapshot: StateSnapshot = INITIAL_SNAPSHOT): ServiceState {
     timedClickCount: snapshot.operationType === 'timed_click' ? snapshot.completedCount : 0,
     timedClickRunningTime: snapshot.operationType === 'timed_click' ? snapshot.elapsedMs : 0,
     timedClickCountdown: snapshot.operationType === 'timed_click' ? snapshot.countdownRemainingMs : 0,
+    playbackScript: null,
   };
 }
 
@@ -84,6 +86,10 @@ abstract class AutomationServiceBase implements IAutomationService {
     this.errorListeners.forEach(listener => listener(detail));
     throw error;
   }
+  /** Remember which script a playback runs, whichever page or hotkey started it. */
+  protected markPlaybackScript(script: Script): void {
+    this.currentState = { ...this.currentState, playbackScript: { id: script.id || null, name: script.name.trim() } };
+  }
   protected clearError(): void { this.currentError = null; this.errorListeners.forEach(listener => listener(null)); }
   protected applySnapshot(snapshot: StateSnapshot): void {
     const previous = this.currentState;
@@ -102,7 +108,7 @@ abstract class AutomationServiceBase implements IAutomationService {
         sequence: Math.max(snapshot.sequence, previous.snapshot.sequence),
       };
     }
-    const next = { ...createState(merged), recordingActions: actions, mousePos };
+    const next = { ...createState(merged), recordingActions: actions, mousePos, playbackScript: previous.playbackScript };
     if (merged.operationType !== 'clicker') {
       next.clickerCount = previous.clickerCount;
       next.clickerRunningTime = previous.clickerRunningTime;
@@ -163,7 +169,7 @@ abstract class AutomationServiceBase implements IAutomationService {
 
 export class MockAutomationService extends AutomationServiceBase {
   readonly mode = 'mock' as const;
-  private settings = { ...DEFAULT_SETTINGS };
+  private settings = withLocalSettings({ ...DEFAULT_SETTINGS });
   private scripts = clone(mockScripts);
   private timers = new Set<ReturnType<typeof setTimeout>>();
   private operationId: string | null = null;
@@ -311,6 +317,7 @@ export class MockAutomationService extends AutomationServiceBase {
   }
   async playback(script: Script, options: PlaybackOptions): Promise<OperationTransition> {
     const result = this.start('playback', 'running');
+    this.markPlaybackScript(script);
     const actions = script.actions.filter(action => action.enabled);
     let index = 0;
     const total = Math.max(1, actions.length * (options.loopMode === 'count' ? options.times : 1));
@@ -325,7 +332,18 @@ export class MockAutomationService extends AutomationServiceBase {
       if (options.loopMode === 'count' && index >= total) this.transition('idle');
       else this.timer(tick, Math.max(50, actions[index % actions.length].delayBeforeMs / options.speedMultiplier));
     };
-    this.timer(tick, 50);
+    const startDelayMs = Math.max(0, options.startDelayMs ?? 0);
+    if (startDelayMs > 0) {
+      // Mirror the backend: wait while "running" and expose the remaining time.
+      this.currentState.snapshot.countdownRemainingMs = startDelayMs;
+      this.applySnapshot({ ...this.currentState.snapshot, sequence: ++this.sequence });
+    }
+    this.timer(() => {
+      if (startDelayMs > 0 && this.operationType === 'playback') {
+        this.currentState.snapshot.countdownRemainingMs = 0;
+      }
+      tick();
+    }, Math.max(50, startDelayMs));
     return result;
   }
   async pausePlayback(): Promise<OperationTransition> { return this.pause(); }
@@ -360,7 +378,11 @@ export class MockAutomationService extends AutomationServiceBase {
   }
   async deleteScript(id: string): Promise<void> { this.scripts = this.scripts.filter(script => script.id !== id); }
   async getSettings(): Promise<AppSettings> { return clone(this.settings); }
-  async updateSettings(settings: Partial<AppSettings>): Promise<AppSettings> { this.settings = { ...this.settings, ...settings }; return clone(this.settings); }
+  async updateSettings(settings: Partial<AppSettings>): Promise<AppSettings> {
+    this.settings = { ...this.settings, ...settings };
+    saveLocalSettings(settings);
+    return clone(this.settings);
+  }
   async getCapabilities(): Promise<Capabilities> { this.ensureActive(); return { platform: 'windows', platformVersion: 'mock', input: { status: 'available', reason: null }, globalHotkey: { status: 'available', reason: null }, display: { status: 'available', reason: null }, displayCount: 1, dpiAwareness: { status: 'available', reason: null } }; }
   async getHotkeyStatus(): Promise<HotkeyStatus> { this.ensureActive(); return { key: this.settings.emergencyHotkey, available: true, registered: true }; }
   async dispose(): Promise<void> { if (this.disposed) return; this.disposed = true; this.timers.forEach(clearTimeout); this.timers.clear(); this.operationId = null; this.operationType = null; this.listeners.clear(); this.errorListeners.clear(); }
@@ -380,7 +402,7 @@ export class RealAutomationService extends AutomationServiceBase {
   private disposed = false;
   private initializePromise: Promise<void> | null = null;
   private lastSequence = -1;
-  private settings = { ...DEFAULT_SETTINGS, serviceMode: 'real' as const };
+  private settings = withLocalSettings({ ...DEFAULT_SETTINGS, serviceMode: 'real' as const });
   private capabilities: Capabilities | null = null;
   private lastRecordingStop: RecordingStopResponse | null = null;
   private mousePositionTimer: ReturnType<typeof setInterval> | null = null;
@@ -654,6 +676,7 @@ export class RealAutomationService extends AutomationServiceBase {
   }
   async getRecordingResult(id: string): Promise<RecordingResult> { return this.call(() => this.api().get(`/api/v1/recordings/${id}`)); }
   async playback(script: Script, options: PlaybackOptions): Promise<OperationTransition> {
+    this.markPlaybackScript(script);
     const request: PlaybackRequest = {
       scriptId: null,
       inlineScript: script.id
@@ -664,6 +687,7 @@ export class RealAutomationService extends AutomationServiceBase {
       loopCount: options.loopMode === 'count' ? options.times : 1,
       loopDurationMs: options.loopMode === 'duration' ? (options.loopDurationMs ?? null) : null,
       countdownMs: options.countdownMs ?? resolveCountdownMs(this.settings),
+      startDelayMs: options.startDelayMs ?? null,
     };
     return this.call(() => this.applyCommandTransition(() => this.api().post('/api/v1/playback/start', request)));
   }
@@ -785,6 +809,12 @@ export class RealAutomationService extends AutomationServiceBase {
     return this.mergeBackendSettings(backend);
   }
   async updateSettings(updates: Partial<AppSettings>): Promise<AppSettings> {
+    if (isLocalOnlyUpdate(updates)) {
+      // Theme / recording options live only in this UI; no backend round trip needed.
+      this.settings = { ...this.settings, ...updates, serviceMode: 'real' };
+      saveLocalSettings(updates);
+      return clone(this.settings);
+    }
     const next = { ...this.settings, ...updates, serviceMode: 'real' as const };
     const hotkeyFields = ['emergencyHotkey', 'recordStartHotkey', 'recordStopHotkey', 'playbackStartHotkey', 'playbackStopHotkey', 'clickerToggleHotkey'] as const;
     for (const field of hotkeyFields) {
@@ -809,6 +839,7 @@ export class RealAutomationService extends AutomationServiceBase {
     }
     const backend = await this.call(() => this.api().put<BackendSettings>('/api/v1/settings', this.toBackendSettings(next)));
     this.settings = { ...next, serviceMode: 'real' };
+    saveLocalSettings(updates);
     return this.mergeBackendSettings(backend);
   }
   async getCapabilities(): Promise<Capabilities> { return this.capabilities ? clone(this.capabilities) : this.call(() => this.api().get('/api/v1/capabilities')); }

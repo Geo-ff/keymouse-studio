@@ -407,6 +407,14 @@ input, select, textarea {
 }
 
 /* --- Sidebar Nav Items --- */
+/* Emergency hotkey shown inside the emergency button */
+.btn-danger .estop-kbd {
+  margin-left: 2px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
 .nav-item-badge {
   position: absolute;
   top: 5px;
@@ -559,20 +567,6 @@ input, select, textarea {
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
-}
-
-/* --- Emergency Stop Hint --- */
-.estop-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs);
-  padding: 2px var(--space-sm);
-  border: 1px solid var(--color-danger-border);
-  border-radius: var(--radius-control);
-  font-size: var(--fs-sm);
-  color: var(--color-danger);
-  background: var(--color-danger-bg);
-  white-space: nowrap;
 }
 
 .kbd {
