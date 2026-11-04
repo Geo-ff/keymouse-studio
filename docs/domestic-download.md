@@ -14,8 +14,8 @@ GitHub Releases 为官方主发布源。若在中国大陆访问 GitHub 较慢�
 | 项目 | 内容 |
 | --- | --- |
 | 分享名称 | keymouse-studio |
-| 链接 | https://pan.quark.cn/s/2487ce3fcb14?pwd=Fkii |
-| 提取码 | `Fkii` |
+| 链接 | https://pan.quark.cn/s/3e16bbb4fce2?pwd=fYvB |
+| 提取码 | `fYvB` |
 
 也可使用夸克 APP 扫描下方二维码：
 
@@ -26,7 +26,7 @@ GitHub Releases 为官方主发布源。若在中国大陆访问 GitHub 较慢�
 ### 使用方式
 
 1. 点击上方链接，或复制整段分享信息到 **夸克 APP**
-2. 输入提取码 **`Fkii`**
+2. 输入提取码 **`fYvB`**
 3. 下载与当前版本对应的 `KeyMouse-Studio-Setup-*.exe`
 4. 安装前可与 [GitHub Release](https://github.com/Geo-ff/keymouse-studio/releases/latest) 中的版本号对照确认
 
@@ -34,9 +34,9 @@ GitHub Releases 为官方主发布源。若在中国大陆访问 GitHub 较慢�
 
 ```text
 我用夸克网盘给你分享了「keymouse-studio」，点击链接或复制整段内容，打开「夸克APP」即可获取。
-/~a15d3ZyVZl~:/
-链接：https://pan.quark.cn/s/2487ce3fcb14?pwd=Fkii
-提取码：Fkii
+/~fd473c4Jck~:/
+链接：https://pan.quark.cn/s/3e16bbb4fce2
+提取码：fYvB
 ```
 
 ## 安全提示
